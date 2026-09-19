@@ -1,0 +1,77 @@
+/* The lighting panel. Colours, spacing and the border radius follow src/styles.css so the panel reads as
+   part of the same chrome; nothing here is set from script, which is why the module carries no inline
+   styles at all. */
+
+.lightpanel {
+  display: grid;
+  gap: 0.35rem;
+  max-width: 24rem;
+  margin: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+}
+
+.lightpanel__presets {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.lightpanel__select {
+  padding: 0.2rem;
+  border: 1px solid #3a4048;
+  border-radius: 4px;
+  background: #101214;
+  color: #e6e8ea;
+  font: inherit;
+}
+
+/* One row per light: the name across the top, then label, control and readout in three columns. */
+.lightpanel__row {
+  display: grid;
+  grid-template-columns: auto 1fr 4.5rem;
+  align-items: center;
+  gap: 0.25rem 0.4rem;
+  margin: 0;
+  padding: 0.35rem 0.5rem 0.5rem;
+  border: 1px solid #3a4048;
+  border-radius: 4px;
+}
+
+.lightpanel__name {
+  grid-column: 1 / -1;
+  padding: 0 0.2rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.lightpanel__label {
+  color: #9aa2ab;
+  white-space: nowrap;
+}
+
+.lightpanel__range {
+  width: 100%;
+  min-width: 0;
+}
+
+/* The switch sits in the control column so the three columns line up on every row. */
+.lightpanel__switch {
+  justify-self: start;
+}
+
+/* Tabular figures keep the column from twitching as a slider moves. */
+.lightpanel__value {
+  font-family: ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: #e6e8ea;
+}
+
+/* A visible focus ring on every control: these are the product's one interactive surface. */
+.lightpanel__range:focus-visible,
+.lightpanel__switch:focus-visible,
+.lightpanel__select:focus-visible {
+  outline: 2px solid #e6e8ea;
+  outline-offset: 2px;
+}
