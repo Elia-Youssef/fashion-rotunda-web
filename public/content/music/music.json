@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "default": "music-01",
+  "tracks": [
+    {
+      "id": "music-01",
+      "title": "Track 1",
+      "source": "Music01.WAV",
+      "duration": 105.65,
+      "loudness": {
+        "input": -12.8,
+        "output": -17.9
+      },
+      "seam": {
+        "boundaryStep": 0.0035,
+        "reference": 0.0589
+      },
+      "sources": [
+        {
+          "url": "music-01.ogg",
+          "type": "audio/ogg; codecs=\"opus\"",
+          "bytes": 1241721
+        },
+        {
+          "url": "music-01.m4a",
+          "type": "audio/mp4; codecs=\"mp4a.40.2\"",
+          "bytes": 1715411
+        }
+      ]
+    }
+  ]
+}

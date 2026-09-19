@@ -6,6 +6,7 @@
 import { Color, Mesh, PerspectiveCamera, Scene } from 'three/webgpu';
 import type { Material } from 'three/webgpu';
 
+import { mountMusic } from './audio/mount';
 import { mountCamera } from './camera/mount';
 import type { CameraMount } from './camera/mount';
 import { contentUrl, loadCatalog } from './catalog/catalog';
@@ -198,7 +199,7 @@ async function main(): Promise<void> {
 
   // The music switch (G5.6) mounts in the header here, before the content loads, so a
   // visitor can press it while the room is still arriving; the music needs no scene.
-  // hook: music
+  mountMusic({ headerRoot: requireElement('header', 'page header'), search, baseUrl: '/content/music' });
 
   canvas.dataset.scene = 'loading';
 

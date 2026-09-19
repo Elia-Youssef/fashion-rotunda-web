@@ -18,6 +18,7 @@
     "pipeline:unreal": "node pipeline/unreal/run.mjs",
     "pipeline:assemble": "node pipeline/gltf/assemble.mjs",
     "pipeline:optimize": "node pipeline/gltf/optimize.mjs",
+    "pipeline:music": "node pipeline/audio/music.mjs",
     "report": "node pipeline/gltf/report.mjs"
   },
   "keywords": [],
