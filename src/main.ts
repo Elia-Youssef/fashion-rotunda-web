@@ -14,6 +14,8 @@ import type { Catalog, CatalogLook } from './catalog/catalog';
 import { composeLighting, enableShadows } from './lighting/compose';
 import { createLoop } from './loop/loop';
 import { ResolutionScaler } from './loop/scaler';
+import { createPostChain } from './post/chain';
+import type { PostChain } from './post/chain';
 import { FrameTimes } from './proof/frametime';
 import { markFirstFrame, snapshot } from './proof/marks';
 import { mountOverlay, overlayWanted } from './proof/overlay';
@@ -207,6 +209,11 @@ async function main(): Promise<void> {
   let showroom: Showroom | null = null;
   /** True once a look stands on the plinth, which is what makes a frame worth marking. */
   let contentOnScreen = false;
+  /**
+   * Null until the tier has settled, because the settled tier decides which effects the chain
+   * builds. From then on it replaces renderer.render for every frame.
+   */
+  let chain: PostChain | null = null;
 
   // The tier benchmark measures a render call, so the loop needs something to render before the
   // showroom exists. An empty scene keeps that measurement real; the G0.2 cube was the previous
@@ -221,8 +228,10 @@ async function main(): Promise<void> {
     renderer.info.reset();
     if (showroom === null) {
       renderer.render(warmupScene, warmupCamera);
-    } else {
+    } else if (chain === null) {
       renderer.render(showroom.scene, showroom.camera);
+    } else {
+      chain.render();
     }
     frameCount += 1;
     // Readable from outside without exposing the renderer: the e2e tests watch this counter to prove
@@ -235,6 +244,11 @@ async function main(): Promise<void> {
     const reading = `${renderer.info.memory.geometries}/${renderer.info.memory.textures}`;
     if (canvas.dataset.memory !== reading) {
       canvas.dataset.memory = reading;
+    }
+    if (chain !== null) {
+      // Per frame, not once at creation: a runtime fallback to pass-through changes what the chain
+      // is doing, and the attribute is what the e2e suite and the overlay read it from.
+      publishPostState();
     }
     if (contentOnScreen) {
       // The first frame is the first one with the scene on it: an empty warm-up frame is not what
@@ -262,6 +276,7 @@ async function main(): Promise<void> {
     }
     showroom?.setAspect(width / height);
     renderer.setSize(width, height, false);
+    chain?.setSize(width, height);
   }
   resize();
 
@@ -407,6 +422,20 @@ async function main(): Promise<void> {
     }
   }
 
+  /** What the post chain is drawing, as the e2e suites read it: "ao,traa", "ao,msaa", "off". */
+  function publishPostState(): void {
+    const on = chain?.features ?? null;
+    const value =
+      on === null
+        ? 'off'
+        : [on.ao ? 'ao' : '', on.traa ? 'traa' : '', on.msaa ? 'msaa' : '']
+            .filter((feature) => feature !== '')
+            .join(',') || 'off';
+    if (canvas.dataset.post !== value) {
+      canvas.dataset.post = value;
+    }
+  }
+
   try {
     // The phone set is chosen by the tier, and only a touch device can reach a tier that asks for
     // it; on anything else the full set is the only one.
@@ -454,6 +483,23 @@ async function main(): Promise<void> {
     loop.invalidate();
     await settleTier();
 
+    // The settled tier decides which effects the chain builds, which is why the chain is created
+    // here and not before the benchmark: the benchmark measures the plain render it calibrates on.
+    chain = createPostChain({
+      renderer,
+      scene: showroom.scene,
+      camera: showroom.camera,
+      tier: settings,
+      isTouch,
+    });
+    publishPostState();
+    loop.invalidate();
+    // TRAA accumulates over frames and this loop stops drawing when nothing moves, so without a
+    // wake the page would idle on the first frame of the history. One wake window lets it converge
+    // before the loop goes quiet, and a visitor who never touches the page still sees a settled
+    // picture.
+    wake();
+
     // Hooks. Each later feature adds exactly one call here, against the handles above: the camera
     // (G4.1, G4.4) mounts its controls on the canvas and the loop, the chrome (G5.1, G5.2)
     // mounts the catalogue strip and the product card in the side panel. Nothing else changes here.
@@ -499,6 +545,7 @@ async function main(): Promise<void> {
           }
           for (const id of switchOrder(ids, active.currentLook ?? ids[0], count)) {
             await active.showLook(id);
+            chain?.notifyMotion();
             publishSceneState();
           }
           // The memory counts move when a resource is uploaded, which happens in a render, so the
