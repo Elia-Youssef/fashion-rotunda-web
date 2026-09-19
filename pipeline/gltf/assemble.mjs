@@ -1,34 +1,32 @@
-// Stage one of the glTF pipeline: turns the raw Unreal export into the content layout the page loads,
-// with no optimization at all. One GLB per look (garment meshes plus the mannequin, the mannequin
-// carrying KHR_materials_variants base | light | dark), the rotunda and plinth copied as they are, the
-// thumbnails, and catalog.json. Stage two (optimize.mjs) rewrites the same layout with compressed
-// textures and geometry; until it exists this output lets the loader be built against real files.
+// Stage one of the glTF pipeline: turns the raw Unreal export into the content layout the page
+// loads, with no optimization at all. One GLB per look (garment meshes plus the mannequin, the
+// mannequin carrying KHR_materials_variants base | light | dark), the rotunda and plinth copied as
+// they are, the thumbnails, and catalog.json. Stage two (optimize.mjs) reads this layout and
+// rewrites it into public/content/ with compressed textures and geometry.
 //
-//   node pipeline/gltf/assemble.mjs            writes public/content/
+// The default output is assets-src/work/assembled, not public/content: what the page loads is the
+// optimized set, and an unoptimized GLB in public/content would ship a 54 MB rotunda unnoticed.
+//
+//   node pipeline/gltf/assemble.mjs            writes assets-src/work/assembled/
 //   node pipeline/gltf/assemble.mjs --out DIR  writes DIR
+//
+// optimize.mjs imports assemble() rather than spawning this file, so one command runs both stages.
 
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { Document, NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, KHRMaterialsVariants } from '@gltf-transform/extensions';
 import { mergeDocuments, prune, unpartition } from '@gltf-transform/functions';
 
-import { contentDir, sourceDir } from '../config.mjs';
+import { sourceDir, workDir } from '../config.mjs';
 
-const args = process.argv.slice(2);
-const outIndex = args.indexOf('--out');
-const out = outIndex >= 0 ? resolve(args[outIndex + 1]) : contentDir;
-const src = resolve(sourceDir, 'unreal');
-
-const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
-const source = JSON.parse(readFileSync(resolve(src, 'catalog-source.json'), 'utf8'));
-
-mkdirSync(resolve(out, 'looks'), { recursive: true });
-mkdirSync(resolve(out, 'thumbs'), { recursive: true });
+/** Where stage one writes when the caller says nothing. Stage two reads from here. */
+export const assembledDir = resolve(workDir, 'assembled');
 
 /** Unreal's text export sometimes keeps the NSLOCTEXT wrapper; the page wants the sentence only. */
-function plainText(value) {
+export function plainText(value) {
   if (typeof value !== 'string') return '';
   const match = value.match(/^NSLOCTEXT\("[^"]*",\s*"[^"]*",\s*"([\s\S]*)"\)$/);
   const text = match ? match[1] : value;
@@ -42,9 +40,9 @@ function plainText(value) {
 }
 
 /**
- * Moves every scene node of `part` into `target`'s single scene under one named node, and returns the
- * materials that came with it. mergeDocuments keeps the part's scene; that scene is dropped after its
- * children are re-parented.
+ * Moves every scene node of `part` into `target`'s single scene under one named node, and returns
+ * the materials that came with it. mergeDocuments keeps the part's scene; that scene is dropped
+ * after its children are re-parented.
  */
 function graft(target, part, nodeName) {
   const before = new Set(target.getRoot().listMaterials());
@@ -75,7 +73,7 @@ function nameNodes(group, prefix) {
   });
 }
 
-async function assembleLook(look) {
+async function assembleLook(io, look, out) {
   const document = new Document();
   document.createScene('look');
   const garmentNames = [];
@@ -87,7 +85,9 @@ async function assembleLook(look) {
     garmentNames.push(label);
   }
   const mannequinPart = await io.read(look.mannequin.file);
-  const { group: mannequinGroup, materials: mannequinMaterials } = graft(document, mannequinPart, 'mannequin');
+  const mannequin = graft(document, mannequinPart, 'mannequin');
+  const mannequinGroup = mannequin.group;
+  const mannequinMaterials = mannequin.materials;
   nameNodes(mannequinGroup, 'mannequin-mesh');
 
   // Variants: the base variant is the mannequin's own material; light and dark come from the swatch
@@ -111,7 +111,10 @@ async function assembleLook(look) {
     for (const primitive of mesh.listPrimitives()) {
       const mappingList = variantsExtension.createMappingList();
       for (const name of variantNames) {
-        const mapping = variantsExtension.createMapping().setMaterial(variantMaterials.get(name)).addVariant(variants.get(name));
+        const mapping = variantsExtension
+          .createMapping()
+          .setMaterial(variantMaterials.get(name))
+          .addVariant(variants.get(name));
         mappingList.addMapping(mapping);
       }
       primitive.setExtension('KHR_materials_variants', mappingList);
@@ -138,24 +141,52 @@ async function assembleLook(look) {
   };
 }
 
-copyFileSync(source.rotunda.file, resolve(out, 'rotunda.glb'));
-copyFileSync(source.plinth.file, resolve(out, 'plinth.glb'));
-const looks = [];
-for (const look of source.looks) {
-  looks.push(await assembleLook(look));
-  console.log(`assembled ${look.slug}: ${looks.at(-1).garmentNodes.length} garment group(s), variants ${looks.at(-1).variants.join(', ')}`);
+/**
+ * Runs stage one.
+ *
+ * @param out where to write. Defaults to assets-src/work/assembled.
+ * @param log a one-line progress sink.
+ * @returns `{ out, catalog, source }` so stage two can reuse the parsed export description.
+ */
+export async function assemble({ out = assembledDir, log = console.log } = {}) {
+  const src = resolve(sourceDir, 'unreal');
+  const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+  const source = JSON.parse(readFileSync(resolve(src, 'catalog-source.json'), 'utf8'));
+
+  mkdirSync(resolve(out, 'looks'), { recursive: true });
+  mkdirSync(resolve(out, 'thumbs'), { recursive: true });
+
+  copyFileSync(source.rotunda.file, resolve(out, 'rotunda.glb'));
+  copyFileSync(source.plinth.file, resolve(out, 'plinth.glb'));
+  const looks = [];
+  for (const look of source.looks) {
+    looks.push(await assembleLook(io, look, out));
+    const last = looks.at(-1);
+    log(
+      `assembled ${look.slug}: ${last.garmentNodes.length} garment group(s), ` +
+        `variants ${last.variants.join(', ')}`,
+    );
+  }
+
+  const catalog = {
+    version: 1,
+    rotunda: { file: 'rotunda.glb' },
+    plinth: { file: 'plinth.glb' },
+    looks,
+    views: {
+      // A first proof pose on the plinth; G1.5's views.json replaces it. Metres, y up.
+      proof: { position: [0, 1.7, 4.2], target: [0, 1.0, 0], fov: 40 },
+    },
+  };
+  writeFileSync(resolve(out, 'catalog.json'), JSON.stringify(catalog, null, 2) + '\n');
+  log(`catalog.json: ${looks.length} looks -> ${out}`);
+  log(`rotunda ${basename(source.rotunda.file)} and plinth copied unoptimized`);
+  return { out, catalog, source };
 }
 
-const catalog = {
-  version: 1,
-  rotunda: { file: 'rotunda.glb' },
-  plinth: { file: 'plinth.glb' },
-  looks,
-  views: {
-    // A first proof pose on the plinth; G1.5's views.json replaces it. Metres, y up.
-    proof: { position: [0, 1.7, 4.2], target: [0, 1.0, 0], fov: 40 },
-  },
-};
-writeFileSync(resolve(out, 'catalog.json'), JSON.stringify(catalog, null, 2) + '\n');
-console.log(`catalog.json: ${looks.length} looks -> ${out}`);
-console.log(`rotunda ${basename(source.rotunda.file)} and plinth copied unoptimized`);
+// Run only when this file is the entry point; optimize.mjs imports assemble() instead.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const args = process.argv.slice(2);
+  const outIndex = args.indexOf('--out');
+  await assemble({ out: outIndex >= 0 ? resolve(args[outIndex + 1]) : assembledDir });
+}

@@ -2,12 +2,18 @@
 // audit the Unreal export before the optimize pass and the optimize output before it ships.
 //
 //   node pipeline/gltf/inspect.mjs <file.glb> [more files...] [--json]
+//
+// The optimize pass writes meshopt-compressed geometry, so the reader registers the meshopt decoder:
+// without it every optimized file reads as an error. The summary line ends with the four checks the
+// output has to pass, so the answer is readable without scrolling: KTX2 on every texture, meshopt
+// present, instancing on the rotunda, KHR_materials_specular gone, variants on every look.
 
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
+import { MeshoptDecoder } from 'meshoptimizer';
 
 const args = process.argv.slice(2);
 const asJson = args.includes('--json');
@@ -17,7 +23,10 @@ if (files.length === 0) {
   process.exit(2);
 }
 
-const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+await MeshoptDecoder.ready;
+const io = new NodeIO()
+  .registerExtensions(ALL_EXTENSIONS)
+  .registerDependencies({ 'meshopt.decoder': MeshoptDecoder });
 
 function triangleCount(primitive) {
   const indices = primitive.getIndices();
@@ -100,6 +109,27 @@ async function inspect(file) {
     size: imageSize(texture),
   }));
   const lights = nodes.filter((node) => node.light !== null).length;
+  const extensionsUsed = root.listExtensionsUsed().map((extension) => extension.extensionName);
+  let drawCalls = 0;
+  const instanced = [];
+  for (const scene of root.listScenes()) {
+    scene.traverse((node) => {
+      const mesh = node.getMesh();
+      if (!mesh) return;
+      drawCalls += mesh.listPrimitives().length;
+      const batch = node.getExtension('EXT_mesh_gpu_instancing');
+      if (batch) {
+        const attribute = batch.getAttribute('TRANSLATION') ?? batch.getAttribute('ROTATION');
+        instanced.push({ mesh: mesh.getName(), count: attribute ? attribute.getCount() : 0 });
+      }
+    });
+  }
+  const variants = root
+    .listExtensionsUsed()
+    .filter((extension) => extension.extensionName === 'KHR_materials_variants')
+    .flatMap((extension) => extension.listProperties())
+    .filter((property) => property.propertyType === 'Variant')
+    .map((property) => property.getName());
   return {
     file: basename(file),
     bytes,
@@ -108,13 +138,21 @@ async function inspect(file) {
     meshes: meshes.length,
     primitives,
     triangles,
+    drawCalls,
     materials: materials.length,
     textures: textures.length,
     textureBytes: textures.reduce((sum, texture) => sum + texture.bytes, 0),
     lights,
     cameras: root.listCameras().length,
-    extensionsUsed: root.listExtensionsUsed().map((extension) => extension.extensionName),
-    detail: { nodes, meshes, materials, textures },
+    extensionsUsed,
+    checks: {
+      ktx2: `${textures.filter((texture) => texture.mime === 'image/ktx2').length}/${textures.length}`,
+      meshopt: extensionsUsed.includes('EXT_meshopt_compression'),
+      instancing: instanced,
+      specular: extensionsUsed.includes('KHR_materials_specular'),
+      variants,
+    },
+    detail: { nodes, meshes, materials, textures, instanced },
   };
 }
 
@@ -138,9 +176,21 @@ if (asJson) {
     const mb = (result.bytes / 1048576).toFixed(2);
     const textureMb = (result.textureBytes / 1048576).toFixed(2);
     console.log(
-      `${result.file}: ${mb} MB, ${result.nodes} nodes, ${result.meshes} meshes, ${result.primitives} primitives, ` +
-        `${result.triangles} triangles, ${result.materials} materials, ${result.textures} textures (${textureMb} MB), ` +
-        `${result.lights} lights, ${result.cameras} cameras, extensions [${result.extensionsUsed.join(', ')}]`,
+      `${result.file}: ${mb} MB, ${result.nodes} nodes, ${result.meshes} meshes, ` +
+        `${result.primitives} primitives, ` +
+        `${result.triangles} triangles, ${result.drawCalls} draw calls, ${result.materials} materials, ` +
+        `${result.textures} textures (${textureMb} MB), ` +
+        `${result.lights} lights, ${result.cameras} cameras, ` +
+        `extensions [${result.extensionsUsed.join(', ')}]`,
+    );
+    const instancing = result.checks.instancing.length
+      ? result.checks.instancing.map((batch) => `${batch.mesh} x${batch.count}`).join(', ')
+      : 'none';
+    const specular = result.checks.specular ? 'PRESENT' : 'absent';
+    console.log(
+      `    checks: ktx2 ${result.checks.ktx2}, meshopt ${result.checks.meshopt ? 'yes' : 'no'}, ` +
+        `instancing ${instancing}, KHR_materials_specular ${specular}, ` +
+        `variants [${result.checks.variants.join(', ')}]`,
     );
     for (const texture of result.detail.textures) {
       const size = texture.size ? `${texture.size.width}x${texture.size.height}` : '?';
