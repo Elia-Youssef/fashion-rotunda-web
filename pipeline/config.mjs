@@ -22,6 +22,16 @@ export const unrealEditorCmd = 'C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\B
 /** The user's Unreal project, read only: the export scripts run inside it and write outside it. */
 export const unrealProject = 'C:\\Users\\User\\Documents\\Unreal Projects\\FashionRotunda\\FashionRotunda.uproject';
 
+/**
+ * ffmpeg 8.1.1, the gyan.dev full build installed through winget, with libopus and the native aac
+ * encoder. Not the ffmpeg on PATH: that is an older build without libopus. ffprobe sits beside it.
+ */
+const ffmpegBin =
+  'C:\\Users\\User\\AppData\\Local\\Microsoft\\WinGet\\Packages\\' +
+  'Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1.1-full_build\\bin';
+export const ffmpegExe = ffmpegBin + '\\ffmpeg.exe';
+export const ffprobeExe = ffmpegBin + '\\ffprobe.exe';
+
 /** Scripted exports out of Unreal land here; reproducible, so never modified by hand. */
 export const sourceDir = resolve(root, 'assets-src', 'source');
 

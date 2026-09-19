@@ -27,6 +27,12 @@ body {
 
 header {
   grid-area: header;
+  /* The title on the left and, from G5.6, the music switch on the right: a row, so the switch never
+     pushes the title down or the canvas up. */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   padding: 0.5rem 0.75rem;
 }
 

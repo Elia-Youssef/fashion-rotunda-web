@@ -193,6 +193,10 @@ async function main(): Promise<void> {
 
   const badge = mountBadge(aside, { backend, gpuName, tier: null });
 
+  // The music switch (G5.6) mounts in the header here, before the content loads, so a
+  // visitor can press it while the room is still arriving; the music needs no scene.
+  // hook: music
+
   canvas.dataset.scene = 'loading';
 
   /** Null until the catalogue has arrived; the showroom owns the scene and the camera. */
