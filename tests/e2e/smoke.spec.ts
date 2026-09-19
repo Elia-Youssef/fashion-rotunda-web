@@ -9,7 +9,10 @@ type Backend = 'webgpu' | 'webgl2';
 const BACKEND_ATTRIBUTE = 'data-backend';
 const BACKEND_LOG_PREFIX = '[archviz] renderer backend:';
 const BACKEND_ATTRIBUTE_TIMEOUT = 30_000;
-const FIRST_FRAME_SETTLE_MS = 500;
+// The scene attribute reaches 'ready' on the first frame that has the look on the plinth. The
+// unoptimized content set is about 35 MB for the rotunda and the first look together, so the wait
+// is generous; it is a wait on a state, not a sleep.
+const SCENE_READY_TIMEOUT = 60_000;
 
 function expectedBackend(): Backend {
   return test.info().project.name === 'webgpu' ? 'webgpu' : 'webgl2';
@@ -63,10 +66,10 @@ test('draws something', async ({ page }) => {
     timeout: BACKEND_ATTRIBUTE_TIMEOUT,
   });
 
-  // One settle beat so a rendered frame is on screen, then read the pixels. The cube covers about
-  // a tenth of the frame, so the 2 percent floor catches a background-only canvas; it is not a
-  // target.
-  await page.waitForTimeout(FIRST_FRAME_SETTLE_MS);
+  // Wait for the scene rather than for a stopwatch: data-scene turns 'ready' in the frame that
+  // draws the look, so the pixels below are read from a frame that has the room on it. The
+  // 2 percent floor catches a background-only canvas; it is not a target.
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
   const stats = await canvasStats(canvas);
   expect(stats.distinctColours, 'distinct colours in the canvas frame').toBeGreaterThanOrEqual(2);
