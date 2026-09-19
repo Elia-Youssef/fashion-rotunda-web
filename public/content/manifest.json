@@ -1,0 +1,2178 @@
+{
+  "generated": "2026-09-19T18:37:32Z",
+  "sets": {
+    "full": {
+      "files": {
+        "looks/blue-silk-dress.glb": {
+          "bytes": 2109612,
+          "triangles": 116099,
+          "meshes": 3,
+          "nodes": 6,
+          "materials": 5,
+          "drawCalls": 3,
+          "textures": [
+            {
+              "name": "M_BlueSilk_BaseColor",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 395914,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "M_BlueSilk_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 54260,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_BlueSilk_Dress_NM",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 1238,
+              "gpuBytes": 5591007,
+              "floor": false
+            },
+            {
+              "name": "Material73835_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 41825,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "Material73835_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 91490,
+              "gpuBytes": 349438,
+              "floor": false
+            },
+            {
+              "name": "MI_BlueSilk_Mannequin_Base_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 35600,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_BlueSilk_Mannequin_Base_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 21648,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_BlueSilk_Mannequin_Base_Normal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 575894,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_BlueSilk_Mannequin_Base_Occlusion",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 93313,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_BlueSilk_Mannequin_Light_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 50785,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_BlueSilk_Mannequin_Dark_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 31902,
+              "gpuBytes": 698876,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 14501676,
+          "largestTexture": 2048,
+          "largestNonFloorTexture": 2048
+        },
+        "looks/geoffrey-beene.glb": {
+          "bytes": 3890596,
+          "triangles": 336973,
+          "meshes": 2,
+          "nodes": 4,
+          "materials": 4,
+          "drawCalls": 2,
+          "textures": [
+            {
+              "name": "MI_GeoffryBeene_Dress_BaseColor",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 280185,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "MI_GeoffryBeene_Dress_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 43164,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_GeoffryBeene_Dress_NM",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 1313,
+              "gpuBytes": 5591007,
+              "floor": false
+            },
+            {
+              "name": "MI_GeoffryBeene_Mannequin_Base_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 70833,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_GeoffryBeene_Mannequin_Base_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 42860,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_GeoffryBeene_Mannequin_Base_Normal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 666428,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_GeoffryBeene_Mannequin_Base_Occlusion",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 101733,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_GeoffryBeene_Mannequin_Light_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 81738,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_GeoffryBeene_Mannequin_Dark_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 63987,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_GeoffryBeene_Dress_ORM",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 1844,
+              "gpuBytes": 2795504,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 16773023,
+          "largestTexture": 2048,
+          "largestNonFloorTexture": 2048
+        },
+        "looks/jumpsuit-dress.glb": {
+          "bytes": 2307652,
+          "triangles": 126906,
+          "meshes": 2,
+          "nodes": 4,
+          "materials": 4,
+          "drawCalls": 2,
+          "textures": [
+            {
+              "name": "T_JumpSuit_Dress_NM",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 1313,
+              "gpuBytes": 5591007,
+              "floor": false
+            },
+            {
+              "name": "MI_JumpSuit_Mannequin_Base_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 79461,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_JumpSuit_Mannequin_Base_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 52718,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_JumpSuit_Mannequin_Base_Normal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 658390,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_JumpSuit_Mannequin_Base_Occlusion",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 122969,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_JumpSuit_Mannequin_Light_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 92767,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_JumpSuit_Mannequin_Dark_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 73547,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_JumpSuit_Dress_BC",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 442791,
+              "gpuBytes": 2795504,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 13278643,
+          "largestTexture": 2048,
+          "largestNonFloorTexture": 2048
+        },
+        "looks/mondrian-dress.glb": {
+          "bytes": 2246764,
+          "triangles": 71469,
+          "meshes": 2,
+          "nodes": 4,
+          "materials": 4,
+          "drawCalls": 2,
+          "textures": [
+            {
+              "name": "T_Mondrian_Dress_ORM",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 1844,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "T_Mondrian_Dress_NM",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 1313,
+              "gpuBytes": 5591007,
+              "floor": false
+            },
+            {
+              "name": "MI_Mondrian_Mannequin_Base_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 104903,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Mondrian_Mannequin_Base_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 67671,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Mondrian_Mannequin_Base_Normal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 827190,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_Mondrian_Mannequin_Base_Occlusion",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 149929,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Mondrian_Mannequin_Light_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 115085,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Mondrian_Mannequin_Dark_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 95229,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_Mondrian_Dress_BC",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 261953,
+              "gpuBytes": 2795504,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 16074147,
+          "largestTexture": 2048,
+          "largestNonFloorTexture": 2048
+        },
+        "looks/new-look-dress.glb": {
+          "bytes": 3170780,
+          "triangles": 320111,
+          "meshes": 2,
+          "nodes": 4,
+          "materials": 4,
+          "drawCalls": 2,
+          "textures": [
+            {
+              "name": "MI_NewLook_Dress_BaseColor",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 68089,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "T_NewLook_Dress_NM",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 1313,
+              "gpuBytes": 5591007,
+              "floor": false
+            },
+            {
+              "name": "MI_NewLook_Mannequin_Base_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 72846,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_NewLook_Mannequin_Base_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 46908,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_NewLook_Mannequin_Base_Normal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 670873,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_NewLook_Mannequin_Base_Occlusion",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 99810,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_NewLook_Mannequin_Light_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 79895,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_NewLook_Mannequin_Dark_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 62366,
+              "gpuBytes": 698876,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 13278643,
+          "largestTexture": 2048,
+          "largestNonFloorTexture": 2048
+        },
+        "looks/wallis-dress.glb": {
+          "bytes": 3250932,
+          "triangles": 322001,
+          "meshes": 2,
+          "nodes": 4,
+          "materials": 5,
+          "drawCalls": 3,
+          "textures": [
+            {
+              "name": "MI_WallisDressA_BaseColor",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 190392,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "T_Wallis_Dress_NM",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 1313,
+              "gpuBytes": 5591007,
+              "floor": false
+            },
+            {
+              "name": "MI_WallisDress_Mannequin_Base_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 79355,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_WallisDress_Mannequin_Base_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 72844,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_WallisDress_Mannequin_Base_Normal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 212485,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_WallisDress_Mannequin_Base_Occlusion",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 116487,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_WallisDress_Mannequin_Light_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 96203,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_WallisDress_Mannequin_Light_Normal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 566456,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_WallisDress_Mannequin_Dark_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 77398,
+              "gpuBytes": 698876,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 14676395,
+          "largestTexture": 2048,
+          "largestNonFloorTexture": 2048
+        },
+        "looks/zoot-suit.glb": {
+          "bytes": 4922068,
+          "triangles": 155453,
+          "meshes": 3,
+          "nodes": 6,
+          "materials": 5,
+          "drawCalls": 3,
+          "textures": [
+            {
+              "name": "MI_ZootSuit_BaseColor",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 509299,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "T_ZootSuit_ORM",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 1844,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "T_ZootSuit_Hat_ORM",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 1284,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_ZootSuit_Hat_NM",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 912,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_ZootSuit_Mannequin_Base_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 83682,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_ZootSuit_Mannequin_Base_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 1286,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_ZootSuit_Mannequin_Base_Normal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 693198,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_ZootSuit_Mannequin_Base_Occlusion",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 120082,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_ZootSuit_Mannequin_Light_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 89960,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_ZootSuit_Mannequin_Dark_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 71405,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_ZootSuit_NM",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 1981570,
+              "gpuBytes": 5591007,
+              "floor": false
+            },
+            {
+              "name": "T_ZootSuit_Hat_BC",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 347448,
+              "gpuBytes": 2795504,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 20966279,
+          "largestTexture": 2048,
+          "largestNonFloorTexture": 2048
+        },
+        "plinth.glb": {
+          "bytes": 1126464,
+          "triangles": 422,
+          "meshes": 1,
+          "nodes": 1,
+          "materials": 1,
+          "drawCalls": 1,
+          "textures": [
+            {
+              "name": "MI_Pedestal_Main_BaseColor",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 220614,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "MI_Pedestal_Main_MetallicRoughness",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 276850,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "MI_Pedestal_Main_Normal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 583305,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_Pedestal_Main_Occlusion",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 38019,
+              "gpuBytes": 2795504,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 9784264,
+          "largestTexture": 2048,
+          "largestNonFloorTexture": 2048
+        },
+        "rotunda.glb": {
+          "bytes": 7095496,
+          "triangles": 69124,
+          "meshes": 10,
+          "nodes": 28,
+          "materials": 9,
+          "drawCalls": 36,
+          "textures": [
+            {
+              "name": "MI_Quartzite_White_Vert_BaseColor",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 165240,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "MI_Quartzite_White_Vert_MetallicRoughness",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 122511,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "MI_Quartzite_White_Vert_Normal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 395340,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_Quartzite_White_Vert_Occlusion",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 159997,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "MI_Marble_Nero_Base_BaseColor",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 393611,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "MI_Marble_Nero_Base_MetallicRoughness",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 126236,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "MI_Marble_Nero_Base_Occlusion",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 322874,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "MI_Marble_Nero_Base_ClearCoatNormal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 19194,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_Metal_Brass_02_BaseColor",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 77230,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "MI_Metal_Brass_02_MetallicRoughness",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 30919,
+              "gpuBytes": 2795504,
+              "floor": false
+            },
+            {
+              "name": "MI_Metal_Brass_02_Normal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 102366,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_Quartzite_White_Base_BaseColor",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 496943,
+              "gpuBytes": 2795504,
+              "floor": true
+            },
+            {
+              "name": "MI_Quartzite_White_Base_MetallicRoughness",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 106145,
+              "gpuBytes": 2795504,
+              "floor": true
+            },
+            {
+              "name": "MI_Quartzite_White_Base_Normal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 389477,
+              "gpuBytes": 1397752,
+              "floor": true
+            },
+            {
+              "name": "MI_Quartzite_White_Base_Occlusion",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 145285,
+              "gpuBytes": 2795504,
+              "floor": true
+            },
+            {
+              "name": "MI_Marble_Nero_Vert_BaseColor",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 611634,
+              "gpuBytes": 2795504,
+              "floor": true
+            },
+            {
+              "name": "MI_Marble_Nero_Vert_MetallicRoughness",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 99616,
+              "gpuBytes": 2795504,
+              "floor": true
+            },
+            {
+              "name": "MI_Marble_Nero_Vert_Occlusion",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 335159,
+              "gpuBytes": 2795504,
+              "floor": true
+            },
+            {
+              "name": "MI_Marble_Nero_Vert_ClearCoatNormal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 158428,
+              "gpuBytes": 1397752,
+              "floor": true
+            },
+            {
+              "name": "MI_Quartzite_BlueFusion_BaseColor",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 367710,
+              "gpuBytes": 2795504,
+              "floor": true
+            },
+            {
+              "name": "MI_Quartzite_BlueFusion_MetallicRoughness",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 113978,
+              "gpuBytes": 2795504,
+              "floor": true
+            },
+            {
+              "name": "MI_Quartzite_BlueFusion_Normal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 249933,
+              "gpuBytes": 1397752,
+              "floor": true
+            },
+            {
+              "name": "MI_Quartzite_BlueFusion_Occlusion",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 392785,
+              "gpuBytes": 2795504,
+              "floor": true
+            },
+            {
+              "name": "MI_Marble_SilverWave_BaseColor",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 435841,
+              "gpuBytes": 2795504,
+              "floor": true
+            },
+            {
+              "name": "MI_Marble_SilverWave_MetallicRoughness",
+              "width": 2048,
+              "height": 2048,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 41608,
+              "gpuBytes": 2795504,
+              "floor": true
+            }
+          ],
+          "gpuBytes": 61501088,
+          "largestTexture": 2048,
+          "largestNonFloorTexture": 2048
+        }
+      },
+      "totals": {
+        "bytes": 30120364,
+        "gpuBytes": 180834158,
+        "triangles": 1518558
+      }
+    },
+    "half": {
+      "files": {
+        "looks/blue-silk-dress.glb": {
+          "bytes": 1263888,
+          "triangles": 116099,
+          "meshes": 3,
+          "nodes": 6,
+          "materials": 5,
+          "drawCalls": 3,
+          "textures": [
+            {
+              "name": "M_BlueSilk_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 114637,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "M_BlueSilk_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 54260,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_BlueSilk_Dress_NM",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 845,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "Material73835_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 41825,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "Material73835_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 91490,
+              "gpuBytes": 349438,
+              "floor": false
+            },
+            {
+              "name": "MI_BlueSilk_Mannequin_Base_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 14666,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_BlueSilk_Mannequin_Base_MetallicRoughness",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 9709,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_BlueSilk_Mannequin_Base_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 150641,
+              "gpuBytes": 349438,
+              "floor": false
+            },
+            {
+              "name": "MI_BlueSilk_Mannequin_Base_Occlusion",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 36341,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_BlueSilk_Mannequin_Light_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 20446,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_BlueSilk_Mannequin_Dark_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 13293,
+              "gpuBytes": 174719,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 4542694,
+          "largestTexture": 1024,
+          "largestNonFloorTexture": 1024
+        },
+        "looks/geoffrey-beene.glb": {
+          "bytes": 1269432,
+          "triangles": 119999,
+          "meshes": 2,
+          "nodes": 4,
+          "materials": 4,
+          "drawCalls": 2,
+          "textures": [
+            {
+              "name": "MI_GeoffryBeene_Dress_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 95530,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_GeoffryBeene_Dress_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 43164,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_GeoffryBeene_Dress_NM",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 912,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_GeoffryBeene_Mannequin_Base_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 29333,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_GeoffryBeene_Mannequin_Base_MetallicRoughness",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 19385,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_GeoffryBeene_Mannequin_Base_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 178589,
+              "gpuBytes": 349438,
+              "floor": false
+            },
+            {
+              "name": "MI_GeoffryBeene_Mannequin_Base_Occlusion",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 38386,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_GeoffryBeene_Mannequin_Light_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 33000,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_GeoffryBeene_Mannequin_Dark_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 26671,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "T_GeoffryBeene_Dress_ORM",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 1284,
+              "gpuBytes": 698876,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 4717413,
+          "largestTexture": 1024,
+          "largestNonFloorTexture": 1024
+        },
+        "looks/jumpsuit-dress.glb": {
+          "bytes": 1224896,
+          "triangles": 119999,
+          "meshes": 2,
+          "nodes": 4,
+          "materials": 4,
+          "drawCalls": 2,
+          "textures": [
+            {
+              "name": "T_JumpSuit_Dress_NM",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 912,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_JumpSuit_Mannequin_Base_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 32218,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_JumpSuit_Mannequin_Base_MetallicRoughness",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 22801,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_JumpSuit_Mannequin_Base_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 172438,
+              "gpuBytes": 349438,
+              "floor": false
+            },
+            {
+              "name": "MI_JumpSuit_Mannequin_Base_Occlusion",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 44112,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_JumpSuit_Mannequin_Light_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 36146,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_JumpSuit_Mannequin_Dark_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 30131,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "T_JumpSuit_Dress_BC",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 136910,
+              "gpuBytes": 698876,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 3319661,
+          "largestTexture": 1024,
+          "largestNonFloorTexture": 1024
+        },
+        "looks/mondrian-dress.glb": {
+          "bytes": 1120896,
+          "triangles": 71469,
+          "meshes": 2,
+          "nodes": 4,
+          "materials": 4,
+          "drawCalls": 2,
+          "textures": [
+            {
+              "name": "T_Mondrian_Dress_ORM",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 1284,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_Mondrian_Dress_NM",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 912,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_Mondrian_Mannequin_Base_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 39525,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_Mondrian_Mannequin_Base_MetallicRoughness",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 27208,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_Mondrian_Mannequin_Base_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 219151,
+              "gpuBytes": 349438,
+              "floor": false
+            },
+            {
+              "name": "MI_Mondrian_Mannequin_Base_Occlusion",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 50329,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_Mondrian_Mannequin_Light_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 41855,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_Mondrian_Mannequin_Dark_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 36134,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "T_Mondrian_Dress_BC",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 82881,
+              "gpuBytes": 698876,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 4018537,
+          "largestTexture": 1024,
+          "largestNonFloorTexture": 1024
+        },
+        "looks/new-look-dress.glb": {
+          "bytes": 1191428,
+          "triangles": 119998,
+          "meshes": 2,
+          "nodes": 4,
+          "materials": 4,
+          "drawCalls": 2,
+          "textures": [
+            {
+              "name": "MI_NewLook_Dress_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 32173,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_NewLook_Dress_NM",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 912,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_NewLook_Mannequin_Base_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 30550,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_NewLook_Mannequin_Base_MetallicRoughness",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 20904,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_NewLook_Mannequin_Base_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 178016,
+              "gpuBytes": 349438,
+              "floor": false
+            },
+            {
+              "name": "MI_NewLook_Mannequin_Base_Occlusion",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 38439,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_NewLook_Mannequin_Light_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 32661,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_NewLook_Mannequin_Dark_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 26217,
+              "gpuBytes": 174719,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 3319661,
+          "largestTexture": 1024,
+          "largestNonFloorTexture": 1024
+        },
+        "looks/wallis-dress.glb": {
+          "bytes": 1245288,
+          "triangles": 119990,
+          "meshes": 2,
+          "nodes": 4,
+          "materials": 5,
+          "drawCalls": 3,
+          "textures": [
+            {
+              "name": "MI_WallisDressA_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 69894,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_Wallis_Dress_NM",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 912,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_WallisDress_Mannequin_Base_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 32709,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_WallisDress_Mannequin_Base_MetallicRoughness",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 28711,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_WallisDress_Mannequin_Base_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 79953,
+              "gpuBytes": 349438,
+              "floor": false
+            },
+            {
+              "name": "MI_WallisDress_Mannequin_Base_Occlusion",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 42089,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_WallisDress_Mannequin_Light_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 36851,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_WallisDress_Mannequin_Light_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 152971,
+              "gpuBytes": 349438,
+              "floor": false
+            },
+            {
+              "name": "MI_WallisDress_Mannequin_Dark_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 31056,
+              "gpuBytes": 174719,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 3669099,
+          "largestTexture": 1024,
+          "largestNonFloorTexture": 1024
+        },
+        "looks/zoot-suit.glb": {
+          "bytes": 1884100,
+          "triangles": 119993,
+          "meshes": 3,
+          "nodes": 6,
+          "materials": 5,
+          "drawCalls": 3,
+          "textures": [
+            {
+              "name": "MI_ZootSuit_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 143008,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_ZootSuit_ORM",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 1284,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_ZootSuit_Hat_ORM",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 1284,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "T_ZootSuit_Hat_NM",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 912,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "MI_ZootSuit_Mannequin_Base_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 32411,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_ZootSuit_Mannequin_Base_MetallicRoughness",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 982,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_ZootSuit_Mannequin_Base_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 188668,
+              "gpuBytes": 349438,
+              "floor": false
+            },
+            {
+              "name": "MI_ZootSuit_Mannequin_Base_Occlusion",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 42280,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_ZootSuit_Mannequin_Light_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 35075,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "MI_ZootSuit_Mannequin_Dark_BaseColor",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 28703,
+              "gpuBytes": 174719,
+              "floor": false
+            },
+            {
+              "name": "T_ZootSuit_NM",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 479444,
+              "gpuBytes": 1397752,
+              "floor": false
+            },
+            {
+              "name": "T_ZootSuit_Hat_BC",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 88684,
+              "gpuBytes": 698876,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 6814041,
+          "largestTexture": 1024,
+          "largestNonFloorTexture": 1024
+        },
+        "plinth.glb": {
+          "bytes": 361768,
+          "triangles": 422,
+          "meshes": 1,
+          "nodes": 1,
+          "materials": 1,
+          "drawCalls": 1,
+          "textures": [
+            {
+              "name": "MI_Pedestal_Main_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 83570,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Pedestal_Main_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 92899,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Pedestal_Main_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 160358,
+              "gpuBytes": 349438,
+              "floor": false
+            },
+            {
+              "name": "MI_Pedestal_Main_Occlusion",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 17278,
+              "gpuBytes": 698876,
+              "floor": false
+            }
+          ],
+          "gpuBytes": 2446066,
+          "largestTexture": 1024,
+          "largestNonFloorTexture": 1024
+        },
+        "rotunda.glb": {
+          "bytes": 2784480,
+          "triangles": 69124,
+          "meshes": 10,
+          "nodes": 28,
+          "materials": 9,
+          "drawCalls": 36,
+          "textures": [
+            {
+              "name": "MI_Quartzite_White_Vert_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 62433,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Quartzite_White_Vert_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 35807,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Quartzite_White_Vert_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 25691,
+              "gpuBytes": 349438,
+              "floor": false
+            },
+            {
+              "name": "MI_Quartzite_White_Vert_Occlusion",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 44985,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Marble_Nero_Base_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 141350,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Marble_Nero_Base_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 32452,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Marble_Nero_Base_Occlusion",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 94425,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Marble_Nero_Base_ClearCoatNormal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 1286,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Metal_Brass_02_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 31883,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Metal_Brass_02_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 9050,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Metal_Brass_02_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 20181,
+              "gpuBytes": 349438,
+              "floor": false
+            },
+            {
+              "name": "MI_Quartzite_White_Base_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 130151,
+              "gpuBytes": 698876,
+              "floor": true
+            },
+            {
+              "name": "MI_Quartzite_White_Base_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 27804,
+              "gpuBytes": 698876,
+              "floor": true
+            },
+            {
+              "name": "MI_Quartzite_White_Base_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 25470,
+              "gpuBytes": 349438,
+              "floor": true
+            },
+            {
+              "name": "MI_Quartzite_White_Base_Occlusion",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 41603,
+              "gpuBytes": 698876,
+              "floor": true
+            },
+            {
+              "name": "MI_Marble_Nero_Vert_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 166456,
+              "gpuBytes": 698876,
+              "floor": true
+            },
+            {
+              "name": "MI_Marble_Nero_Vert_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 29009,
+              "gpuBytes": 698876,
+              "floor": true
+            },
+            {
+              "name": "MI_Marble_Nero_Vert_Occlusion",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 97684,
+              "gpuBytes": 698876,
+              "floor": true
+            },
+            {
+              "name": "MI_Marble_Nero_Vert_ClearCoatNormal",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 1286,
+              "gpuBytes": 698876,
+              "floor": false
+            },
+            {
+              "name": "MI_Quartzite_BlueFusion_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 133450,
+              "gpuBytes": 698876,
+              "floor": true
+            },
+            {
+              "name": "MI_Quartzite_BlueFusion_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 32611,
+              "gpuBytes": 698876,
+              "floor": true
+            },
+            {
+              "name": "MI_Quartzite_BlueFusion_Normal",
+              "width": 512,
+              "height": 512,
+              "format": "ktx2-uastc",
+              "colorSpace": "linear",
+              "bytes": 100225,
+              "gpuBytes": 349438,
+              "floor": true
+            },
+            {
+              "name": "MI_Quartzite_BlueFusion_Occlusion",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 116000,
+              "gpuBytes": 698876,
+              "floor": true
+            },
+            {
+              "name": "MI_Marble_SilverWave_BaseColor",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "srgb",
+              "bytes": 144225,
+              "gpuBytes": 698876,
+              "floor": true
+            },
+            {
+              "name": "MI_Marble_SilverWave_MetallicRoughness",
+              "width": 1024,
+              "height": 1024,
+              "format": "ktx2-etc1s",
+              "colorSpace": "linear",
+              "bytes": 10690,
+              "gpuBytes": 698876,
+              "floor": true
+            }
+          ],
+          "gpuBytes": 16074148,
+          "largestTexture": 1024,
+          "largestNonFloorTexture": 1024
+        }
+      },
+      "totals": {
+        "bytes": 12346176,
+        "gpuBytes": 48921320,
+        "triangles": 857093
+      }
+    }
+  },
+  "errors": []
+}
