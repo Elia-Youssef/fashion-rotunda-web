@@ -6,6 +6,8 @@
 import { Color, Mesh, PerspectiveCamera, Scene } from 'three/webgpu';
 import type { Material } from 'three/webgpu';
 
+import { mountCamera } from './camera/mount';
+import type { CameraMount } from './camera/mount';
 import { contentUrl, loadCatalog } from './catalog/catalog';
 import type { Catalog, CatalogLook } from './catalog/catalog';
 import { composeLighting, enableShadows } from './lighting/compose';
@@ -295,9 +297,12 @@ async function main(): Promise<void> {
   }
   applyResolution();
 
+  // Null until the showroom has loaded; then it drives the orbit, the turntable and the loop.
+  let cameraMount: CameraMount | null = null;
   const frames = new FrameTimes();
   const loop = createLoop({
-    render: () => {
+    render: (dtMs) => {
+      cameraMount?.update(dtMs);
       drawFrame();
     },
     frameCap: isTouch ? settings.frameCapTouch : null,
@@ -330,6 +335,11 @@ async function main(): Promise<void> {
     }
     sleepTimer = window.setTimeout(() => {
       sleepTimer = null;
+      // The camera owns the loop while it glides or turns, and it switches the loop off itself
+      // once both are still; the wake window must not cut a motion that is still running short.
+      if (cameraMount?.moving === true) {
+        return;
+      }
       loop.setAnimating(false);
     }, WAKE_MS);
   }
@@ -446,15 +456,31 @@ async function main(): Promise<void> {
     // Hooks. Each later feature adds exactly one call here, against the handles above: the camera
     // (G4.1, G4.4) mounts its controls on the canvas and the loop, the chrome (G5.1, G5.2)
     // mounts the catalogue strip and the product card in the side panel. Nothing else changes here.
-    // hook: camera
+    const cameraHandle = mountCamera({
+      camera: showroom.camera,
+      canvas,
+      showroom,
+      loop,
+      proofView: catalog.views.proof,
+    });
+    cameraMount = cameraHandle;
     mountChrome({
       catalog,
       contentBase: base,
       stripRoot: requireElement('#looks', 'looks strip'),
       cardRoot: aside,
       showroom,
-      onRotateToggle: () => false,
-      onResetCamera: () => undefined,
+      onRotateToggle: () => {
+        cameraHandle.turntable.toggle();
+        return cameraHandle.turntable.running;
+      },
+      onResetCamera: () => {
+        // The yaw goes back before the stop, so the stop's own sync finds nothing to rewrite;
+        // the card has already put the look at zero.
+        cameraHandle.turntable.setYaw(0);
+        cameraHandle.turntable.stop();
+        cameraHandle.orbit.reset();
+      },
       onChange: () => {
         publishSceneState();
         loop.invalidate();
