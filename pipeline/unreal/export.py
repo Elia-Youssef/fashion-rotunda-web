@@ -88,10 +88,15 @@ def plain(value):
     return str(value)
 
 
-def make_options(lod=0, bake=None):
+def make_options(lod=0, bake=None, source=False):
     """Export options. `bake` fixes the baked texture size in pixels; None lets the exporter pick it from
-    the textures a material uses, which gave the level's tiled marble materials only 1024 pixels."""
+    the textures a material uses, which gave the level's tiled marble materials only 1024 pixels.
+    `source` exports the source model instead of the render data: for a Nanite mesh the render LOD 0 is
+    Unreal's own decimated fallback, built for each mesh on its own, and a dress fallback and a mannequin
+    fallback decimated apart let the mannequin poke through the dress (user diagnosis, 2026-09-19).
+    Garments and mannequins therefore export as authored; any reduction happens in the pipeline."""
     options = unreal.GLTFExportOptions()
+    options.set_editor_property("export_source_model", source)
     if bake is not None:
         size = unreal.GLTFMaterialBakeSize()
         size.set_editor_property("x", bake)
@@ -300,15 +305,18 @@ def main():
         for mesh_path in meshes:
             mesh = EAL.load_asset(mesh_path)
             mesh_name = asset_name(mesh_path)
+            counts = [mesh.get_num_triangles(i) for i in range(mesh.get_num_lods())]
+            nanite = bool(mesh.get_editor_property("nanite_settings").enabled)
             if "mannequin" in mesh_name.lower():
                 path = os.path.join(folder, "mannequin.glb")
-                entry = export_gltf(mesh, path, make_options(0), label=f"{slug} mannequin")
-                look["mannequin"] = {"asset": mesh_path, "file": path, "triangles": mesh.get_num_triangles(0), "ok": entry["ok"]}
+                entry = export_gltf(mesh, path, make_options(0, source=True), label=f"{slug} mannequin source")
+                look["mannequin"] = {"asset": mesh_path, "file": path, "source_model": True, "nanite": nanite,
+                                     "render_triangles_per_lod": counts, "ok": entry["ok"]}
             else:
-                lod, counts = pick_lod(mesh, GARMENT_BUDGET)
                 path = os.path.join(folder, f"{mesh_name}.glb")
-                entry = export_gltf(mesh, path, make_options(lod), label=f"{slug} {mesh_name} lod{lod}")
-                look["garments"].append({"asset": mesh_path, "file": path, "lod": lod, "triangles_per_lod": counts, "ok": entry["ok"]})
+                entry = export_gltf(mesh, path, make_options(0, source=True), label=f"{slug} {mesh_name} source")
+                look["garments"].append({"asset": mesh_path, "file": path, "source_model": True, "nanite": nanite,
+                                         "render_triangles_per_lod": counts, "budget": GARMENT_BUDGET, "ok": entry["ok"]})
         for swatch_path in swatches:
             variant = asset_name(swatch_path).split("_")[-1].lower()
             material = EAL.load_asset(swatch_path)
