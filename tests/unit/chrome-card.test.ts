@@ -1,0 +1,240 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import type { CatalogLook } from '../../src/catalog/catalog';
+import { mountProductCard } from '../../src/ui/product-card';
+import type { ProductCardActions, ProductCardHandle } from '../../src/ui/product-card';
+
+function makeLook(id: string, name: string, variants: string[]): CatalogLook {
+  return {
+    id,
+    name,
+    description: `${name} description`,
+    thumbnail: `thumbs/${id}.jpg`,
+    file: `looks/${id}.glb`,
+    audio: null,
+    variants,
+    defaultVariant: variants[0],
+    mannequinNode: 'mannequin',
+  };
+}
+
+const LOOK = makeLook('wallis-dress', 'Wallis Dress', ['base', 'light', 'dark']);
+const OTHER = makeLook('zoot-suit', 'Zoot Suit', ['base', 'light', 'dark']);
+
+let root: HTMLElement;
+let card: ProductCardHandle | null = null;
+
+beforeEach(() => {
+  root = document.createElement('aside');
+  document.body.appendChild(root);
+});
+
+afterEach(() => {
+  card?.dispose();
+  card = null;
+  root.remove();
+});
+
+function actions(): ProductCardActions {
+  return {
+    rotate: vi.fn(),
+    audio: vi.fn(),
+    reset: vi.fn(),
+    material: vi.fn(),
+  };
+}
+
+interface MountOverrides {
+  look?: CatalogLook | null;
+  variant?: string | null;
+  handlers?: ProductCardActions;
+}
+
+function mount(overrides: MountOverrides = {}): ProductCardHandle {
+  card = mountProductCard(root, {
+    look: 'look' in overrides ? overrides.look : LOOK,
+    variant: overrides.variant ?? 'base',
+    thumbnailUrl: (look: CatalogLook): string => `/content/${look.thumbnail ?? ''}`,
+    actions: overrides.handlers ?? actions(),
+  });
+  return card;
+}
+
+function button(label: string): HTMLButtonElement {
+  const found = [...root.querySelectorAll<HTMLButtonElement>('.product-card__action')].find(
+    (candidate) => candidate.textContent === label,
+  );
+  if (!found) throw new Error(`no ${label} button`);
+  return found;
+}
+
+function swatch(variant: string): HTMLButtonElement {
+  const found = root.querySelector<HTMLButtonElement>(
+    `.product-card__swatch[aria-label="${variant}"]`,
+  );
+  if (!found) throw new Error(`no swatch for ${variant}`);
+  return found;
+}
+
+function swatchNames(): string[] {
+  return [...root.querySelectorAll('.product-card__swatch')].map(
+    (element) => element.getAttribute('aria-label') ?? '',
+  );
+}
+
+describe('mountProductCard', () => {
+  it('renders the name, the description and the thumbnail', () => {
+    mount();
+    const heading = root.querySelector('.product-card h2');
+    expect(heading?.textContent).toBe('Wallis Dress');
+    const text = root.querySelector('.product-card p');
+    expect(text?.textContent).toBe('Wallis Dress description');
+    const image = root.querySelector<HTMLImageElement>('.product-card__thumb');
+    expect(image?.getAttribute('src')).toBe('/content/thumbs/wallis-dress.jpg');
+    expect(image?.alt).toBe('Wallis Dress');
+  });
+
+  it('prepends the card, so it lands above what the panel already held', () => {
+    const existing = document.createElement('div');
+    root.appendChild(existing);
+    mount();
+    expect(root.firstElementChild?.classList.contains('product-card')).toBe(true);
+    expect(root.lastElementChild).toBe(existing);
+  });
+
+  it('renders the four actions as buttons in one row', () => {
+    mount();
+    const row = root.querySelector('.product-card__actions');
+    expect(row?.getAttribute('role')).toBe('group');
+    const labels = [...(row?.querySelectorAll('button') ?? [])].map(
+      (element) => element.textContent,
+    );
+    expect(labels).toEqual(['Rotate', 'Audio', 'Reset', 'Material']);
+  });
+
+  it('renders one radio per variant, in the look order, the given one checked', () => {
+    mount({ variant: 'light' });
+    const group = root.querySelector('.product-card__swatches');
+    expect(group?.getAttribute('role')).toBe('radiogroup');
+    expect(group?.getAttribute('aria-label')).toBe('Mannequin material');
+    expect(swatchNames()).toEqual(['base', 'light', 'dark']);
+    expect(swatch('light').getAttribute('aria-checked')).toBe('true');
+    expect(swatch('base').getAttribute('aria-checked')).toBe('false');
+    expect(swatch('light').className).toContain('product-card__swatch--light');
+  });
+
+  it('leaves an honest empty card for a null look', () => {
+    mount({ look: null, variant: null });
+    expect(root.querySelector('.product-card h2')?.textContent).toBe('');
+    expect(root.querySelector('.product-card p')?.textContent).toBe(
+      'No look on the plinth yet.',
+    );
+    expect(root.querySelectorAll('.product-card__swatch')).toHaveLength(0);
+  });
+
+  it('starts with the swatch row open and the Material button expanded', () => {
+    mount();
+    const row = root.querySelector<HTMLElement>('.product-card__swatches');
+    expect(row?.hidden).toBe(false);
+    expect(button('Material').getAttribute('aria-expanded')).toBe('true');
+    expect(button('Material').getAttribute('aria-controls')).toBe(
+      root.querySelector('.product-card__swatches')?.id,
+    );
+  });
+});
+
+describe('ProductCardHandle.setVariant', () => {
+  it('moves the check and clears it with null', () => {
+    const handle = mount();
+    handle.setVariant('dark');
+    expect(swatch('dark').getAttribute('aria-checked')).toBe('true');
+    expect(swatch('base').getAttribute('aria-checked')).toBe('false');
+    handle.setVariant(null);
+    for (const name of ['base', 'light', 'dark']) {
+      expect(swatch(name).getAttribute('aria-checked')).toBe('false');
+    }
+  });
+});
+
+describe('ProductCardHandle.setRotating', () => {
+  it('drives aria-pressed on the Rotate button', () => {
+    const handle = mount();
+    handle.setRotating(true);
+    expect(button('Rotate').getAttribute('aria-pressed')).toBe('true');
+    handle.setRotating(false);
+    expect(button('Rotate').getAttribute('aria-pressed')).toBe('false');
+  });
+});
+
+describe('ProductCardHandle.setAudioAvailable', () => {
+  it('disables the Audio button and lets it come back', () => {
+    const handle = mount();
+    handle.setAudioAvailable(false);
+    expect(button('Audio').disabled).toBe(true);
+    handle.setAudioAvailable(true);
+    expect(button('Audio').disabled).toBe(false);
+  });
+});
+
+describe('ProductCardHandle.setLook', () => {
+  it('re-renders the name, the text, the thumbnail and the swatches', () => {
+    const handle = mount();
+    handle.setLook(OTHER, 'dark');
+    expect(root.querySelector('.product-card h2')?.textContent).toBe('Zoot Suit');
+    expect(root.querySelector('.product-card p')?.textContent).toBe('Zoot Suit description');
+    expect(root.querySelector<HTMLImageElement>('.product-card__thumb')?.getAttribute('src')).toBe(
+      '/content/thumbs/zoot-suit.jpg',
+    );
+    expect(swatch('dark').getAttribute('aria-checked')).toBe('true');
+  });
+});
+
+describe('the card reporting actions', () => {
+  it('reports Rotate, Audio and Reset through their own buttons', () => {
+    const handlers = actions();
+    mount({ handlers });
+    button('Rotate').click();
+    expect(handlers.rotate).toHaveBeenCalledTimes(1);
+    button('Audio').click();
+    expect(handlers.audio).toHaveBeenCalledTimes(1);
+    button('Reset').click();
+    expect(handlers.reset).toHaveBeenCalledTimes(1);
+    expect(handlers.material).not.toHaveBeenCalled();
+  });
+
+  it('reports a swatch click with the variant name', () => {
+    const handlers = actions();
+    mount({ handlers });
+    swatch('dark').click();
+    expect(handlers.material).toHaveBeenCalledTimes(1);
+    expect(handlers.material).toHaveBeenCalledWith('dark');
+  });
+
+  it('keeps the Material button to the card: it opens the row, it reports nothing', () => {
+    const handlers = actions();
+    mount({ handlers });
+    button('Material').click();
+    expect(handlers.rotate).not.toHaveBeenCalled();
+    expect(handlers.audio).not.toHaveBeenCalled();
+    expect(handlers.reset).not.toHaveBeenCalled();
+    expect(handlers.material).not.toHaveBeenCalled();
+    expect(root.querySelector<HTMLElement>('.product-card__swatches')?.hidden).toBe(false);
+  });
+});
+
+describe('ProductCardHandle.dispose', () => {
+  it('empties the root and stops the buttons from reporting', () => {
+    const handlers = actions();
+    const handle = mount({ handlers });
+    const dark = swatch('dark');
+    const rotate = button('Rotate');
+    handle.dispose();
+    card = null;
+    expect(root.childElementCount).toBe(0);
+    dark.click();
+    rotate.click();
+    expect(handlers.material).not.toHaveBeenCalled();
+    expect(handlers.rotate).not.toHaveBeenCalled();
+  });
+});

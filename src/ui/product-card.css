@@ -1,0 +1,124 @@
+/* The product card component. Compact on purpose: the side panel scrolls, and the light panel
+   below has to stay reachable, so the thumbnail is 96 px and the text sits at 0.8 rem. */
+
+.product-card {
+  display: grid;
+  gap: 0.5rem;
+  max-width: 24rem;
+  margin: 0.5rem 0.75rem;
+  padding: 0.5rem;
+  border: 1px solid #3a4048;
+  border-radius: 4px;
+}
+
+.product-card__head {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem;
+  align-items: start;
+}
+
+.product-card__thumb,
+.product-card__thumb-empty {
+  grid-row: 1;
+  grid-column: 1;
+  width: 96px;
+  height: 96px;
+  border-radius: 4px;
+}
+
+.product-card__thumb {
+  display: block;
+  object-fit: cover;
+  background: #1a1e23;
+}
+
+.product-card__thumb-empty {
+  background: #1a1e23;
+}
+
+.product-card__name {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.product-card__description {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  color: #9aa2ab;
+  overflow-wrap: anywhere;
+}
+
+.product-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.product-card__action {
+  padding: 0.25rem 0.6rem;
+  border: 1px solid #3a4048;
+  border-radius: 4px;
+  background: #101214;
+  color: #e6e8ea;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.product-card__action:disabled {
+  color: #5a6068;
+  cursor: default;
+}
+
+/* The turntable is on: the pressed Rotate button carries the same border as the active thumbnail. */
+.product-card__action[aria-pressed='true'] {
+  border-color: #e6e8ea;
+}
+
+.product-card__swatches {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+
+/* One class per variant name, in the tone the Unreal original gives each swatch. The bare rule is
+   the fallback for a name the CSS does not carry a tone for. The border reads 5.9:1 against the
+   #101214 panel, so the dark swatch keeps a visible edge; the prior #3a4048 measured 1.8:1, no
+   perceivable edge at all. */
+.product-card__swatch {
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 1px solid #8a9096;
+  border-radius: 50%;
+  background: #8a9096;
+  cursor: pointer;
+}
+
+.product-card__swatch--light {
+  background: #e6e8ea;
+}
+
+.product-card__swatch--base {
+  background: #8a9096;
+}
+
+.product-card__swatch--dark {
+  background: #23262a;
+}
+
+/* The swatch on the plinth: the ring that says which mannequin is standing there. A box-shadow,
+   not an outline, so it reads as a different ring from :focus-visible below; sharing the outline
+   property meant tabbing onto an unchecked swatch looked exactly like the checked one. */
+.product-card__swatch[aria-checked='true'] {
+  box-shadow: 0 0 0 2px #101214, 0 0 0 4px #e6e8ea;
+}
+
+.product-card__action:focus-visible,
+.product-card__swatch:focus-visible {
+  outline: 2px solid #e6e8ea;
+  outline-offset: 2px;
+}

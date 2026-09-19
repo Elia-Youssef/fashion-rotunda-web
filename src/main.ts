@@ -25,6 +25,7 @@ import type { TierInput } from './tiers/decide';
 import { TIERS } from './tiers/table';
 import type { TierName } from './tiers/table';
 import { mountBadge } from './ui/badge';
+import { mountChrome } from './ui/chrome';
 
 /** What the scene is made of, as the e2e suite reads it. Material names are three.js type strings. */
 interface SceneDescription {
@@ -446,7 +447,19 @@ async function main(): Promise<void> {
     // (G4.1, G4.4) mounts its controls on the canvas and the loop, the chrome (G5.1, G5.2)
     // mounts the catalogue strip and the product card in the side panel. Nothing else changes here.
     // hook: camera
-    // hook: chrome
+    mountChrome({
+      catalog,
+      contentBase: base,
+      stripRoot: requireElement('#looks', 'looks strip'),
+      cardRoot: aside,
+      showroom,
+      onRotateToggle: () => false,
+      onResetCamera: () => undefined,
+      onChange: () => {
+        publishSceneState();
+        loop.invalidate();
+      },
+    });
 
     if (import.meta.env.DEV || params.get('e2e') === '1') {
       const ids = catalog.looks.map((entry) => entry.id);
