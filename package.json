@@ -14,7 +14,10 @@
     "test:e2e": "playwright test",
     "check": "npm run typecheck && npm run lint && npm run test && npm run test:e2e",
     "deploy": "npm run build && wrangler pages deploy dist --project-name fashion-rotunda-web",
-    "gpu:check": "node tools/gpu-check.mjs"
+    "gpu:check": "node tools/gpu-check.mjs",
+    "pipeline:unreal": "node pipeline/unreal/run.mjs",
+    "pipeline:assemble": "node pipeline/gltf/assemble.mjs",
+    "pipeline:optimize": "node pipeline/gltf/optimize.mjs"
   },
   "keywords": [],
   "author": "",

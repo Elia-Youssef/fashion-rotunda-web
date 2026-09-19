@@ -7,6 +7,8 @@ dist/
 
 # Asset pipeline: scripted outputs are reproducible, sources are large
 assets-src/work/
+# The Unreal export is reproduced by npm run pipeline:unreal from the user's project
+assets-src/source/unreal/
 assets-src/source/**/*.blend
 assets-src/source/**/*.hdr
 assets-src/source/**/*.exr

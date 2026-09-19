@@ -31,4 +31,11 @@ export default tseslint.config(
       globals: { ...globals.browser, ...globals.node },
     },
   },
+  {
+    // The asset pipeline is plain node scripts.
+    files: ['pipeline/**/*.mjs'],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
 );
