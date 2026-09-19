@@ -48,6 +48,9 @@ export interface Showroom {
   showLook(id: string): Promise<void>;
   setVariant(name: string): Promise<void>;
   setAspect(aspect: number): void;
+  /** Turns the look on the plinth about its vertical axis; the turntable and the Rotate action use it. */
+  setLookYaw(radians: number): void;
+  readonly lookYaw: number;
   readonly currentLook: string | null;
   readonly currentVariant: string | null;
 }
@@ -134,6 +137,8 @@ export function createShowroom(options: ShowroomOptions): Showroom {
   let currentVariant: string | null = null;
   /** The swatch the visitor chose, carried to every later look that offers it. */
   let wantedVariant: string | null = null;
+  /** The turn of the look on the plinth, kept across switches so a rotating look stays rotated. */
+  let lookYaw = 0;
 
   function lookById(id: string): CatalogLook {
     const look = catalog.looks.find((candidate) => candidate.id === id);
@@ -222,6 +227,7 @@ export function createShowroom(options: ShowroomOptions): Showroom {
       }
       onScreen = loaded;
       loaded.root.position.y = plinthTopY;
+      loaded.root.rotation.y = lookYaw;
       decorate(loaded.root);
       scene.add(loaded.root);
       currentVariant = loaded.applied;
@@ -284,6 +290,18 @@ export function createShowroom(options: ShowroomOptions): Showroom {
       }
       camera.aspect = aspect;
       camera.updateProjectionMatrix();
+    },
+
+    setLookYaw(radians: number): void {
+      lookYaw = radians;
+      if (onScreen !== null) {
+        onScreen.root.rotation.y = radians;
+        onChange();
+      }
+    },
+
+    get lookYaw(): number {
+      return lookYaw;
     },
 
     get currentLook(): string | null {

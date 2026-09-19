@@ -438,6 +438,12 @@ async function main(): Promise<void> {
     loop.invalidate();
     await settleTier();
 
+    // Hooks. Each later feature adds exactly one call here, against the handles above: the camera
+    // (G4.1, G4.4) mounts its controls on the canvas and the loop, the chrome (G5.1, G5.2)
+    // mounts the catalogue strip and the product card in the side panel. Nothing else changes here.
+    // hook: camera
+    // hook: chrome
+
     if (import.meta.env.DEV || params.get('e2e') === '1') {
       const ids = catalog.looks.map((entry) => entry.id);
       window.archvizE2E = {
