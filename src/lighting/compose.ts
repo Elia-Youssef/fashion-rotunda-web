@@ -37,16 +37,23 @@ export interface Lighting {
   dispose(): void;
 }
 
+function isTransparent(material: unknown): boolean {
+  return typeof material === 'object' && material !== null && 'transparent' in material && material.transparent === true;
+}
+
 /**
  * Meshes cast and receive the sun's shadow only when told to; the loaded GLBs arrive with both off.
- * Called once per loaded object by whoever adds geometry to the scene.
+ * Transparent materials, the dome glass above all, receive but never cast: a shadow map has no alpha,
+ * so a casting pane would black out the sun that the room is built to let in. Called once per loaded
+ * object by whoever adds geometry to the scene.
  */
 export function enableShadows(root: { traverse(callback: (object: unknown) => void): void }): void {
   root.traverse((object) => {
     if (typeof object === 'object' && object !== null && 'isMesh' in object && object.isMesh === true) {
       const mesh = object;
-      if ('castShadow' in mesh && 'receiveShadow' in mesh) {
-        mesh.castShadow = true;
+      if ('castShadow' in mesh && 'receiveShadow' in mesh && 'material' in mesh) {
+        const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+        mesh.castShadow = !materials.some(isTransparent);
         mesh.receiveShadow = true;
       }
     }
