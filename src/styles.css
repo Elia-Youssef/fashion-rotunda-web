@@ -47,6 +47,9 @@ main {
 
 aside {
   grid-area: aside;
+  /* The badge, the proof overlay and the light panel stack here; the panel scrolls before the page does. */
+  overflow-y: auto;
+  min-height: 0;
 }
 
 footer {

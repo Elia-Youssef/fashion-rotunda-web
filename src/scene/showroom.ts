@@ -3,14 +3,12 @@
 //
 // What this module owns: the three.js scene graph, the placement rule, the switch race and the
 // disposal. What it deliberately does not own: the DOM (main.ts writes the canvas attributes), the
-// render loop (it only calls onChange so the caller can invalidate) and the lighting design, which
-// is temporary here and becomes the product at Phase 2.
+// render loop (it only calls onChange so the caller can invalidate) and the lighting, which main.ts
+// composes from src/lighting around this scene.
 
 import {
   Box3,
   Color,
-  DirectionalLight,
-  HemisphereLight,
   Material,
   Mesh,
   PerspectiveCamera,
@@ -29,13 +27,6 @@ import { listVariants, selectVariant } from './variants';
 /** The clear colour behind the room, dark enough that an unlit frame reads as empty, not broken. */
 export const SCENE_BACKGROUND = 0x15181c;
 
-/** Temporary studio light, replaced by the real rig at Phase 2. Bright enough to read the marble. */
-const SUN_INTENSITY = 2.5;
-const SUN_POSITION: [number, number, number] = [4, 8, 3];
-const SKY_INTENSITY = 1.2;
-const SKY_COLOUR = 0xbcd2ef;
-const GROUND_COLOUR = 0x2a2622;
-
 /** The room is about 16 m across and 8 m tall, so these bounds hold it with room to spare. */
 const CAMERA_NEAR = 0.05;
 const CAMERA_FAR = 120;
@@ -46,6 +37,8 @@ export interface ShowroomOptions {
   contentBase: string;
   /** Called whenever something on screen changed, so the caller can ask the loop for a frame. */
   onChange: () => void;
+  /** Called on every loaded root before it enters the scene; the lighting uses it to enable shadows. */
+  decorate?: (root: Object3D) => void;
 }
 
 export interface Showroom {
@@ -121,14 +114,10 @@ function collectTextures(material: Material, into: Set<Texture>): void {
 
 export function createShowroom(options: ShowroomOptions): Showroom {
   const { renderer, catalog, contentBase, onChange } = options;
+  const decorate = options.decorate ?? ((): void => undefined);
 
   const scene = new Scene();
   scene.background = new Color(SCENE_BACKGROUND);
-
-  const sun = new DirectionalLight(0xfff2e0, SUN_INTENSITY);
-  sun.position.set(SUN_POSITION[0], SUN_POSITION[1], SUN_POSITION[2]);
-  scene.add(sun);
-  scene.add(new HemisphereLight(SKY_COLOUR, GROUND_COLOUR, SKY_INTENSITY));
 
   const view = catalog.views[PROOF_VIEW];
   const camera = new PerspectiveCamera(view.fov, 1, CAMERA_NEAR, CAMERA_FAR);
@@ -233,6 +222,7 @@ export function createShowroom(options: ShowroomOptions): Showroom {
       }
       onScreen = loaded;
       loaded.root.position.y = plinthTopY;
+      decorate(loaded.root);
       scene.add(loaded.root);
       currentVariant = loaded.applied;
       onChange();
@@ -253,6 +243,8 @@ export function createShowroom(options: ShowroomOptions): Showroom {
       ]);
       // The level origin is the room centre at floor height and the plinth stands on it, so both
       // keep the transform they were exported with.
+      decorate(rotunda.scene);
+      decorate(plinth.scene);
       scene.add(rotunda.scene);
       scene.add(plinth.scene);
       plinthTopY = new Box3().setFromObject(plinth.scene).max.y;

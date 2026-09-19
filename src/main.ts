@@ -8,6 +8,7 @@ import type { Material } from 'three/webgpu';
 
 import { contentUrl, loadCatalog } from './catalog/catalog';
 import type { Catalog, CatalogLook } from './catalog/catalog';
+import { composeLighting, enableShadows } from './lighting/compose';
 import { createLoop } from './loop/loop';
 import { ResolutionScaler } from './loop/scaler';
 import { FrameTimes } from './proof/frametime';
@@ -267,22 +268,18 @@ async function main(): Promise<void> {
     viewportWidth: window.innerWidth,
     benchmarkP95Ms: null,
   };
+  // The provisional tier picks the content set and the caps; a provisional High is confirmed by the
+  // benchmark once the room is on screen (settleTier below), so the measurement is a real frame and
+  // not the empty warm-up scene.
   const override = tierOverrideFromUrl(search);
   let tier: TierName = override ?? decideTier(tierInput);
-  if (override === null && tier === 'high') {
-    renderer.setPixelRatio(1);
-    resize();
-    const benchmarkP95Ms = await runBenchmark({ renderFrame: drawFrame, durationMs: BENCHMARK_MS });
-    tier = decideTier({ ...tierInput, benchmarkP95Ms });
-    console.info(`[archviz] benchmark p95: ${benchmarkP95Ms.toFixed(2)} ms`);
-  }
-  const settings = TIERS[tier];
-  console.info(`[archviz] tier: ${tier}${override === null ? '' : ' (url override)'}`);
+  let settings = TIERS[tier];
+  console.info(`[archviz] tier: ${tier}${override === null ? '' : ' (url override, provisional)'}`);
   badge.update({ tier });
 
   // Resolution is min(device pixel ratio, the tier cap) times the scaler's step. The scaler lowers
   // the backing store only; the CSS box, and so the layout, never changes.
-  const scaler = new ResolutionScaler({
+  let scaler = new ResolutionScaler({
     budgetMs: settings.frameBudgetMs,
     steps: settings.scalerSteps,
   });
@@ -360,6 +357,28 @@ async function main(): Promise<void> {
   loop.start();
   wake();
 
+  /** The benchmark on the real room; a provisional High that misses its budget settles to Mid. */
+  async function settleTier(): Promise<void> {
+    if (override !== null || tier !== 'high') {
+      return;
+    }
+    renderer.setPixelRatio(1);
+    resize();
+    const benchmarkP95Ms = await runBenchmark({ renderFrame: drawFrame, durationMs: BENCHMARK_MS });
+    console.info(`[archviz] benchmark p95: ${benchmarkP95Ms.toFixed(2)} ms`);
+    const settled = decideTier({ ...tierInput, benchmarkP95Ms });
+    if (settled !== tier) {
+      tier = settled;
+      settings = TIERS[tier];
+      scaler = new ResolutionScaler({ budgetMs: settings.frameBudgetMs, steps: settings.scalerSteps });
+      renderScale = scaler.scale;
+      console.info(`[archviz] tier: ${tier} (after the benchmark)`);
+      badge.update({ tier });
+    }
+    applyResolution();
+    loop.invalidate();
+  }
+
   /** The look and the swatch on screen, as the e2e suites read them. */
   function publishSceneState(): void {
     const look = showroom?.currentLook ?? null;
@@ -383,9 +402,25 @@ async function main(): Promise<void> {
       onChange: () => {
         loop.invalidate();
       },
+      decorate: enableShadows,
     });
     // The camera was built square; the canvas box is the aspect it has to keep.
     resize();
+
+    // The studio rig, the environment and the panel, around the showroom's scene. ?rig= carries a
+    // serialized rig from a shared link; the level's own values otherwise.
+    const rigParam = params.get('rig');
+    await composeLighting({
+      renderer,
+      scene: showroom.scene,
+      panelRoot: aside,
+      shadowMapSize: settings.shadowMapSize,
+      sunShadow: true,
+      ...(rigParam === null ? {} : { initial: rigParam }),
+      onChange: () => {
+        loop.invalidate();
+      },
+    });
 
     await showroom.loadStatics();
     const look = chooseLook(catalog);
@@ -401,6 +436,7 @@ async function main(): Promise<void> {
     contentOnScreen = true;
     publishSceneState();
     loop.invalidate();
+    await settleTier();
 
     if (import.meta.env.DEV || params.get('e2e') === '1') {
       const ids = catalog.looks.map((entry) => entry.id);

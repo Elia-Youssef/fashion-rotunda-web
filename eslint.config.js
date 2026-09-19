@@ -6,7 +6,8 @@ import tseslint from 'typescript-eslint';
 export default tseslint.config(
   // Git worktrees lint themselves from inside their own folder; from here they are duplicate
   // copies of the same files.
-  { ignores: ['dist/**', 'node_modules/**', '.worktrees/**'] },
+  // public/ holds shipped content and vendored transcoder files (basis_transcoder.js), never source.
+  { ignores: ['dist/**', 'node_modules/**', '.worktrees/**', 'public/**'] },
   js.configs.recommended,
   tseslint.configs.recommended,
   {
