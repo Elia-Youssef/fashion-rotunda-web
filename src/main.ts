@@ -476,10 +476,11 @@ async function main(): Promise<void> {
         return cameraHandle.turntable.running;
       },
       onResetCamera: () => {
-        // The yaw goes back before the stop, so the stop's own sync finds nothing to rewrite;
-        // the card has already put the look at zero.
-        cameraHandle.turntable.setYaw(0);
+        // Stop first, then zero: the mount writes the look's yaw and the canvas attribute only
+        // from a stopped turntable, so this order leaves both reading zero. The other order left
+        // the attribute at the old angle while the look itself stood at zero.
         cameraHandle.turntable.stop();
+        cameraHandle.turntable.setYaw(0);
         cameraHandle.orbit.reset();
       },
       onChange: () => {
