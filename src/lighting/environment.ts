@@ -27,10 +27,11 @@ export interface Environment {
 
 /**
  * A blur radius in radians applied to the room before the prefilter (PMREMGenerator.js line 118 documents
- * the parameter). The room is flat painted boxes with hard edges, and a small blur turns them into the
- * soft gradient an interior wants instead of eight visible walls in every reflection.
+ * the parameter). The room is flat painted boxes with hard bright panels; at the example default of 0.04
+ * every panel came back as a white splotch on the satin garments, so the blur is wide enough to turn them
+ * into the soft gradient a showroom sky wants.
  */
-const ROOM_BLUR_RADIANS = 0.04;
+const ROOM_BLUR_RADIANS = 0.3;
 
 function fromRenderTarget(target: RenderTarget): Environment {
   return {

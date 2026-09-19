@@ -60,6 +60,13 @@ export function enableShadows(root: { traverse(callback: (object: unknown) => vo
   });
 }
 
+/**
+ * Unreal's sky light scale of 2 sits under a physical sky; three's prefiltered room at the same number
+ * floods the marble. This factor maps the panel's sky value to scene.environmentIntensity and is the
+ * one knob for that, tuned by eye against docs/reference on 2026-09-19.
+ */
+const ENVIRONMENT_SCALE = 0.35;
+
 export async function composeLighting(options: LightingOptions): Promise<Lighting> {
   // Before the first frame that draws a rect light, or its shader build throws (rect-area-ltc.ts).
   registerRectAreaLights();
@@ -76,7 +83,7 @@ export async function composeLighting(options: LightingOptions): Promise<Lightin
   function applyToScene(next: Rig): void {
     rig = next;
     three.apply(next);
-    environment.apply(options.scene, skyIntensity(next));
+    environment.apply(options.scene, skyIntensity(next) * ENVIRONMENT_SCALE);
     options.renderer.toneMappingExposure = next.exposure;
     options.onChange();
   }
