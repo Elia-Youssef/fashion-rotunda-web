@@ -1,0 +1,40 @@
+# Dependencies and build output
+node_modules/
+dist/
+
+# Public repository content rules
+*.md
+
+# Asset pipeline: scripted outputs are reproducible, sources are large
+assets-src/work/
+assets-src/source/**/*.blend
+assets-src/source/**/*.hdr
+assets-src/source/**/*.exr
+*.blend1
+
+# Secrets
+.env
+.env.*
+
+# Test output
+test-results/
+playwright-report/
+
+# OS junk
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# Planning files and local tool folders stay on this machine, never in the repository
+old-docs/
+/.*/
+!/.github/
+
+# Local planning records and worktrees
+briefs/
+.worktrees/

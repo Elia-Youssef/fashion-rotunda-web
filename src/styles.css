@@ -1,0 +1,172 @@
+/* The page is one screen that never scrolls: the canvas takes whatever the chrome around it leaves. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    'header header'
+    'main   aside'
+    'footer footer';
+  height: 100dvh;
+  background: #101214;
+  color: #e6e8ea;
+  font-family: system-ui, sans-serif;
+}
+
+header {
+  grid-area: header;
+  padding: 0.5rem 0.75rem;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+main {
+  grid-area: main;
+  /* A grid item refuses to shrink below its content without this, which would push the page taller. */
+  min-width: 0;
+  min-height: 0;
+  /* Notices and the poster overlay the canvas area when the renderer is absent or has died. */
+  position: relative;
+}
+
+aside {
+  grid-area: aside;
+}
+
+footer {
+  grid-area: footer;
+}
+
+/* The renderer reads this element's client box, so CSS owns the size and the script never sets it. */
+#scene {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Backend badge: the side panel readout that later goals hang the proof numbers on. */
+
+.badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0.5rem 0.75rem;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid #3a4048;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.badge__backend {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.badge__tier {
+  color: #9aa2ab;
+}
+
+/* Poster path: the renderer never starts, so the still carries the scene and the words carry the
+   explanation. The elements sit on top of the untouched canvas slot, not below it, because the
+   page must not grow a second screen's worth of content. */
+
+.poster__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #0a0c0e;
+}
+
+.poster__message {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 3rem;
+  margin: 0;
+  padding: 0.5rem 1rem;
+  text-align: center;
+  background: #101214;
+}
+
+.poster__credit {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 1rem;
+  margin: 0;
+  text-align: center;
+  color: #9aa2ab;
+}
+
+/* Loss notice: the GPU died mid-session, the only recovery is a reload, so the overlay covers
+   the frozen canvas and says exactly that. */
+
+.loss-notice {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 0.4rem;
+  padding: 2rem;
+  background: rgb(16 18 20 / 0.92);
+  text-align: center;
+}
+
+.loss-notice__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.loss-notice__reason,
+.loss-notice__message {
+  margin: 0;
+  color: #9aa2ab;
+}
+
+.loss-notice__reload {
+  justify-self: center;
+  margin-top: 1rem;
+  padding: 0.4rem 1.4rem;
+  border: 1px solid #3a4048;
+  border-radius: 4px;
+  background: #e6e8ea;
+  color: #101214;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* Proof overlay: the live snapshot in the side panel, always in dev, in production only with ?proof=1. */
+
+.proof-overlay {
+  max-width: 24rem;
+  margin: 0.5rem 0.75rem;
+  padding: 0.5rem;
+  /* The GPU name can be a whole driver string; it wraps instead of widening the side panel. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid #3a4048;
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: #9aa2ab;
+}

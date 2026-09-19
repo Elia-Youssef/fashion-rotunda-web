@@ -1,0 +1,27 @@
+# G0.8: the gate on every push and pull request to main. The file stays inert until the
+# repository is pushed, which is a later decision. No secrets and no deploy step: deploying stays
+# with the release process. CI runs only the webgl2 project; the webgpu project needs a headed browser
+# with a real adapter and runs locally.
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.12.0'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run test
+      - run: npx playwright test --project=webgl2

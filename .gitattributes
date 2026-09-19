@@ -1,0 +1,10 @@
+# Normalise every text file to LF in the repository and in the working copy, whatever the global
+# autocrlf setting on a machine says. Binary assets are marked so git never touches them.
+* text=auto eol=lf
+*.glb binary
+*.ktx2 binary
+*.hdr binary
+*.exr binary
+*.png binary
+*.jpg binary
+*.blend binary
