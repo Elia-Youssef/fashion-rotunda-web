@@ -50,6 +50,9 @@ declare global {
     archvizE2E?: {
       switchLooks(count: number): Promise<void>;
       describeScene(): SceneDescription;
+      /** The lighting rig as the URL carries it, and the music's state, for the browser tests. */
+      rigState(): string;
+      musicState(): string;
     };
   }
 }
@@ -180,6 +183,10 @@ async function main(): Promise<void> {
 
   const canvas = requireCanvas();
 
+  // The loading gate (G6.5) mounts here, before the renderer, so it is on screen from
+  // the first paint; its reveal comes after the content and the controls, further down.
+  // hook: loading mount
+
   // The tier owns the pixel ratio cap, but the decision needs the backend and the GPU name, which
   // only exist once the renderer is up. Start at the Base cap and apply the tier's cap below.
   const { renderer, backend, gpuName } = await createRenderer({
@@ -201,7 +208,11 @@ async function main(): Promise<void> {
 
   // The music switch (G5.6) mounts in the header here, before the content loads, so a
   // visitor can press it while the room is still arriving; the music needs no scene.
-  mountMusic({ headerRoot: requireElement('header', 'page header'), search, baseUrl: '/content/music' });
+  const music = mountMusic({
+    headerRoot: requireElement('header', 'page header'),
+    search,
+    baseUrl: '/content/music',
+  });
 
   canvas.dataset.scene = 'loading';
 
@@ -233,6 +244,7 @@ async function main(): Promise<void> {
     } else {
       chain.render();
     }
+    // hook: proof frame
     frameCount += 1;
     // Readable from outside without exposing the renderer: the e2e tests watch this counter to prove
     // the loop draws when asked and stops when idle.
@@ -319,12 +331,17 @@ async function main(): Promise<void> {
   const loop = createLoop({
     render: (dtMs) => {
       cameraMount?.update(dtMs);
+      // hook: showroom update
+      if (cameraMount?.moving === true) {
+        chain?.notifyMotion();
+      }
       drawFrame();
     },
     frameCap: isTouch ? settings.frameCapTouch : null,
     onFrameTime: (workMs) => {
       frames.push(workMs);
       const next = scaler.update(frames.p95(), performance.now());
+      // hook: post governor
       if (next !== renderScale) {
         renderScale = next;
         applyResolution();
@@ -455,7 +472,7 @@ async function main(): Promise<void> {
     // The studio rig, the environment and the panel, around the showroom's scene. ?rig= carries a
     // serialized rig from a shared link; the level's own values otherwise.
     const rigParam = params.get('rig');
-    await composeLighting({
+    const lighting = await composeLighting({
       renderer,
       scene: showroom.scene,
       panelRoot: aside,
@@ -534,6 +551,9 @@ async function main(): Promise<void> {
         loop.invalidate();
       },
     });
+    // hook: share
+    // hook: onboarding
+    // hook: loading reveal
 
     if (import.meta.env.DEV || params.get('e2e') === '1') {
       const ids = catalog.looks.map((entry) => entry.id);
@@ -545,6 +565,7 @@ async function main(): Promise<void> {
           }
           for (const id of switchOrder(ids, active.currentLook ?? ids[0], count)) {
             await active.showLook(id);
+            // hook: showroom settle
             chain?.notifyMotion();
             publishSceneState();
           }
@@ -582,6 +603,12 @@ async function main(): Promise<void> {
             drawCalls: renderer.info.render.drawCalls,
             triangles: renderer.info.render.triangles,
           };
+        },
+        rigState(): string {
+          return lighting.serialize();
+        },
+        musicState(): string {
+          return music.player.state;
         },
       };
     }

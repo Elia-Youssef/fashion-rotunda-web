@@ -35,6 +35,9 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         channel: 'chrome',
         headless: false,
+        // A headed window plays the page's music through the speakers; the headless project is
+        // muted by Playwright itself, this one has to ask.
+        launchOptions: { args: ['--mute-audio'] },
         baseURL: 'http://localhost:4173',
       },
     },

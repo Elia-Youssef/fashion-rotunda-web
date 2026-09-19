@@ -91,7 +91,12 @@ export async function composeLighting(options: LightingOptions): Promise<Lightin
 
   let panel: LightPanelHandle | null = null;
   if (options.panelRoot !== null) {
-    panel = mountLightPanel(options.panelRoot, { rig, onChange: applyToScene });
+    // The one preset is the level's own rig, which makes the select the panel's reset action.
+    panel = mountLightPanel(options.panelRoot, {
+      rig,
+      onChange: applyToScene,
+      presets: { 'Level lighting': DEFAULT_RIG },
+    });
   }
 
   return {
