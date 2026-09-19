@@ -42,7 +42,10 @@ const MB = 1048576;
 export const BUDGETS = {
   full: {
     sceneTriangles: 200000,
-    lookTriangles: 160000,
+    // Raised from 160,000 on 2026-09-19: the looks ship as authored, dress and mannequin at the same
+    // source resolution, because any decimation of one against the other lets the mannequin through
+    // the fabric (user diagnosis). The heaviest authored look is 336,973 triangles.
+    lookTriangles: 340000,
     drawCalls: 150,
     gpuTextureBytes: 400 * MB,
     largestTexture: 4096,

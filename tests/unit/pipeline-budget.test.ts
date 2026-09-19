@@ -52,7 +52,7 @@ describe('BUDGETS', () => {
   it('pins the desktop row of the budget table', () => {
     expect(BUDGETS.full).toEqual({
       sceneTriangles: 200000,
-      lookTriangles: 160000,
+      lookTriangles: 340000,
       drawCalls: 150,
       gpuTextureBytes: 400 * MB,
       largestTexture: 4096,
