@@ -19,8 +19,24 @@ const SCENE_READY_TIMEOUT = 60_000;
  */
 const POST_ATTRIBUTE_TIMEOUT = 10_000;
 
-/** What each development slice publishes as data-post on this project's mid tier. */
+/**
+ * data-post is a comma-separated token list in a fixed order: ao, traa, msaa, then the SSGI token
+ * ('ssgi-half' at half resolution, 'ssgi' at full) and then 'ssr'; the literal string 'off' when
+ * nothing is on. The composition root's publishPostState writes it from chain.features.
+ */
+const POST_TOKEN_ORDER = ['ao', 'traa', 'msaa', 'ssgi-half', 'ssgi', 'ssr'];
+
+/**
+ * What each development slice publishes as data-post on this project's mid tier. SSGI and SSR are
+ * absent from every row because the backend rules them out, not because the slice does.
+ */
 const EXPECTED_POST: Record<string, string> = { off: 'off', ao: 'ao', aa: 'traa' };
+
+/** True when data-post carries this exact token, so 'ssgi' does not match 'ssgi-half'. */
+function hasPostToken(dataPost: string, token: string): boolean {
+  expect(POST_TOKEN_ORDER, 'the token asked about is one data-post can carry').toContain(token);
+  return dataPost.split(',').includes(token);
+}
 
 /**
  * The grid the two frames are reduced to before they are compared, and the tolerance a cell's
@@ -58,7 +74,7 @@ function watchConsoleErrors(page: Page, into: string[]): void {
  * the chain.
  */
 async function openSlice(page: Page, slice: string): Promise<Locator> {
-  await page.goto(`/?webgl=1&post=${slice}`);
+  await page.goto(`/?webgl=1&gate=off&post=${slice}`);
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
@@ -190,3 +206,91 @@ test('anti-aliasing reaches the screen on webgl2', async ({ page }) => {
   );
   expect(errors, 'no console messages of type error').toEqual([]);
 });
+
+test('max slice on webgl2 retains ao and traa without ssgi or ssr', async ({ page }) => {
+  skipUnlessWebgl2();
+  const errors: string[] = [];
+  watchConsoleErrors(page, errors);
+
+  await page.goto('/?webgl=1&gate=off&post=max');
+  const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+
+  const wired = await page
+    .waitForFunction(
+      () => document.querySelector<HTMLCanvasElement>('canvas#scene')?.dataset.post !== undefined,
+      null,
+      {
+        timeout: POST_ATTRIBUTE_TIMEOUT,
+      },
+    )
+    .then(() => true)
+    .catch(() => false);
+  test.skip(!wired, 'post chain not wired');
+
+  const dataPost = (await canvas.getAttribute('data-post')) ?? '';
+  expect(dataPost, 'data-post contains ao').toContain('ao');
+  expect(dataPost, 'data-post contains traa').toContain('traa');
+  expect(dataPost, 'data-post does not contain ssgi').not.toContain('ssgi');
+  expect(dataPost, 'data-post does not contain ssr').not.toContain('ssr');
+  expect(errors, 'no console messages of type error').toEqual([]);
+});
+
+/**
+ * G3.1 and G3.5, on the WebGPU backend: SSGI runs at half resolution while the camera
+ * moves and at full resolution once it has rested, which is the one behaviour of these goals that
+ * the webgl2 project structurally cannot see. The project is headed and local only, so this test
+ * runs on the developer's machine and never in CI.
+ */
+test('ssgi drops to half resolution while the pointer drags on webgpu', async ({ page }) => {
+  test.skip(
+    test.info().project.name !== 'webgpu',
+    'SSGI exists on the WebGPU backend only; the webgl2 project publishes no ssgi token',
+  );
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  watchConsoleErrors(page, errors);
+
+  await page.goto('/?e2e=1');
+  const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+  // At rest on the high tier the chain publishes the full-resolution SSGI token.
+  await expect
+    .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'ssgi'), {
+      timeout: POST_ATTRIBUTE_TIMEOUT,
+      message: 'data-post carries the full-resolution ssgi token at rest',
+    })
+    .toBe(true);
+
+  const box = await canvas.boundingBox();
+  expect(box, 'the canvas has a box to drag inside').not.toBeNull();
+  if (box === null) {
+    return;
+  }
+  const originX = box.x + box.width / 2;
+  const originY = box.y + box.height / 2;
+
+  // The drag is read between the moves rather than after them: the chain counts the camera as
+  // moving for 500 ms after the last notification, and a drag that ended first would be at rest
+  // again by the time a single assertion ran.
+  await page.mouse.move(originX, originY);
+  await page.mouse.down();
+  let sawHalf = false;
+  for (let step = 1; step <= 24 && !sawHalf; step += 1) {
+    await page.mouse.move(originX + step * 6, originY + (step % 2 === 0 ? 4 : -4));
+    sawHalf = hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'ssgi-half');
+  }
+  await page.mouse.up();
+  expect(sawHalf, 'data-post carried the ssgi-half token during the drag').toBe(true);
+
+  // Back to full within the rest window plus the frame the chain asks the loop for.
+  await expect
+    .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'ssgi'), {
+      timeout: 1500,
+      message: 'data-post carries the full-resolution ssgi token again after the release',
+    })
+    .toBe(true);
+
+  expect(errors, 'no console messages of type error').toEqual([]);
+});
+

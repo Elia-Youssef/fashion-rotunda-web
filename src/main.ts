@@ -372,7 +372,7 @@ async function main(): Promise<void> {
     onFrameTime: (workMs) => {
       frames.push(workMs);
       const next = scaler.update(frames.p95(), performance.now());
-      // hook: post governor
+      chain?.observeFrame(workMs);
       if (next !== renderScale) {
         renderScale = next;
         applyResolution();
@@ -501,7 +501,13 @@ async function main(): Promise<void> {
     const value =
       on === null
         ? 'off'
-        : [on.ao ? 'ao' : '', on.traa ? 'traa' : '', on.msaa ? 'msaa' : '']
+        : [
+            on.ao ? 'ao' : '',
+            on.traa ? 'traa' : '',
+            on.msaa ? 'msaa' : '',
+            on.ssgi === 'half' ? 'ssgi-half' : on.ssgi === 'full' ? 'ssgi' : '',
+            on.ssr ? 'ssr' : '',
+          ]
             .filter((feature) => feature !== '')
             .join(',') || 'off';
     if (canvas.dataset.post !== value) {
@@ -564,6 +570,12 @@ async function main(): Promise<void> {
       camera: showroom.camera,
       tier: settings,
       isTouch,
+      backend,
+      // The chain changes its own picture off the render callback (the rest timer, a governor
+      // step); the loop must draw the frame that applies it.
+      requestFrame: () => {
+        loop.invalidate();
+      },
     });
     publishPostState();
     loop.invalidate();

@@ -1,26 +1,52 @@
-// Goals G2.3 and G2.5: ambient occlusion and anti-aliasing through the node post chain of three
-// 0.186.0. The chain replaces renderer.render for every frame after the showroom exists: a pre-pass
-// for normals and depth when the AO is on (the layout GTAONode's own JSDoc documents,
-// examples/jsm/tsl/display/GTAONode.js lines 18-27), the scene pass that carries the beauty with
-// the AO applied through the lighting context (GTAONode.js line 39) and, when TRAA is on, a
-// velocity attachment (TRAANode.js lines 34-38 expect beauty, depth, velocity and camera), then
-// either TRAA or MSAA on the scene pass, then the output quad.
+// Goals G2.3, G2.5, G3.1, G3.2 and G3.5: ambient occlusion, anti-aliasing, screen-space global
+// illumination and screen-space reflections through the node post chain of three 0.186.0, governed
+// by frame work time.
 //
-// Source references below are to the installed three.js 0.186.0 under node_modules/three/ and are
-// quoted with file and line.
+// The chain replaces renderer.render for every frame after the showroom exists:
+// 1. A pre-pass for normals, depth, metalness and roughness.
+// 2. GTAO at half resolution composited through the lighting context (builtinAOContext).
+// 3. The scene pass that carries beauty and, when TRAA is on, a velocity attachment.
+// 4. SSGI computing diffuse bounce illumination from the scene pass beauty, normal and depth.
+// 5. SSR computing specular screen-space reflections from beauty, normal, depth, metalness, roughness.
+// 6. Composite of beauty + GI + SSR fed to TRAA (reprojected along velocity) or MSAA.
+// 7. Output quad applying AgX tone mapping and sRGB color space conversion exactly once.
+//
+// The chain owns no DOM: what it turned on is read back through `features`, and the composition
+// root is the one place that writes it onto the canvas.
+//
+// Source references below are to three.js 0.186.0 under node_modules/three/ and are quoted with
+// file and line.
 
 import { RenderPipeline, Vector2 } from 'three/webgpu';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
-import { builtinAOContext, mrt, normalView, output, pass, screenUV, velocity } from 'three/tsl';
+import { ssgi } from 'three/addons/tsl/display/SSGINode.js';
+import { ssr } from 'three/addons/tsl/display/SSRNode.js';
+import {
+  builtinAOContext,
+  materialMetalness,
+  materialRoughness,
+  mrt,
+  normalView,
+  output,
+  pass,
+  screenUV,
+  vec4,
+  velocity,
+} from 'three/tsl';
 import type GTAONode from 'three/addons/tsl/display/GTAONode.js';
 import type TRAANode from 'three/addons/tsl/display/TRAANode.js';
+import type SSGINode from 'three/addons/tsl/display/SSGINode.js';
+import type SSRNode from 'three/addons/tsl/display/SSRNode.js';
+import type { SSRNodeOptions } from 'three/addons/tsl/display/SSRNode.js';
 import type { PerspectiveCamera, Scene } from 'three';
-import type { PassNode, WebGPURenderer } from 'three/webgpu';
+import type { Node, PassNode, WebGPURenderer } from 'three/webgpu';
 
 import { postSettingsFor } from './settings';
-import type { PostSettings } from './settings';
+import type { Backend, PostSettings } from './settings';
 import type { TierSettings } from '../tiers/table';
+import { createGovernor } from './governor';
+import type { EnhancedLevel, Governor } from './governor';
 
 export interface PostChainOptions {
   renderer: WebGPURenderer;
@@ -29,16 +55,31 @@ export interface PostChainOptions {
   tier: TierSettings;
   /** True on a touch device; the base tier's AO is desktop only. */
   isTouch: boolean;
+  backend: Backend;
+  /**
+   * Asks the composition root for one more frame. The SSGI resolution and the governor's level
+   * are applied inside render(), so a change decided while the loop is idle needs a frame drawn
+   * for it to reach the screen. The composition root passes `() => loop.invalidate()`.
+   */
+  requestFrame?: () => void;
 }
 
 export interface PostChain {
   /** Draws one frame through the chain; the loop's replacement for renderer.render. */
   render(): void;
-  /** True when the chain does more than pass the beauty through (AO or TRAA active). */
+  /** True when the chain does more than pass the beauty through. */
   readonly active: boolean;
-  /** What is on: for the proof overlay and the tests. */
-  readonly features: { ao: boolean; traa: boolean; msaa: boolean };
-  /** TRAA needs to know when the camera or the look moved, to reset its history and avoid ghosting. */
+  /** What is on: ao, traa, msaa, plus ssgi ('off' | 'half' | 'full') and ssr. */
+  readonly features: {
+    ao: boolean;
+    traa: boolean;
+    msaa: boolean;
+    ssgi: 'off' | 'half' | 'full';
+    ssr: boolean;
+  };
+  /** Feeds the loop's frame work time to the governor; the composition root calls it from onFrameTime. */
+  observeFrame(workMs: number): void;
+  /** TRAA and SSGI need to know when the camera or look moved, to reset history or switch resolution. */
   notifyMotion(): void;
   /** Call on every canvas size or pixel ratio change. */
   setSize(width: number, height: number): void;
@@ -52,21 +93,77 @@ const PASS_THROUGH: PostSettings = {
   traa: false,
   msaa: false,
   samples: 0,
+  ssgi: 'off',
+  ssr: false,
 };
 
-/** `?post=` forces a slice of the chain for development: off, ao or aa; anything else is the tier. */
-function applyDevSwitch(tier: PostSettings): PostSettings {
+/** How long after the last motion notification the camera still counts as moving. */
+const MOTION_MS = 500;
+
+/**
+ * `?post=` forces a slice of the chain for development: off, ao, aa, gi, ssr or max.
+ * `max` enables everything the tier allows on this backend with the governor disabled.
+ */
+function applyDevSwitch(
+  tier: PostSettings,
+  backend: Backend,
+): { settings: PostSettings; governorEnabled: boolean } {
   const wanted = new URLSearchParams(location.search).get('post');
   if (wanted === 'off') {
-    return PASS_THROUGH;
+    return { settings: PASS_THROUGH, governorEnabled: false };
   }
   if (wanted === 'ao') {
-    return { ...tier, traa: false, msaa: false, samples: 0 };
+    return {
+      settings: { ...PASS_THROUGH, ao: true, aoHalfResolution: true },
+      governorEnabled: false,
+    };
   }
   if (wanted === 'aa') {
-    return { ...tier, ao: false, aoHalfResolution: false };
+    return {
+      settings: {
+        ...PASS_THROUGH,
+        traa: tier.traa,
+        msaa: tier.msaa,
+        samples: tier.samples,
+      },
+      governorEnabled: false,
+    };
   }
-  return tier;
+  if (wanted === 'gi') {
+    return {
+      settings: {
+        ...PASS_THROUGH,
+        // SSGINode.useTemporalFiltering defaults to true (SSGINode.js line 193) and leans on the
+        // TRAA downstream to resolve its jittered slices, so the slice keeps the tier's TRAA
+        // instead of showing SSGI without the filter it was written against.
+        traa: tier.traa,
+        ssgi: backend === 'webgpu' ? tier.ssgi : 'off',
+      },
+      governorEnabled: false,
+    };
+  }
+  if (wanted === 'ssr') {
+    return {
+      settings: {
+        ...PASS_THROUGH,
+        traa: tier.traa,
+        ssr: backend === 'webgpu' && tier.ssr,
+      },
+      governorEnabled: false,
+    };
+  }
+  if (wanted === 'max') {
+    return {
+      settings: {
+        ...tier,
+        ssgi: backend === 'webgpu' ? tier.ssgi : 'off',
+        ssr: backend === 'webgpu' && tier.ssr,
+      },
+      governorEnabled: false,
+    };
+  }
+  const governorEnabled = backend === 'webgpu' && (tier.ssgi !== 'off' || tier.ssr);
+  return { settings: tier, governorEnabled };
 }
 
 /** The backend label for the fallback warning, read the way create.ts reads it. */
@@ -79,6 +176,11 @@ function backendName(renderer: WebGPURenderer): string {
  * The graph behind one settings choice: null fields are features that are off, so dispose walks
  * exactly what was allocated.
  */
+/** SSGINode in three.js 0.186.0 defines setSize at SSGINode.js line 343, but @types/three omits it. */
+interface SSGINodeWithSize extends SSGINode {
+  setSize(width: number, height: number): void;
+}
+
 interface ChainGraph {
   pipeline: RenderPipeline;
   settings: PostSettings;
@@ -86,20 +188,44 @@ interface ChainGraph {
   prePass: PassNode | null;
   gtao: GTAONode | null;
   traaNode: TRAANode | null;
+  ssgiNode: SSGINodeWithSize | null;
+  ssrNode: SSRNode | null;
 }
 
 export function createPostChain(options: PostChainOptions): PostChain {
-  const { renderer, scene, camera } = options;
-  const settings = applyDevSwitch(postSettingsFor(options.tier, options.isTouch));
+  const { renderer, scene, camera, backend } = options;
+  const requestFrame = options.requestFrame;
+  const dev = applyDevSwitch(postSettingsFor(options.tier, options.isTouch, backend), backend);
+  const settings = dev.settings;
+
+  let governor: Governor | null = null;
+  if (dev.governorEnabled) {
+    governor = createGovernor({
+      budgetMs: options.tier.frameBudgetMs,
+      windowFrames: 60,
+      patience: 2,
+    });
+  }
+
+  let lastMotionTimestamp = 0;
+  let currentSSGIScale = 1.0;
+
+  function currentLevel(): EnhancedLevel {
+    return governor?.level ?? 'full';
+  }
+
+  /**
+   * The resolution scale the SSGI target is asked for: full only at the top of the ladder with
+   * the camera at rest, half everywhere else. Once the governor has stepped past 'ssgi-half' the
+   * node is out of the graph entirely, so this answers for the frames in which it still exists.
+   */
+  function wantedSSGIScale(): number {
+    const isMoving = performance.now() - lastMotionTimestamp < MOTION_MS;
+    return currentLevel() === 'full' && !isMoving ? 1.0 : 0.5;
+  }
 
   function scenePassFor(wanted: PostSettings): PassNode {
-    // An active chain always states its sample count. The pass inherits renderer.samples when its
-    // options leave samples undefined (PassNode.js line 800), and this project's renderer is
-    // created with antialias: true, which makes that 4 (Renderer.js line 275). TRAA must not
-    // inherit it (TRAANode.js line 18: "MSAA must be disabled when TRAA is in use"), and the
-    // development slices isolate one effect, so they state 0. Only the pass-through keeps the
-    // default, which is the MSAA the plain renderer.render path drew with.
-    if (wanted.ao || wanted.traa || wanted.msaa) {
+    if (wanted.ao || wanted.traa || wanted.msaa || wanted.ssgi !== 'off' || wanted.ssr) {
       return pass(scene, camera, { samples: wanted.msaa ? 4 : 0 });
     }
     return pass(scene, camera);
@@ -110,48 +236,116 @@ export function createPostChain(options: PostChainOptions): PostChain {
 
     let prePass: PassNode | null = null;
     let gtao: GTAONode | null = null;
-    if (wanted.ao) {
-      // The AO layout the node documents (GTAONode.js lines 18-27): a pass whose MRT output is the
-      // view-space normal, the depth from that pass's depth texture, then ao(depth, normal,
-      // camera). The pre-pass states samples 0 for the same reason the scene pass does.
+    let ssgiNode: SSGINodeWithSize | null = null;
+    let ssrNode: SSRNode | null = null;
+
+    const needsPrePass = wanted.ao || wanted.ssgi !== 'off' || wanted.ssr;
+    if (needsPrePass) {
       prePass = pass(scene, camera, { samples: 0 });
-      prePass.setMRT(mrt({ output: normalView }));
-      gtao = ao(prePass.getTextureNode('depth'), prePass.getTextureNode(), camera);
-      gtao.resolutionScale = wanted.aoHalfResolution ? 0.5 : 1;
-      // The documented composite (GTAONode.js line 39): the AO multiplies the indirect light
-      // inside the scene pass's own materials instead of the beauty after the fact, so direct
-      // light and speculars keep their level. builtinAOContext skips transparent materials
-      // (ContextNode.js line 258), which also keeps the glass dome from being darkened.
-      scenePass.contextNode = builtinAOContext(gtao.getTextureNode().sample(screenUV).r);
+      if (wanted.ssr) {
+        // SSR requires metalness and roughness attachments to determine reflection specular lobes
+        // and dielectric vs metal response. Extending the pre-pass MRT avoids a third geometry pass.
+        prePass.setMRT(
+          mrt({
+            output: normalView,
+            metalness: materialMetalness,
+            roughness: materialRoughness,
+          }),
+        );
+      } else {
+        prePass.setMRT(mrt({ output: normalView }));
+      }
+
+      if (wanted.ao) {
+        gtao = ao(prePass.getTextureNode('depth'), prePass.getTextureNode(), camera);
+        gtao.resolutionScale = wanted.aoHalfResolution ? 0.5 : 1;
+        scenePass.contextNode = builtinAOContext(gtao.getTextureNode().sample(screenUV).r);
+      }
+    }
+
+    if (wanted.traa) {
+      scenePass.setMRT(mrt({ output, velocity }));
+    }
+
+    if (wanted.ssgi !== 'off' && prePass !== null) {
+      // SSGINode computes horizon-based diffuse bounce illumination from beauty, depth and normal.
+      const rawSSGI = ssgi(
+        scenePass.getTextureNode(),
+        prePass.getTextureNode('depth'),
+        prePass.getTextureNode(),
+        camera,
+      ) as SSGINodeWithSize;
+      // SSGINode.updateBefore (SSGINode.js line 357) calls this.setSize with the full drawing
+      // buffer on every frame, so the resolution switch has to live in the instance's own setSize
+      // rather than in a field the node would overwrite.
+      const rawSetSize = rawSSGI.setSize.bind(rawSSGI);
+      rawSSGI.setSize = (w: number, h: number): void => {
+        rawSetSize(
+          Math.max(1, Math.round(w * currentSSGIScale)),
+          Math.max(1, Math.round(h * currentSSGIScale)),
+        );
+      };
+      ssgiNode = rawSSGI;
+    }
+
+    if (wanted.ssr && prePass !== null) {
+      // SSRNode traces reflections across the marble floor and brass inlays.
+      const ssrOptions: SSRNodeOptions = {
+        metalnessNode: prePass.getTextureNode('metalness').r,
+        roughnessNode: prePass.getTextureNode('roughness').r,
+        reflectNonMetals: true,
+        camera,
+      };
+      // SSRNode.d.ts line 62 types normalNode as Node<'vec3'>, but runtime SSRNode.js line 1142
+      // invokes normalNode.sample(uvS). A swizzled node (.rgb) lacks .sample(), so the underlying
+      // PassTextureNode must be passed, which is what the type assertion below allows.
+      const ssrNormalNode = prePass.getTextureNode() as unknown as Node<'vec3'>;
+      ssrNode = ssr(
+        scenePass.getTextureNode(),
+        prePass.getTextureNode('depth'),
+        ssrNormalNode,
+        ssrOptions,
+      );
+      // A maximum reflection distance of 12 m spans across the rotunda plinth and floor.
+      ssrNode.maxDistance.value = 12;
+      ssrNode.thickness.value = 0.5;
+    }
+
+    // The composite exists only when SSGI or SSR has something to add. Null everywhere else, so a
+    // graph without them is the node sequence this chain had before SSGI and SSR: the pass itself
+    // reaches the pipeline, and nothing materialises its texture node before PassNode.setup does
+    // (PassNode.js line 810). The AO-only and AA-only graphs are that path.
+    let compositeColor: Node<'vec4'> | null = null;
+    if (ssgiNode !== null && ssrNode !== null) {
+      const beautyColor = scenePass.getTextureNode();
+      compositeColor = vec4(
+        beautyColor.rgb.add(ssgiNode.getGINode()).add(ssrNode.getTextureNode().rgb),
+        beautyColor.a,
+      );
+    } else if (ssgiNode !== null) {
+      const beautyColor = scenePass.getTextureNode();
+      compositeColor = vec4(beautyColor.rgb.add(ssgiNode.getGINode()), beautyColor.a);
+    } else if (ssrNode !== null) {
+      const beautyColor = scenePass.getTextureNode();
+      compositeColor = vec4(beautyColor.rgb.add(ssrNode.getTextureNode().rgb), beautyColor.a);
     }
 
     let traaNode: TRAANode | null = null;
     if (wanted.traa) {
-      // TRAA reprojects the history along per-pixel velocity (TRAANode.js lines 34-38 take beauty,
-      // depth, velocity, camera). The velocity node computes the motion in the vertex stage from
-      // the previous frame's matrices (VelocityNode.js lines 164-180); the MRT routes it to a
-      // texture next to the beauty, which is the attachment TRAANode reads back.
-      scenePass.setMRT(mrt({ output, velocity }));
+      // TRAA reprojects the composite history along velocity vectors, providing temporal stability
+      // and denoising for both SSGI and SSR.
       traaNode = traa(
-        scenePass.getTextureNode(),
+        compositeColor ?? scenePass.getTextureNode(),
         scenePass.getTextureNode('depth'),
         scenePass.getTextureNode('velocity'),
         camera,
       );
     }
 
-    // PostProcessing in 0.186.0 is the deprecated rename of this class (PostProcessing.js lines
-    // 5-26; its constructor prints a warning, line 20), so the chain uses the class it wraps: the
-    // same render() and the same outputNode contract.
-    const pipeline = new RenderPipeline(renderer, traaNode ?? scenePass);
-    // outputColorTransform stays at its default true: the pipeline wraps the output node in
-    // renderOutput once (RenderPipeline.js lines 192-194) and holds the renderer at NoToneMapping
-    // and the working colour space while its quad draws (RenderPipeline.js lines 138-156), so AgX
-    // and the sRGB output are applied exactly once, at the end. Nothing upstream transforms
-    // colour: the passes render linear HDR into half-float targets (PassNode.js lines 246 and
-    // 802), which is why the chain applies no tone mapping of its own anywhere.
+    const outputNode = traaNode ?? compositeColor ?? scenePass;
+    const pipeline = new RenderPipeline(renderer, outputNode);
 
-    return { pipeline, settings: wanted, scenePass, prePass, gtao, traaNode };
+    return { pipeline, settings: wanted, scenePass, prePass, gtao, traaNode, ssgiNode, ssrNode };
   }
 
   function disposeGraph(target: ChainGraph): void {
@@ -160,6 +354,8 @@ export function createPostChain(options: PostChainOptions): PostChain {
     target.prePass?.dispose();
     target.gtao?.dispose();
     target.traaNode?.dispose();
+    target.ssgiNode?.dispose();
+    target.ssrNode?.dispose();
   }
 
   let graph = buildGraph(settings);
@@ -171,28 +367,93 @@ export function createPostChain(options: PostChainOptions): PostChain {
     graph.scenePass.setSize(pixelWidth, pixelHeight);
     graph.prePass?.setSize(pixelWidth, pixelHeight);
     graph.gtao?.setSize(pixelWidth, pixelHeight);
-    // TRAANode gets no forward: @types/three 0.186.0 declares no setSize on it, and it sizes its
-    // history and resolve targets from the scene pass's render target on every frame anyway
-    // (TRAANode.js lines 363-385), so following the beauty is its own documented behaviour.
+    graph.ssgiNode?.setSize(pixelWidth, pixelHeight);
+    graph.ssrNode?.setSize(pixelWidth, pixelHeight);
   }
 
-  // Size the targets from the drawing buffer once at creation. The passes are born 1x1 and resize
-  // themselves on their first render (PassNode.js lines 835-839), but a first frame drawn against
-  // a still-1x1 beauty is what TRAA replays until its history restarts: it re-seeds the history
-  // from the beauty only on a size change (TRAANode.js lines 384-401), so a full-size beauty at
-  // the first frame makes that frame a real picture instead of one stretched texel.
   const born = renderer.getDrawingBufferSize(new Vector2());
   forwardSize(Math.floor(born.width), Math.floor(born.height));
+
+  /** What each governor level asks for, off the settings the tier and `?post=` settled on. */
+  function settingsForLevel(level: EnhancedLevel): PostSettings {
+    if (level === 'full' || level === 'ssgi-half') {
+      return settings;
+    }
+    if (level === 'no-ssgi') {
+      return { ...settings, ssgi: 'off' };
+    }
+    // 'no-ssr' and 'base' both land on the chain without the enhanced passes: AO and TRAA only.
+    return { ...settings, ssgi: 'off', ssr: false };
+  }
+
+  /**
+   * What the chain is drawing, which is the graph's own settings and never the level's wish: a
+   * runtime fallback, or a rebuild that render() has not reached yet, must not be reported as the
+   * effects being on. The composition root publishes this, so a lie here reads as a chain that
+   * believes AO is on over a picture that has none.
+   */
+  function effectiveSettings(): PostSettings {
+    return graph.settings;
+  }
+
+  /**
+   * Builds the level's graph when the governor has dropped SSGI or SSR. Zeroing giIntensity and
+   * intensity would not do: SSGINode.updateBefore (SSGINode.js line 357) and SSRNode.updateBefore
+   * (SSRNode.js line 742) render their targets every frame whatever the uniforms say, so a step
+   * down that only zeroes them recovers no GPU time at all. The node has to leave the graph.
+   */
+  function applyGovernorLevel(): void {
+    if (fellBack) {
+      return;
+    }
+    const wanted = settingsForLevel(currentLevel());
+    if (wanted.ssgi === graph.settings.ssgi && wanted.ssr === graph.settings.ssr) {
+      return;
+    }
+    const superseded = graph;
+    graph = buildGraph(wanted);
+    const size = renderer.getDrawingBufferSize(new Vector2());
+    forwardSize(Math.floor(size.width), Math.floor(size.height));
+    try {
+      disposeGraph(superseded);
+    } catch (disposeError) {
+      console.warn('[archviz] the superseded post chain did not dispose cleanly:', disposeError);
+    }
+  }
+
+  function currentFeatures(): PostChain['features'] {
+    const effective = effectiveSettings();
+    let ssgiFeature: 'off' | 'half' | 'full' = 'off';
+    if (effective.ssgi !== 'off') {
+      ssgiFeature = wantedSSGIScale() < 1 ? 'half' : 'full';
+    }
+    return {
+      ao: effective.ao,
+      traa: effective.traa,
+      msaa: effective.msaa,
+      ssgi: ssgiFeature,
+      ssr: effective.ssr,
+    };
+  }
+
+  let motionTimer: number | null = null;
 
   return {
     render(): void {
       try {
+        applyGovernorLevel();
+
+        if (graph.ssgiNode !== null) {
+          const scale = wantedSSGIScale();
+          if (scale !== currentSSGIScale) {
+            currentSSGIScale = scale;
+            const size = renderer.getDrawingBufferSize(new Vector2());
+            graph.ssgiNode.setSize(Math.floor(size.width), Math.floor(size.height));
+          }
+        }
+
         graph.pipeline.render();
       } catch (error) {
-        // A node that cannot draw on this backend (a shader the transpiler rejects, an attachment
-        // the context lacks) breaks the whole frame, and a dead picture helps nobody: the chain
-        // drops to the plain beauty with one warning and keeps the page alive. A failure of the
-        // pass-through itself is a page-level renderer failure and keeps throwing.
         if (fellBack) {
           throw error;
         }
@@ -201,15 +462,8 @@ export function createPostChain(options: PostChainOptions): PostChain {
           `[archviz] post chain fell back to pass-through on ${backendName(renderer)}:`,
           error,
         );
-        // Build the replacement and swap it in before touching the old graph. Disposal walks
-        // render targets and materials on a renderer that has just failed a frame, so it is the
-        // most likely thing here to throw a second time; doing it last, and inside its own guard,
-        // keeps that throw out of the frame loop and still leaves the page with a working graph.
         const broken = graph;
         graph = buildGraph(PASS_THROUGH);
-        // The size guard remembers the size last forwarded to the graph that is now gone. The new
-        // graph's targets have never been sized, so the memo has to go or the next setSize with
-        // the same dimensions would return early and leave them unsized.
         lastSizeKey = '';
         try {
           disposeGraph(broken);
@@ -220,35 +474,55 @@ export function createPostChain(options: PostChainOptions): PostChain {
     },
 
     get active(): boolean {
-      return graph.settings.ao || graph.settings.traa;
+      const effective = effectiveSettings();
+      return effective.ao || effective.traa || effective.ssgi !== 'off' || effective.ssr;
     },
 
-    get features(): { ao: boolean; traa: boolean; msaa: boolean } {
-      return {
-        ao: graph.settings.ao,
-        traa: graph.settings.traa,
-        msaa: graph.settings.msaa,
-      };
+    get features(): {
+      ao: boolean;
+      traa: boolean;
+      msaa: boolean;
+      ssgi: 'off' | 'half' | 'full';
+      ssr: boolean;
+    } {
+      return currentFeatures();
+    },
+
+    observeFrame(workMs: number): void {
+      if (governor === null || fellBack) {
+        return;
+      }
+      // onFrameTime fires only for frames the loop actually drew (loop.ts lines 62-68), so every
+      // reading that reaches here is a drawn frame. The full-resolution frames are the ones at
+      // rest, and a motion gate would have hidden exactly those from the governor.
+      if (graph.settings.ssgi === 'off' && !graph.settings.ssr) {
+        return;
+      }
+      const before = governor.level;
+      if (governor.observe(workMs) !== before) {
+        // The new level is applied in render(), which an idle loop would not reach on its own.
+        requestFrame?.();
+      }
     },
 
     notifyMotion(): void {
-      // TRAANode 0.186.0 has no documented history reset: its public surface is getTextureNode,
-      // setSize, setViewOffset, clearViewOffset and dispose (TRAANode.js). History rejection is
-      // built into the resolve instead: a depth difference above depthThreshold invalidates the
-      // history sample (TRAANode.js lines 563-566), which is what camera motion causes, and the
-      // velocity buffer carries the reprojection (VelocityNode.js). The residual ghosting risk is
-      // a look switch with an unchanged silhouette, where depth stands still while the colour
-      // changes; variance clipping bounds that (TRAANode.js lines 587-590). The method stays on
-      // the interface so the wiring can call it and a three version with a real reset slots in
-      // without a contract change.
+      lastMotionTimestamp = performance.now();
+      if (typeof window !== 'undefined') {
+        if (motionTimer !== null) {
+          window.clearTimeout(motionTimer);
+        }
+        motionTimer = window.setTimeout(() => {
+          motionTimer = null;
+          // Rest puts the SSGI target back to full resolution, which only happens inside render().
+          // Without this the loop idles and no full-resolution frame is ever drawn.
+          if (graph.ssgiNode !== null && wantedSSGIScale() !== currentSSGIScale) {
+            requestFrame?.();
+          }
+        }, MOTION_MS + 10);
+      }
     },
 
     setSize(width: number, height: number): void {
-      // The pass and both nodes re-read the drawing buffer size on every render themselves
-      // (PassNode.js lines 835-839, GTAONode.js lines 369-370, TRAANode.js lines 363-385), so
-      // this only keeps them from lagging one render behind a pixel-ratio change. The guard keeps
-      // the scaler's repeated calls cheap: nothing reallocates unless the size really moved, and
-      // the nodes expect drawing-buffer pixels, which is CSS size times the pixel ratio.
       const ratio = renderer.getPixelRatio();
       const key = `${width}:${height}:${ratio}`;
       if (key === lastSizeKey) {
@@ -259,6 +533,10 @@ export function createPostChain(options: PostChainOptions): PostChain {
     },
 
     dispose(): void {
+      if (motionTimer !== null && typeof window !== 'undefined') {
+        window.clearTimeout(motionTimer);
+        motionTimer = null;
+      }
       disposeGraph(graph);
     },
   };
