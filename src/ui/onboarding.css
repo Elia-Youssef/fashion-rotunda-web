@@ -3,19 +3,21 @@
 
 .onboarding-card {
   position: fixed;
-  left: var(--onboarding-x, 1rem);
-  top: var(--onboarding-y, 1rem);
-  z-index: 9999;
-  max-width: 18rem;
-  padding: 0.75rem 1rem;
-  border: 1px solid #646b74;
-  border-radius: 6px;
-  background: #101214;
-  color: #e6e8ea;
-  font-family: system-ui, sans-serif;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.6);
+  left: var(--onboarding-x, var(--space-4));
+  top: var(--onboarding-y, var(--space-4));
+  z-index: var(--z-overlay);
+  max-width: var(--card-width);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-2);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
+  box-shadow: var(--shadow-overlay);
   opacity: 1;
-  transition: opacity 180ms ease, transform 180ms ease;
+  transition:
+    opacity var(--dur-base) ease,
+    transform var(--dur-base) ease;
 }
 
 .onboarding-card[hidden] {
@@ -23,65 +25,63 @@
 }
 
 .onboarding-card--reduced-motion {
-  transition: none !important;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .onboarding-card {
-    transition: none !important;
-  }
+  transition: none;
 }
 
 .onboarding-card__title {
-  margin: 0 0 0.35rem;
-  font-size: 0.85rem;
+  margin: 0 0 var(--space-1);
+  font-size: var(--type-md);
   font-weight: 600;
-  color: #e6e8ea;
+  color: var(--text);
 }
 
 .onboarding-card__text {
-  margin: 0 0 0.75rem;
-  font-size: 0.75rem;
+  margin: 0 0 var(--space-3);
+  font-size: var(--type-sm);
   line-height: 1.4;
-  color: #9aa2ab;
+  color: var(--text-muted);
 }
 
 .onboarding-card__actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .onboarding-card__skip {
-  padding: 0.25rem 0.5rem;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-2);
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--radius-1);
   background: transparent;
-  color: #9aa2ab;
+  color: var(--text-muted);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--type-sm);
   cursor: pointer;
 }
 
 .onboarding-card__skip:hover {
-  color: #e6e8ea;
+  color: var(--text);
 }
 
 .onboarding-card__next {
-  padding: 0.25rem 0.65rem;
-  border: 1px solid #646b74;
-  border-radius: 4px;
-  background: #e6e8ea;
-  color: #101214;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-1);
+  background: var(--accent);
+  color: var(--accent-text);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--type-sm);
   font-weight: 600;
   cursor: pointer;
 }
 
-.onboarding-card__skip:focus-visible,
-.onboarding-card__next:focus-visible {
-  outline: 2px solid #e6e8ea;
-  outline-offset: 2px;
+/* The duration tokens collapse under prefers-reduced-motion (styles.css); this rule states the
+   same intent on the card itself for any token added later that forgets. */
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-card {
+    transition: none;
+  }
 }

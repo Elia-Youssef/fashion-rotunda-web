@@ -1,7 +1,95 @@
-/* The page is one screen that never scrolls: the canvas takes whatever the chrome around it leaves. */
+/* The page is one screen that never scrolls: a grid hands the canvas whatever the chrome around
+   it leaves, and every chrome region scrolls inside itself instead. The :root block is the one
+   token sheet: every colour, size, duration and z-order the components use is named here, so a
+   rebrand edits this block and nothing else. */
+
+:root {
+  /* Colour. The accents stay neutral so a client palette drops in as a handful of values. */
+  --surface: #101214;
+  --surface-raised: #1a1e23;
+  --surface-sunken: #0a0c0e;
+  --text: #e6e8ea;
+  --text-muted: #9aa2ab;
+  --text-disabled: #8a9096;
+  --accent: #e6e8ea;
+  --accent-text: #101214;
+  --border: #3a4048;
+  --border-strong: #646b74;
+  --focus: #e6e8ea;
+  --scrim: rgb(10 12 14 / 0.88);
+  --danger: #d98282;
+  /* Mannequin swatch tones, one per catalogue variant the card offers. */
+  --swatch-light: #e6e8ea;
+  --swatch-base: #8a9096;
+  --swatch-dark: #23262a;
+  /* Spacing scale. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  /* Corner rounding. */
+  --radius-1: 4px;
+  --radius-2: 6px;
+  --radius-3: 12px;
+  --radius-pill: 999px;
+  /* Control metrics. The 44 px floor is the smallest touch target the phone census accepts. */
+  --control-height: 2.75rem;
+  --focus-ring: 2px;
+  --focus-offset: 2px;
+  /* Region sizes. The two heights carry a dvh ceiling so a short landscape screen shrinks the
+     panel and the proof strip instead of collapsing the stage to nothing. */
+  --rail-width: 5rem;
+  --card-width: 24rem;
+  --panel-height: min(20rem, 38dvh);
+  --footer-proof-height: min(12rem, 24dvh);
+  --size-thumb: 3.25rem;
+  --size-media: 4rem;
+  --size-value: 4.5rem;
+  --progress-width: 16rem;
+  /* Motion. */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 400ms;
+  /* Paint order, low to high. */
+  --z-stage: 0;
+  --z-chrome: 10;
+  --z-sheet: 20;
+  --z-overlay: 30;
+  --z-gate: 40;
+  /* Type. */
+  --font-ui: system-ui, sans-serif;
+  --font-mono: ui-monospace, monospace;
+  --type-sm: 0.75rem;
+  --type-md: 0.9rem;
+  --type-lg: 1.25rem;
+  /* Elevation. */
+  --shadow-raised: 0 var(--space-1) var(--space-3) rgb(0 0 0 / 0.5);
+  --shadow-overlay: 0 var(--space-1) var(--space-4) rgb(0 0 0 / 0.6);
+}
+
+/* Reduced motion in one place: the duration tokens collapse and every transition or animation
+   built from them stops moving, without a per-component rule anywhere. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-slow: 0ms;
+  }
+}
 
 * {
   box-sizing: border-box;
+}
+
+/* One focus policy for every native control; the component stylesheets carry none of their own. */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: var(--focus-ring) solid var(--focus);
+  outline-offset: var(--focus-offset);
 }
 
 html,
@@ -9,57 +97,77 @@ body {
   height: 100%;
   margin: 0;
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
+/* Phone layout, the default: header, the rail as a horizontal strip, the stage, the footer. The
+   card and the light panel are sheets over the stage (see aside and #shell-light-row below) and
+   never take part in the grid, so opening one never resizes the canvas. */
 body {
   display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   grid-template-areas:
-    'header header'
-    'main   aside'
-    'footer footer';
+    'header'
+    'rail'
+    'stage'
+    'footer';
   height: 100dvh;
-  background: #101214;
-  color: #e6e8ea;
-  font-family: system-ui, sans-serif;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-ui);
 }
 
 header {
   grid-area: header;
-  /* The title on the left and, from G5.6, the music switch on the right: a row, so the switch never
-     pushes the title down or the canvas up. */
+  /* The title on the left, the music switch and the camera's mode switch on the right: a
+     row, so the controls never push the title down or the canvas up. */
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  padding-top: calc(var(--space-2) + env(safe-area-inset-top));
+  border-bottom: 1px solid var(--border);
 }
 
 h1 {
   margin: 0;
-  font-size: 1rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--type-md);
   font-weight: 600;
 }
 
+/* main holds the rail and the stage on the phone; above the phone width it lends both to the page
+   grid by collapsing its own box. position: relative keeps the poster overlay inside the canvas
+   area while main still has a box. */
 main {
-  grid-area: main;
-  /* A grid item refuses to shrink below its content without this, which would push the page taller. */
+  grid-area: stage;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    'rail'
+    'stage';
   min-width: 0;
   min-height: 0;
-  /* Notices and the poster overlay the canvas area when the renderer is absent or has died. */
   position: relative;
 }
 
-aside {
-  grid-area: aside;
-  /* The badge, the proof overlay and the light panel stack here; the panel scrolls before the page does. */
-  overflow-y: auto;
-  min-height: 0;
+#looks {
+  grid-area: rail;
+  min-width: 0;
 }
 
-footer {
-  grid-area: footer;
+/* The stage owns the canvas and nothing else drawn. On the phone it is the containing block the
+   two sheets and the pill strip overlay; above the phone width it collapses so the canvas, the
+   card and the light row become page-grid items directly. */
+#shell-stage {
+  grid-area: stage;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
 }
 
 /* The renderer reads this element's client box, so CSS owns the size and the script never sets it. */
@@ -67,19 +175,114 @@ footer {
   display: block;
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
-/* Backend badge: the side panel readout that later goals hang the proof numbers on. */
+/* The card as a phone sheet: over the stage, out of the flow, scrolling inside itself. The Look
+   pill in the shell opens it; above the phone width the column layout below replaces all of it.
+   The selector is the id, not the element: the footer's proof strip is also an aside. */
+#shell-card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-sheet);
+  max-height: 85%;
+  overflow-y: auto;
+  padding: calc(var(--control-height) + var(--space-1)) var(--space-3)
+    calc(var(--space-3) + env(safe-area-inset-bottom));
+  background: var(--surface-raised);
+  border-radius: var(--radius-3) var(--radius-3) 0 0;
+  box-shadow: var(--shadow-overlay);
+}
 
+/* hidden must win on the two roots the shell hides: neither carries a display value of its own,
+   and this line keeps it that way. */
+#shell-card[hidden],
+#shell-light-panel[hidden] {
+  display: none;
+}
+
+/* Closed on the phone: the row hugs the stage's bottom-right corner and is the Light Control
+   pill; the Look pill (shell.css) mirrors it in the bottom-left. The bar lets pointer events
+   through to the canvas; the button takes them back. */
+#shell-light-row {
+  position: absolute;
+  right: var(--space-3);
+  bottom: calc(var(--space-2) + env(safe-area-inset-bottom));
+  z-index: var(--z-sheet);
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+/* The closed row spans the stage's width so the pill can centre in it; only the pill itself
+   takes pointer events back from the pass-through bar. The sheet chrome must stay transparent
+   to hits even though it is also a direct child. */
+#shell-light-row > .shell-light-toggle {
+  pointer-events: auto;
+}
+
+/* Open on the phone: the row is the light sheet, from the very bottom of the stage. */
+#shell-light-row[data-open='true'] {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  align-items: stretch;
+  pointer-events: auto;
+  max-height: 85%;
+  overflow: hidden;
+  background: var(--surface-raised);
+  border-radius: var(--radius-3) var(--radius-3) 0 0;
+  box-shadow: var(--shadow-overlay);
+}
+
+#shell-light-row[data-open='true'] #shell-light-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom));
+}
+
+/* While any sheet is open the pill strip is covered, so the shell hides it instead. */
+#shell-stage[data-sheet='true'] .shell-pill--look,
+#shell-stage[data-sheet='true'] #shell-light-row:not([data-open='true']) {
+  display: none;
+}
+
+/* The footer strip: the backend badge and, when the URL asks for it, the proof panel. The strip
+   never scrolls the page; the proof readout scrolls inside itself with Measure pinned below. */
+footer {
+  grid-area: footer;
+  display: flex;
+  min-height: 0;
+  padding: var(--space-1) var(--space-3) calc(var(--space-1) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+}
+
+/* The strip itself is the proof root: badge above panel on the phone, side by side from the
+   tablet up. */
+#shell-proof {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* Backend badge: the footer readout the proof numbers hang on. */
 .badge {
   display: inline-flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  margin: 0.5rem 0.75rem;
-  padding: 0.25rem 0.5rem;
-  border: 1px solid #3a4048;
-  border-radius: 4px;
-  font-size: 0.75rem;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-1) var(--space-2);
+  min-height: var(--control-height);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  font-size: var(--type-sm);
   white-space: nowrap;
 }
 
@@ -89,7 +292,44 @@ footer {
 }
 
 .badge__tier {
-  color: #9aa2ab;
+  color: var(--text-muted);
+}
+
+/* The proof panel inside the footer strip: the list scrolls, the actions stay pinned so Measure
+   is reachable however long the readout grows. The panel's own look stays in src/proof/panel.css;
+   only its place in the strip is styled here. */
+footer .proof-panel {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: var(--footer-proof-height);
+}
+
+footer .proof-panel__list {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+footer .proof-panel__measure {
+  min-height: var(--control-height);
+}
+
+/* The proof overlay's <pre> variant, kept from G0.4 for a root that asks for it by id. */
+.proof-overlay {
+  max-width: var(--card-width);
+  margin: var(--space-2) var(--space-3);
+  padding: var(--space-2);
+  /* The GPU name can be a whole driver string; it wraps instead of widening the panel. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  font-family: var(--font-mono);
+  font-size: var(--type-sm);
+  line-height: 1.4;
+  color: var(--text-muted);
 }
 
 /* Poster path: the renderer never starts, so the still carries the scene and the words carry the
@@ -102,28 +342,28 @@ footer {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #0a0c0e;
+  background: var(--surface-sunken);
 }
 
 .poster__message {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 3rem;
+  bottom: var(--space-5);
   margin: 0;
-  padding: 0.5rem 1rem;
+  padding: var(--space-2) var(--space-4);
   text-align: center;
-  background: #101214;
+  background: var(--surface);
 }
 
 .poster__credit {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 1rem;
+  bottom: var(--space-3);
   margin: 0;
   text-align: center;
-  color: #9aa2ab;
+  color: var(--text-muted);
 }
 
 /* Loss notice: the GPU died mid-session, the only recovery is a reload, so the overlay covers
@@ -134,10 +374,13 @@ footer {
   inset: 0;
   display: grid;
   place-content: center;
-  gap: 0.4rem;
-  padding: 2rem;
-  background: rgb(16 18 20 / 0.92);
+  gap: var(--space-2);
+  padding: var(--space-6);
+  background: var(--scrim);
   text-align: center;
+  /* The notice must also cover the loading gate when the GPU dies during the load; the same
+     z-layer leaves paint order to the DOM, and the notice is appended last. */
+  z-index: var(--z-gate);
 }
 
 .loss-notice__title {
@@ -148,34 +391,216 @@ footer {
 .loss-notice__reason,
 .loss-notice__message {
   margin: 0;
-  color: #9aa2ab;
+  color: var(--text-muted);
 }
 
 .loss-notice__reload {
   justify-self: center;
-  margin-top: 1rem;
-  padding: 0.4rem 1.4rem;
-  border: 1px solid #3a4048;
-  border-radius: 4px;
-  background: #e6e8ea;
-  color: #101214;
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--accent);
+  color: var(--accent-text);
   font: inherit;
   cursor: pointer;
 }
 
-/* Proof overlay: the live snapshot in the side panel, always in dev, in production only with ?proof=1. */
+/* Tablet, 768 to 1199: the rail turns into a horizontal strip under the header, the card keeps a
+   narrower column, the light row sits below the stage as on desktop. */
+@media (min-width: 768px) {
+  main,
+  #shell-stage {
+    display: contents;
+  }
 
-.proof-overlay {
-  max-width: 24rem;
-  margin: 0.5rem 0.75rem;
-  padding: 0.5rem;
-  /* The GPU name can be a whole driver string; it wraps instead of widening the side panel. */
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  border: 1px solid #3a4048;
-  border-radius: 4px;
-  font-family: ui-monospace, monospace;
-  font-size: 0.7rem;
-  line-height: 1.4;
-  color: #9aa2ab;
+  body {
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) min(var(--card-width), 40vw);
+    grid-template-areas:
+      'header header'
+      'rail rail'
+      'scene card'
+      'light light'
+      'footer footer';
+  }
+
+  #scene {
+    grid-area: scene;
+  }
+
+  #shell-card {
+    grid-area: card;
+    position: static;
+    z-index: auto;
+    max-height: none;
+    overflow-y: auto;
+    padding: 0;
+    background: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  #shell-light-row,
+  #shell-light-row[data-open='true'] {
+    grid-area: light;
+    position: static;
+    z-index: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    pointer-events: auto;
+    padding: 0 var(--space-3);
+    max-height: none;
+    overflow: visible;
+    background: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  #shell-light-row #shell-light-panel,
+  #shell-light-row[data-open='true'] #shell-light-panel {
+    max-height: var(--panel-height);
+    overflow-y: auto;
+    padding: 0;
+  }
+
+  #shell-proof {
+    flex-direction: row;
+    align-items: flex-start;
+  }
+
+  footer .proof-panel {
+    max-height: var(--footer-proof-height);
+  }
+}
+
+/* Desktop, 1200 and up: the rail is the fixed-width vertical column of thumbnails, the card
+   column runs beside the stage down to the light row, the panel opens below the stage. */
+@media (min-width: 1200px) {
+  body {
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: var(--rail-width) minmax(0, 1fr) var(--card-width);
+    grid-template-areas:
+      'header header header'
+      'rail scene card'
+      'light light card'
+      'footer footer footer';
+  }
+}
+
+/* A landscape tablet or a short browser window has the width for columns but not the height for
+   the stage, an open panel and the proof row. Reuse the phone's overlay sheets there, so the page
+   keeps a real canvas box and the panel never consumes the card row. The width breakpoint remains
+   tablet or desktop in script; this is only the short-viewport layout policy. */
+@media (min-width: 768px) and (max-height: 599px) {
+  body {
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'header'
+      'rail'
+      'stage'
+      'footer';
+  }
+
+  main {
+    grid-area: stage;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      'rail'
+      'stage';
+    min-width: 0;
+    min-height: 0;
+    position: relative;
+  }
+
+  #shell-stage {
+    grid-area: stage;
+    display: block;
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  #scene {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  #shell-card {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: var(--z-sheet);
+    max-height: 85%;
+    overflow-y: auto;
+    padding: calc(var(--control-height) + var(--space-1)) var(--space-3)
+      calc(var(--space-3) + env(safe-area-inset-bottom));
+    background: var(--surface-raised);
+    border-radius: var(--radius-3) var(--radius-3) 0 0;
+    box-shadow: var(--shadow-overlay);
+  }
+
+  #shell-light-row,
+  #shell-light-row[data-open='true'] {
+    position: absolute;
+    right: var(--space-3);
+    bottom: calc(var(--space-2) + env(safe-area-inset-bottom));
+    z-index: var(--z-sheet);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    pointer-events: none;
+    padding: 0;
+    max-height: none;
+    overflow: visible;
+    background: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  #shell-light-row[data-open='true'] {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    pointer-events: auto;
+    max-height: 85%;
+    overflow: hidden;
+    background: var(--surface-raised);
+    border-radius: var(--radius-3) var(--radius-3) 0 0;
+    box-shadow: var(--shadow-overlay);
+  }
+
+  #shell-light-row[data-open='true'] #shell-light-panel {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+    padding: 0 var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom));
+  }
+
+  #shell-light-row[data-open='true'] .shell-light-toggle {
+    align-self: stretch;
+  }
+
+  #shell-stage .shell-pill--look {
+    display: inline-flex;
+  }
+
+  #shell-stage .shell-sheet__chrome {
+    display: block;
+  }
+
+  #shell-proof {
+    flex-direction: row;
+    align-items: flex-start;
+  }
 }

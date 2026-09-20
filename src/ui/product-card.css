@@ -1,20 +1,20 @@
-/* The product card component. Compact on purpose: the side panel scrolls, and the light panel
-   below has to stay reachable, so the thumbnail is 96 px and the text sits at 0.8 rem. */
+/* The product card component. Compact on purpose: the card column and the phone sheet both
+   scroll inside themselves, so the light panel below and the close button stay reachable. */
 
 .product-card {
   display: grid;
-  gap: 0.5rem;
-  max-width: 24rem;
-  margin: 0.5rem 0.75rem;
-  padding: 0.5rem;
-  border: 1px solid #3a4048;
-  border-radius: 4px;
+  gap: var(--space-2);
+  max-width: var(--card-width);
+  margin: var(--space-2) var(--space-3);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
 }
 
 .product-card__head {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 0.5rem;
+  gap: var(--space-2);
   align-items: start;
 }
 
@@ -22,103 +22,114 @@
 .product-card__thumb-empty {
   grid-row: 1;
   grid-column: 1;
-  width: 96px;
-  height: 96px;
-  border-radius: 4px;
+  width: var(--size-media);
+  height: var(--size-media);
+  border-radius: var(--radius-1);
+}
+
+/* The roomier thumbnail belongs to the wide columns; the phone sheet stays compact. */
+@media (min-width: 768px) {
+  .product-card__thumb,
+  .product-card__thumb-empty {
+    width: calc(var(--size-media) + var(--space-4));
+    height: calc(var(--size-media) + var(--space-4));
+  }
 }
 
 .product-card__thumb {
   display: block;
   object-fit: cover;
-  background: #1a1e23;
+  background: var(--surface-raised);
 }
 
 .product-card__thumb-empty {
-  background: #1a1e23;
+  background: var(--surface-raised);
 }
 
 .product-card__name {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--type-md);
   font-weight: 600;
 }
 
 .product-card__description {
-  margin: 0.25rem 0 0;
-  font-size: 0.8rem;
+  margin: var(--space-1) 0 0;
+  font-size: var(--type-sm);
   line-height: 1.35;
-  color: #9aa2ab;
+  color: var(--text-muted);
   overflow-wrap: anywhere;
 }
 
 .product-card__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem;
+  gap: var(--space-1);
 }
 
 .product-card__action {
-  padding: 0.25rem 0.6rem;
-  border: 1px solid #646b74;
-  border-radius: 4px;
-  background: #101214;
-  color: #e6e8ea;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-1);
+  background: var(--surface);
+  color: var(--text);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--type-sm);
   cursor: pointer;
 }
 
 .product-card__action:disabled {
-  color: #8a9096;
+  color: var(--text-disabled);
   cursor: default;
 }
 
 /* The turntable is on: the pressed Rotate button carries the same border as the active thumbnail. */
 .product-card__action[aria-pressed='true'] {
-  border-color: #e6e8ea;
+  border-color: var(--accent);
 }
 
 .product-card__swatches {
   display: flex;
-  gap: 0.5rem;
-  padding: 0.15rem 0;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+}
+
+/* The card re-renders this row per look and hides it through the hidden attribute, so hidden
+   must beat the display value above rather than lose to it. */
+.product-card__swatches[hidden] {
+  display: none;
 }
 
 /* One class per variant name, in the tone the Unreal original gives each swatch. The bare rule is
    the fallback for a name the CSS does not carry a tone for. The border reads 5.9:1 against the
-   #101214 panel, so the dark swatch keeps a visible edge; the prior #3a4048 measured 1.8:1, no
-   perceivable edge at all. */
+   panel surface, so the dark swatch keeps a visible edge. */
 .product-card__swatch {
-  width: 1.4rem;
-  height: 1.4rem;
+  width: var(--control-height);
+  height: var(--control-height);
   padding: 0;
-  border: 1px solid #8a9096;
+  border: 1px solid var(--text-disabled);
   border-radius: 50%;
-  background: #8a9096;
+  background: var(--swatch-base);
   cursor: pointer;
 }
 
 .product-card__swatch--light {
-  background: #e6e8ea;
+  background: var(--swatch-light);
 }
 
 .product-card__swatch--base {
-  background: #8a9096;
+  background: var(--swatch-base);
 }
 
 .product-card__swatch--dark {
-  background: #23262a;
+  background: var(--swatch-dark);
 }
 
 /* The swatch on the plinth: the ring that says which mannequin is standing there. A box-shadow,
-   not an outline, so it reads as a different ring from :focus-visible below; sharing the outline
-   property meant tabbing onto an unchecked swatch looked exactly like the checked one. */
+   not an outline, so it reads as a different ring from the shared focus outline; sharing the
+   outline property made tabbing onto an unchecked swatch look exactly like the checked one. */
 .product-card__swatch[aria-checked='true'] {
-  box-shadow: 0 0 0 2px #101214, 0 0 0 4px #e6e8ea;
-}
-
-.product-card__action:focus-visible,
-.product-card__swatch:focus-visible {
-  outline: 2px solid #e6e8ea;
-  outline-offset: 2px;
+  box-shadow:
+    0 0 0 var(--space-1) var(--surface),
+    0 0 0 calc(var(--space-1) * 2) var(--accent);
 }

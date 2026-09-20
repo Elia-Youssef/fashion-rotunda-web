@@ -1,40 +1,36 @@
-/* The music switch in the header. Colours, radius and the focus ring follow src/ui/lightpanel.css
-   so the switch reads as part of the same chrome; every colour, size and duration of this control
-   lives here, never in script. One line high at 0.75 rem and no wider than 7 rem, so the header
-   keeps its height and the label never wraps. */
+/* The music switch in the header. Colours, radius and the focus ring follow the token sheet so
+   the switch reads as part of the same chrome; every colour, size and duration of this control
+   lives here, never in script. One line at the control height and no wider than seven rem, so
+   the header keeps its height and the label never wraps, with room left beside it for the camera
+   mode switch. */
 
 .music-switch {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  max-width: 7rem;
-  padding: 0.15rem 0.5rem;
-  border: 1px solid #646b74;
-  border-radius: 4px;
-  background: #101214;
-  color: #e6e8ea;
+  gap: var(--space-1);
+  min-height: var(--control-height);
+  max-width: calc(var(--space-6) * 3.5);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-1);
+  background: var(--surface);
+  color: var(--text);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--type-sm);
   line-height: 1.2;
   white-space: nowrap;
   cursor: pointer;
 }
 
-/* A visible focus ring, the same one the light panel's controls draw. */
-.music-switch:focus-visible {
-  outline: 2px solid #e6e8ea;
-  outline-offset: 2px;
-}
-
 /* The error state reads as unavailable but stays pressable, so the pointer stays a pointer: the
    press is the retry. */
 .music-switch[data-music='error'] {
-  color: #9aa2ab;
+  color: var(--text-muted);
 }
 
 .music-switch__glyph {
-  width: 0.75rem;
-  height: 0.75rem;
+  width: var(--type-sm);
+  height: var(--type-sm);
   flex: none;
 }
 

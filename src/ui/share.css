@@ -1,62 +1,53 @@
-/* The share component: copy-link and screenshot buttons with confirmation status (G5.3, G5.4).
-   Colours, border-radius and focus rings follow lightpanel.css and styles.css. */
+/* The share component: copy-link and screenshot buttons with confirmation status.
+   Colours, border-radius and focus rings come from the token sheet in styles.css. The block
+   stays inside the card, below the actions. */
 
 .share {
   display: grid;
-  gap: 0.5rem;
-  max-width: 24rem;
-  margin: 0.5rem 0.75rem;
-  padding: 0.5rem;
-  border: 1px solid #3a4048;
-  border-radius: 4px;
-  background: #101214;
-  font-size: 0.75rem;
-  color: #e6e8ea;
+  gap: var(--space-2);
+  max-width: var(--card-width);
+  margin: var(--space-2) var(--space-3);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--surface);
+  font-size: var(--type-sm);
+  color: var(--text);
 }
 
 .share__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: var(--space-1);
 }
 
 .share__button {
-  padding: 0.3rem 0.7rem;
-  border: 1px solid #3a4048;
-  border-radius: 4px;
-  background: #101214;
-  color: #e6e8ea;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--surface);
+  color: var(--text);
   font: inherit;
-  font-size: 0.75rem;
+  font-size: var(--type-sm);
   font-weight: 500;
   cursor: pointer;
 }
 
 .share__button:hover {
-  background: #1a1e23;
-  border-color: #5a6068;
-}
-
-.share__button:focus-visible {
-  outline: 2px solid #e6e8ea;
-  outline-offset: 2px;
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
 }
 
 .share__fallback {
   width: 100%;
-  box-sizing: border-box;
-  padding: 0.25rem 0.5rem;
-  border: 1px solid #3a4048;
-  border-radius: 4px;
-  background: #1a1e23;
-  color: #e6e8ea;
-  font-family: ui-monospace, monospace;
-  font-size: 0.75rem;
-}
-
-.share__fallback:focus-visible {
-  outline: 2px solid #e6e8ea;
-  outline-offset: 2px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--type-sm);
 }
 
 .share__fallback--hidden {
@@ -64,8 +55,8 @@
 }
 
 .share__status {
-  min-height: 1.1rem;
-  color: #9aa2ab;
-  font-size: 0.75rem;
-  line-height: 1.1rem;
+  min-height: calc(var(--type-sm) * 1.5);
+  color: var(--text-muted);
+  font-size: var(--type-sm);
+  line-height: 1.5;
 }

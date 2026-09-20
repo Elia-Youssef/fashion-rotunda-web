@@ -1,17 +1,21 @@
 /* Page placement of the chrome mounts. What the strip and the card look like lives in
-   catalog-strip.css and product-card.css beside their modules; what belongs here is only where the
-   mounts sit on the page. */
+   catalog-strip.css and product-card.css beside their modules; what belongs here is only how the
+   mounts' roots behave as layout regions: the rail scrolls inside itself and never the page.
+   The grid areas themselves are assigned in styles.css with the other roots. */
 
-/* The strip overlays the canvas's left edge without resizing it: main is position: relative and
-   the strip is position: absolute, so the canvas keeps its grid track untouched. The nav itself
-   lets pointer events pass through to the canvas; only the buttons (catalog-strip.css) take them,
-   so the orbit camera keeps the space between and around the thumbnails. No z-index: a positioned
-   element already paints over the unpositioned canvas, and giving one to the strip would also
-   outrank the device-loss notice (styles.css, position: fixed, z-index auto, appended to body
-   after main), burying its reload button under a dead renderer. */
+/* Phone and tablet: the rail is a horizontal strip under the header, one row of thumbnails. */
 #looks {
-  position: absolute;
-  top: 0.75rem;
-  left: 0.75rem;
-  pointer-events: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: var(--space-1) var(--space-2);
+  overscroll-behavior: contain;
+}
+
+/* Desktop: the vertical thumbnail column of the Unreal original, scrolling top to bottom. */
+@media (min-width: 1200px) {
+  #looks {
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: var(--space-2) var(--space-1);
+  }
 }

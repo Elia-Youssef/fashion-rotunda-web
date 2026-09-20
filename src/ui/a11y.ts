@@ -69,14 +69,15 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
   canvas.addEventListener('pointerdown', onPointerDown);
   window.addEventListener('pointerup', onPointerUp);
 
-  // Input inside the light panel completes the lights step.
-  function onAsideInput(event: Event): void {
+  // Input inside the light panel completes the lights step. The listener sits on the root, not
+  // on the card root: the panel lives in its own shell region and the input event bubbles.
+  function onPanelInput(event: Event): void {
     const target = event.target;
     if (target instanceof Element && target.closest('.lightpanel') !== null) {
       onboarding.complete('lights');
     }
   }
-  aside.addEventListener('input', onAsideInput);
+  root.addEventListener('input', onPanelInput);
 
   function lookupLookName(lookId: string): string {
     const stripLabel = root.querySelector<HTMLElement>(
@@ -159,7 +160,7 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
     dispose(): void {
       canvas.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointerup', onPointerUp);
-      aside.removeEventListener('input', onAsideInput);
+      root.removeEventListener('input', onPanelInput);
       canvasObserver.disconnect();
       asideObserver.disconnect();
       headerObserver.disconnect();

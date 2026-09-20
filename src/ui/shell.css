@@ -1,0 +1,101 @@
+/* The shell's own chrome: the Light Control disclosure, the Look pill, and the sheet furniture
+   (the handle bar and the close button). Every value comes from the token sheet in styles.css;
+   this file only says where the shell's pieces sit and how they behave per breakpoint. */
+
+/* The one disclosure button. On the phone, closed, it is the pill centred over the stage's
+   bottom edge; opened, it stays the light sheet's first row so the control that opened the
+   sheet also reads as its header. */
+.shell-light-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--type-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Open on the phone, the close button claims the sheet's top-right corner, so the disclosure
+   keeps room for it. */
+#shell-light-row[data-open='true'] .shell-light-toggle {
+  margin-right: var(--control-height);
+  border-radius: var(--radius-1);
+  justify-content: flex-start;
+}
+
+/* The Look pill: opens the card sheet on the phone, mirrored left of the Light Control pill. */
+.shell-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-height);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--type-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.shell-pill--look {
+  position: absolute;
+  left: var(--space-3);
+  bottom: calc(var(--space-2) + env(safe-area-inset-bottom));
+  z-index: var(--z-chrome);
+}
+
+/* The sheet furniture: one wrapper per sheet, holding the handle bar and the close button. It
+   only exists below the tablet width, where the card and the light panel are sheets at all. */
+.shell-sheet__chrome {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.shell-sheet__handle {
+  position: absolute;
+  top: var(--space-1);
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--space-5);
+  height: var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+}
+
+.shell-sheet__close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: var(--control-height);
+  height: var(--control-height);
+  border: none;
+  border-radius: var(--radius-1);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--type-md);
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+@media (min-width: 768px) {
+  .shell-pill--look,
+  .shell-sheet__chrome {
+    display: none;
+  }
+
+  .shell-light-toggle {
+    align-self: flex-start;
+  }
+}
