@@ -59,7 +59,7 @@
 
 .product-card__action {
   padding: 0.25rem 0.6rem;
-  border: 1px solid #3a4048;
+  border: 1px solid #646b74;
   border-radius: 4px;
   background: #101214;
   color: #e6e8ea;
@@ -69,7 +69,7 @@
 }
 
 .product-card__action:disabled {
-  color: #5a6068;
+  color: #8a9096;
   cursor: default;
 }
 

@@ -122,6 +122,23 @@ describe('mountProductCard', () => {
     expect(swatch('light').getAttribute('aria-checked')).toBe('true');
     expect(swatch('base').getAttribute('aria-checked')).toBe('false');
     expect(swatch('light').className).toContain('product-card__swatch--light');
+    // Roving tabindex: one tab stop on the checked radio
+    expect(swatch('light').tabIndex).toBe(0);
+    expect(swatch('base').tabIndex).toBe(-1);
+    expect(swatch('dark').tabIndex).toBe(-1);
+  });
+
+  it('sets data-tooltip on actions and swatches, omitting title on swatches', () => {
+    mount();
+    expect(button('Rotate').dataset.tooltip).toBe('Turn the look');
+    expect(button('Audio').dataset.tooltip).toBe('Play audio description');
+    expect(button('Reset').dataset.tooltip).toBe('Reset camera and mannequin');
+    expect(button('Material').dataset.tooltip).toBe('Show mannequin swatches');
+
+    expect(swatch('base').dataset.tooltip).toBe('Mannequin in default tone');
+    expect(swatch('light').dataset.tooltip).toBe('Copy of the mannequin in a lighter tone');
+    expect(swatch('dark').dataset.tooltip).toBe('Mannequin in dark charcoal tone');
+    expect(swatch('base').hasAttribute('title')).toBe(false);
   });
 
   it('leaves an honest empty card for a null look', () => {
@@ -220,6 +237,39 @@ describe('the card reporting actions', () => {
     expect(handlers.reset).not.toHaveBeenCalled();
     expect(handlers.material).not.toHaveBeenCalled();
     expect(root.querySelector<HTMLElement>('.product-card__swatches')?.hidden).toBe(false);
+  });
+
+  it('navigates swatches with arrow keys, Home and End in the radio group', () => {
+    const handlers = actions();
+    mount({ handlers, variant: 'base' });
+    const swatchesContainer = root.querySelector('.product-card__swatches');
+    expect(swatchesContainer).not.toBeNull();
+
+    swatch('base').focus();
+    expect(document.activeElement).toBe(swatch('base'));
+
+    // ArrowRight moves to 'light'
+    swatchesContainer?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+    );
+    expect(handlers.material).toHaveBeenCalledWith('light');
+    expect(swatch('light').getAttribute('aria-checked')).toBe('true');
+    expect(swatch('light').tabIndex).toBe(0);
+    expect(swatch('base').tabIndex).toBe(-1);
+
+    // End moves to 'dark'
+    swatchesContainer?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'End', bubbles: true }),
+    );
+    expect(handlers.material).toHaveBeenCalledWith('dark');
+    expect(swatch('dark').getAttribute('aria-checked')).toBe('true');
+
+    // Home moves to 'base'
+    swatchesContainer?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Home', bubbles: true }),
+    );
+    expect(handlers.material).toHaveBeenCalledWith('base');
+    expect(swatch('base').getAttribute('aria-checked')).toBe('true');
   });
 });
 

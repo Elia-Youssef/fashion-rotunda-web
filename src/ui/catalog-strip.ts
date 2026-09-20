@@ -50,6 +50,7 @@ export function mountCatalogStrip(
     button.type = 'button';
     button.className = 'catalog-strip__button';
     button.dataset.look = look.id;
+    button.dataset.tooltip = `Show ${look.name}`;
 
     const url = options.thumbnailUrl(look);
     if (url !== '') {

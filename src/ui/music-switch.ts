@@ -71,12 +71,17 @@ export function mountMusicSwitch(root: HTMLElement, options: MusicSwitchOptions)
     // is worth one more press. The muted look lives in music-switch.css on [data-music='error'].
     label.textContent =
       state === 'off' ? 'Music off' : state === 'error' ? 'Music unavailable' : 'Music on';
+    button.removeAttribute('title');
     if (state === 'armed') {
-      button.title = ARMED_TITLE;
+      button.dataset.tooltip = ARMED_TITLE;
     } else if (state === 'error') {
-      button.title = detail ?? 'Music unavailable';
+      button.dataset.tooltip = detail ?? 'Music unavailable';
+    } else if (state === 'playing') {
+      button.dataset.tooltip = 'Turn music off';
+    } else if (state === 'loading') {
+      button.dataset.tooltip = 'Loading music';
     } else {
-      button.removeAttribute('title');
+      button.dataset.tooltip = 'Turn music on';
     }
   }
 

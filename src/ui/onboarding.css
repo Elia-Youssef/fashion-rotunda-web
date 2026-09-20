@@ -1,0 +1,87 @@
+/* Onboarding guide card and step presentation.
+   Positioned fixed near the current step anchor. */
+
+.onboarding-card {
+  position: fixed;
+  left: var(--onboarding-x, 1rem);
+  top: var(--onboarding-y, 1rem);
+  z-index: 9999;
+  max-width: 18rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #646b74;
+  border-radius: 6px;
+  background: #101214;
+  color: #e6e8ea;
+  font-family: system-ui, sans-serif;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.6);
+  opacity: 1;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.onboarding-card[hidden] {
+  display: none;
+}
+
+.onboarding-card--reduced-motion {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-card {
+    transition: none !important;
+  }
+}
+
+.onboarding-card__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #e6e8ea;
+}
+
+.onboarding-card__text {
+  margin: 0 0 0.75rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #9aa2ab;
+}
+
+.onboarding-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.onboarding-card__skip {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #9aa2ab;
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.onboarding-card__skip:hover {
+  color: #e6e8ea;
+}
+
+.onboarding-card__next {
+  padding: 0.25rem 0.65rem;
+  border: 1px solid #646b74;
+  border-radius: 4px;
+  background: #e6e8ea;
+  color: #101214;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.onboarding-card__skip:focus-visible,
+.onboarding-card__next:focus-visible {
+  outline: 2px solid #e6e8ea;
+  outline-offset: 2px;
+}

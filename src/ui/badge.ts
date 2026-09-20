@@ -38,7 +38,8 @@ export function mountBadge(root: HTMLElement, state: BadgeState): BadgeHandle {
     tierLabel.textContent = current.tier;
     tierLabel.hidden = current.tier === null;
     // The GPU name is long and driver-flavoured; the tooltip is the place for it, not the panel.
-    badge.title = current.gpuName;
+    badge.removeAttribute('title');
+    badge.dataset.tooltip = current.gpuName;
   }
 
   render();

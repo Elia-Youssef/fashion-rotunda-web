@@ -1,0 +1,15 @@
+/* The polite live region. It ships with announce.ts rather than with the tooltip stylesheet so
+   that a page mounting only the announcer still hides it: a live region left visible would print
+   its text on the page. */
+
+.a11y-live-region {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}

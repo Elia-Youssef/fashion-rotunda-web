@@ -44,19 +44,40 @@ const STATE_TABLE: Array<{
   pressed: string;
   busy: boolean;
   disabled: boolean;
-  title: string;
+  tooltip: string;
 }> = [
-  { state: 'off', text: 'Music off', pressed: 'false', busy: false, disabled: false, title: '' },
+  {
+    state: 'off',
+    text: 'Music off',
+    pressed: 'false',
+    busy: false,
+    disabled: false,
+    tooltip: 'Turn music on',
+  },
   {
     state: 'armed',
     text: 'Music on',
     pressed: 'true',
     busy: false,
     disabled: false,
-    title: 'Starts with your first click or key',
+    tooltip: 'Starts with your first click or key',
   },
-  { state: 'loading', text: 'Music on', pressed: 'true', busy: true, disabled: false, title: '' },
-  { state: 'playing', text: 'Music on', pressed: 'true', busy: false, disabled: false, title: '' },
+  {
+    state: 'loading',
+    text: 'Music on',
+    pressed: 'true',
+    busy: true,
+    disabled: false,
+    tooltip: 'Loading music',
+  },
+  {
+    state: 'playing',
+    text: 'Music on',
+    pressed: 'true',
+    busy: false,
+    disabled: false,
+    tooltip: 'Turn music off',
+  },
   {
     // Never disabled: the press in this state is the retry, so the control has to stay pressable.
     state: 'error',
@@ -64,7 +85,7 @@ const STATE_TABLE: Array<{
     pressed: 'false',
     busy: false,
     disabled: false,
-    title: 'The audio context would not start.',
+    tooltip: 'The audio context would not start.',
   },
 ];
 
@@ -102,7 +123,8 @@ describe('mountMusicSwitch', () => {
     }
     expect(btn.disabled).toBe(row.disabled);
     expect(btn.dataset.music).toBe(row.state);
-    expect(btn.title).toBe(row.title);
+    expect(btn.dataset.tooltip).toBe(row.tooltip);
+    expect(btn.hasAttribute('title')).toBe(false);
   });
 
   it('keeps one state after another: no attribute survives two states later', () => {
@@ -112,8 +134,10 @@ describe('mountMusicSwitch', () => {
     current.setState('playing', null);
     expect(button().hasAttribute('aria-busy')).toBe(false);
     current.setState('error', 'The audio context would not start.');
-    expect(button().title).toBe('The audio context would not start.');
+    expect(button().dataset.tooltip).toBe('The audio context would not start.');
+    expect(button().hasAttribute('title')).toBe(false);
     current.setState('off', null);
+    expect(button().dataset.tooltip).toBe('Turn music on');
     expect(button().hasAttribute('title')).toBe(false);
   });
 

@@ -73,6 +73,7 @@ function addRange(
   min: number,
   max: number,
   step: number,
+  tooltipText: string,
 ): { input: HTMLInputElement; value: HTMLOutputElement } {
   const label = element('label', 'lightpanel__label');
   label.htmlFor = id;
@@ -84,6 +85,7 @@ function addRange(
   input.min = String(min);
   input.max = String(max);
   input.step = String(step);
+  input.dataset.tooltip = tooltipText;
 
   const value = element('output', 'lightpanel__value');
   // HTMLOutputElement.htmlFor is a token list, not a string, so the attribute is set directly.
@@ -108,6 +110,7 @@ function addRow(panel: HTMLElement, entry: RigLight, idPrefix: string): RowContr
   const on = element('input', 'lightpanel__switch');
   on.type = 'checkbox';
   on.id = onId;
+  on.dataset.tooltip = `Toggle ${entry.label} on or off`;
   row.append(onLabel, on);
 
   const scale = intensityScale(entry.kind);
@@ -118,6 +121,7 @@ function addRow(panel: HTMLElement, entry: RigLight, idPrefix: string): RowContr
     scale.range[0],
     scale.range[1],
     scale.step,
+    `Adjust ${entry.label} brightness`,
   );
   const kelvin = addRange(
     row,
@@ -126,6 +130,7 @@ function addRow(panel: HTMLElement, entry: RigLight, idPrefix: string): RowContr
     KELVIN_RANGE[0],
     KELVIN_RANGE[1],
     KELVIN_STEP,
+    `Adjust ${entry.label} color temperature`,
   );
 
   const angle =
@@ -138,6 +143,7 @@ function addRow(panel: HTMLElement, entry: RigLight, idPrefix: string): RowContr
           SUN_ANGLE_RANGE[0],
           SUN_ANGLE_RANGE[1],
           SUN_ANGLE_STEP,
+          'Adjust sun elevation angle',
         );
 
   panel.appendChild(row);
@@ -172,6 +178,7 @@ export function mountLightPanel(root: HTMLElement, options: LightPanelOptions): 
     label.textContent = 'Preset';
     const select = element('select', 'lightpanel__select');
     select.id = id;
+    select.dataset.tooltip = 'Choose studio lighting preset';
     const placeholder = document.createElement('option');
     placeholder.value = '';
     placeholder.textContent = 'Choose a preset';

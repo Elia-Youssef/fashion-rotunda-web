@@ -29,6 +29,7 @@ import { decideTier, tierOverrideFromUrl } from './tiers/decide';
 import type { TierInput } from './tiers/decide';
 import { TIERS } from './tiers/table';
 import type { TierName } from './tiers/table';
+import { mountA11y } from './ui/a11y';
 import { mountBadge } from './ui/badge';
 import { mountChrome } from './ui/chrome';
 
@@ -552,7 +553,7 @@ async function main(): Promise<void> {
       },
     });
     // hook: share
-    // hook: onboarding
+    mountA11y({ root: document.body, aside, canvas, search });
     // hook: loading reveal
 
     if (import.meta.env.DEV || params.get('e2e') === '1') {

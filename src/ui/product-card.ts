@@ -82,11 +82,15 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
   }
 
   const rotateButton = action('Rotate', 'rotate');
+  rotateButton.dataset.tooltip = 'Turn the look';
   const audioButton = action('Audio', 'audio');
+  audioButton.dataset.tooltip = 'Play audio description';
   const resetButton = action('Reset', 'reset');
+  resetButton.dataset.tooltip = 'Reset camera and mannequin';
   // Material opens the swatch row when it is collapsed; the row starts open, matching the Unreal
   // still, so the button is mostly the guarantee the row can always be reached.
   const materialButton = action('Material', 'material');
+  materialButton.dataset.tooltip = 'Show mannequin swatches';
   materialButton.setAttribute('aria-controls', swatchesId);
 
   card.appendChild(actions);
@@ -143,6 +147,19 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
     materialButton.setAttribute('aria-expanded', String(!collapsed));
   }
 
+  function swatchTooltip(variant: string): string {
+    if (variant === 'light') {
+      return 'Copy of the mannequin in a lighter tone';
+    }
+    if (variant === 'dark') {
+      return 'Mannequin in dark charcoal tone';
+    }
+    if (variant === 'base') {
+      return 'Mannequin in default tone';
+    }
+    return `Mannequin in ${variant} tone`;
+  }
+
   function renderSwatches(look: CatalogLook): void {
     for (const button of swatchButtons.values()) {
       button.remove();
@@ -154,10 +171,12 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
       button.className = `product-card__swatch product-card__swatch--${variant}`;
       button.setAttribute('role', 'radio');
       button.setAttribute('aria-label', variant);
-      button.title = variant;
+      button.dataset.tooltip = swatchTooltip(variant);
+      button.tabIndex = -1;
       button.addEventListener(
         'click',
         () => {
+          handle.setVariant(variant);
           options.actions.material(variant);
         },
         { signal },
@@ -166,6 +185,44 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
       swatches.appendChild(button);
     }
   }
+
+  // Single tab stop: arrow keys move the check and apply the swatch, Home and End go to the ends.
+  swatches.addEventListener(
+    'keydown',
+    (event: KeyboardEvent) => {
+      // The variant comes from the map's key, never from the button's label: aria-label is display
+      // text, and rewording it must not silently change which material the arrow keys apply.
+      const entries = Array.from(swatchButtons.entries());
+      if (entries.length === 0) {
+        return;
+      }
+      const active = document.activeElement;
+      const currentIndex = entries.findIndex(([, button]) => button === active);
+      if (currentIndex === -1) {
+        return;
+      }
+
+      let nextIndex = -1;
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        nextIndex = (currentIndex + 1) % entries.length;
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        nextIndex = (currentIndex - 1 + entries.length) % entries.length;
+      } else if (event.key === 'Home') {
+        nextIndex = 0;
+      } else if (event.key === 'End') {
+        nextIndex = entries.length - 1;
+      }
+
+      if (nextIndex !== -1) {
+        event.preventDefault();
+        const [variant, nextButton] = entries[nextIndex];
+        handle.setVariant(variant);
+        options.actions.material(variant);
+        nextButton.focus();
+      }
+    },
+    { signal },
+  );
 
   function renderLook(look: CatalogLook | null): void {
     if (look === null) {
@@ -199,11 +256,27 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
       setSwatchesCollapsed(false);
     },
     setVariant(variant: string | null): void {
+      let checkedFound = false;
       for (const [variantName, button] of swatchButtons) {
         if (variantName === variant) {
           button.setAttribute('aria-checked', 'true');
+          button.tabIndex = 0;
+          checkedFound = true;
         } else {
           button.setAttribute('aria-checked', 'false');
+          button.tabIndex = -1;
+        }
+      }
+      if (!checkedFound) {
+        const first = swatchButtons.values().next().value;
+        if (first !== undefined) {
+          // A name this look does not carry must still leave the group with one checked member,
+          // or the arrow keys have no starting point. An explicit null is a clear, not a miss,
+          // so it only moves the tab stop.
+          if (variant !== null) {
+            first.setAttribute('aria-checked', 'true');
+          }
+          first.tabIndex = 0;
         }
       }
     },

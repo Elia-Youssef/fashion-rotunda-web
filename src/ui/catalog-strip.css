@@ -13,7 +13,7 @@
 .catalog-strip__button {
   display: block;
   padding: 0;
-  border: 1px solid #3a4048;
+  border: 1px solid #646b74;
   border-radius: 4px;
   background: #101214;
   /* The nav lets pointer events through to the canvas (see chrome.css); the buttons take them
