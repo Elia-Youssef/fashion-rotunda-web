@@ -25,6 +25,7 @@ import type { Catalog, CatalogLook } from '../catalog/catalog';
 import { createSwitcher } from '../catalog/switcher';
 import { CROSSFADE_MS, createFadeMachine } from './crossfade';
 import { createGltfLoader } from './loaders';
+import { applyTunings } from './materials';
 import { listVariants, selectVariant } from './variants';
 
 /** The clear colour behind the room, dark enough that an unlit frame reads as empty, not broken. */
@@ -202,6 +203,37 @@ function collectTextures(material: Material, into: Set<Texture>): void {
   }
 }
 
+const loggedFiles = new Set<string>();
+
+function logMaterialClasses(fileName: string, root: Object3D): void {
+  if (loggedFiles.has(fileName)) {
+    return;
+  }
+  loggedFiles.add(fileName);
+  const rows: { material: string; type: string }[] = [];
+  const seen = new Set<Material>();
+  root.traverse((object: Object3D) => {
+    if (object instanceof Mesh) {
+      const assigned = object.material;
+      const list = Array.isArray(assigned) ? assigned : [assigned];
+      for (const mat of list) {
+        if (!seen.has(mat)) {
+          seen.add(mat);
+          rows.push({ material: mat.name, type: mat.type });
+        }
+      }
+    }
+  });
+  console.log(`[archviz] material classes for ${fileName}:`, rows);
+}
+
+function tuneHierarchy(root: Object3D, fileName?: string): void {
+  applyTunings(root);
+  if (import.meta.env.DEV && fileName !== undefined) {
+    logMaterialClasses(fileName, root);
+  }
+}
+
 export function createShowroom(options: ShowroomOptions): Showroom {
   const { renderer, catalog, contentBase, onChange } = options;
   const decorate = options.decorate ?? ((): void => undefined);
@@ -360,6 +392,7 @@ export function createShowroom(options: ShowroomOptions): Showroom {
   async function loadLook(id: string, signal: AbortSignal): Promise<LoadedLook> {
     const look = lookById(id);
     const gltf = await loadGltf(contentUrl(contentBase, look.file), signal);
+    tuneHierarchy(gltf.scene, look.file);
     const variants = listVariants(gltf);
     const loaded: LoadedLook = {
       id,
@@ -377,6 +410,7 @@ export function createShowroom(options: ShowroomOptions): Showroom {
       // Applied before the look reaches the scene, so a switch never shows one frame of the
       // previous swatch.
       await selectVariant({ root: loaded.root, parser: loaded.parser, variants }, wanted);
+      applyTunings(loaded.root);
       loaded.applied = wanted;
     }
     collectResources(loaded);
@@ -437,6 +471,8 @@ export function createShowroom(options: ShowroomOptions): Showroom {
         loadGltf(contentUrl(contentBase, catalog.rotunda.file), forever),
         loadGltf(contentUrl(contentBase, catalog.plinth.file), forever),
       ]);
+      tuneHierarchy(rotunda.scene, catalog.rotunda.file);
+      tuneHierarchy(plinth.scene, catalog.plinth.file);
       // The level origin is the room centre at floor height and the plinth stands on it, so both
       // keep the transform they were exported with.
       decorate(rotunda.scene);
@@ -472,6 +508,7 @@ export function createShowroom(options: ShowroomOptions): Showroom {
         throw new Error(`the look "${look.id}" has no variant "${name}"`);
       }
       await selectVariant({ root: look.root, parser: look.parser, variants: look.variants }, name);
+      applyTunings(look.root);
       look.applied = name;
       currentVariant = name;
       wantedVariant = name;
