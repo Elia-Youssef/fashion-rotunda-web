@@ -20,8 +20,9 @@ function expectedBackend(): Backend {
 
 function targetPath(backend: Backend): string {
   // ?webgl=1 forces the fallback on a machine that has WebGPU, so the webgl2 project stays
-  // testable locally too.
-  return backend === 'webgpu' ? '/' : '/?webgl=1';
+  // testable locally too. gate=off keeps the loading gate away: the pixel check below reads the
+  // canvas, and a gate over it would be counted as the room.
+  return backend === 'webgpu' ? '/?gate=off' : '/?webgl=1&gate=off';
 }
 
 async function skipWhenWebGPUUnavailable(page: Page, backend: Backend): Promise<void> {

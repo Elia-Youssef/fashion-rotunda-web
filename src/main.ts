@@ -35,6 +35,7 @@ import type { TierName } from './tiers/table';
 import { mountA11y } from './ui/a11y';
 import { mountBadge } from './ui/badge';
 import { mountChrome } from './ui/chrome';
+import { gateWanted, mountLoadingGate } from './ui/loading-gate';
 
 /** What the scene is made of, as the e2e suite reads it. Material names are three.js type strings. */
 interface SceneDescription {
@@ -189,7 +190,9 @@ async function main(): Promise<void> {
 
   // The loading gate (G6.5) mounts here, before the renderer, so it is on screen from
   // the first paint; its reveal comes after the content and the controls, further down.
-  // hook: loading mount
+  const gate = gateWanted(search)
+    ? mountLoadingGate({ root: document.body, canvas, contentBase: FULL_CONTENT_BASE, onEnter: wake })
+    : null;
 
   // Decided before the renderer exists because it decides how the renderer is built: the timestamp
   // queries and their per-frame resolve serve the panel and nothing else, so a visitor who never
@@ -618,7 +621,10 @@ async function main(): Promise<void> {
       onChange: () => loop.invalidate(),
     });
     mountA11y({ root: document.body, aside, canvas, search });
-    // hook: loading reveal
+    // A let's narrowing does not reach inside a closure, so the non-null showroom is bound to a
+    // const for the compile; switchLooks rebinds the same way for the same reason.
+    const room = showroom;
+    await gate?.ready(() => renderer.compileAsync(room.scene, room.camera));
 
     if (import.meta.env.DEV || params.get('e2e') === '1') {
       const ids = catalog.looks.map((entry) => entry.id);
