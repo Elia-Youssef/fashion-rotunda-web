@@ -9,6 +9,7 @@ import type { Material } from 'three/webgpu';
 import { mountMusic } from './audio/mount';
 import { mountCamera } from './camera/mount';
 import type { CameraMount } from './camera/mount';
+import { mountModeSwitch } from './camera/mode-switch';
 import { contentUrl, loadCatalog } from './catalog/catalog';
 import type { Catalog, CatalogLook } from './catalog/catalog';
 import { composeLighting, enableShadows } from './lighting/compose';
@@ -596,10 +597,14 @@ async function main(): Promise<void> {
       showroom,
       loop,
       proofView: catalog.views.proof,
+      views: catalog.views,
+      isTouch,
+      collisionUrl: contentUrl(base, 'collision.glb'),
+      search,
     });
     cameraMount = cameraHandle;
     proofView = catalog.views.proof;
-    // hook: camera modes
+    mountModeSwitch(requireElement('header', 'page header'), cameraHandle);
     mountChrome({
       catalog,
       contentBase: base,

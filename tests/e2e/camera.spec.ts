@@ -86,3 +86,242 @@ test('the turntable turns the look and the loop settles once it stops', async ({
   }
   expect(settled, 'the frame counter stopped within twelve seconds').toBe(true);
 });
+
+test('walk mode stops at walls and stays above floor', async ({ page }) => {
+  test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
+  const errors: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') {
+      errors.push(msg.text());
+    }
+  });
+  await page.goto('/?webgl=1&e2e=1');
+  const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: 30_000 });
+
+  const walkBtn = page.locator('button[data-mode="walk"]');
+  await expect(walkBtn).toBeEnabled({ timeout: 10_000 });
+
+  await page.evaluate(async () => {
+    await window.archvizCamera?.setMode('walk');
+  });
+  await expect(canvas).toHaveAttribute('data-camera', 'walk');
+
+  // Point camera toward the nearest wall behind starting pose:
+  // Default pose: foot at [0, 0, 5.5], facing origin (yaw = 0).
+  // The wall behind is at z ~ 7.5 m. Setting yaw = Math.PI points toward [0, 0, 7.5].
+  await page.evaluate(() => {
+    window.archvizCamera?.walk?.setPose([0, 0, 5.5], Math.PI, 0);
+  });
+
+  await canvas.focus();
+  await page.keyboard.down('KeyW');
+  await page.waitForTimeout(3000);
+  await page.keyboard.up('KeyW');
+
+  const foot = await page.evaluate((): [number, number, number] => {
+    return window.archvizCamera?.walk?.foot ?? [0, -1, 0];
+  });
+
+  expect(foot[1], 'foot stays on or above the floor').toBeGreaterThanOrEqual(0);
+  const distance = Math.hypot(foot[0], foot[2]);
+  expect(distance, 'foot stays inside the rotunda walls').toBeLessThan(8.0);
+  expect(foot[2], 'foot was stopped by the wall').toBeLessThan(7.5);
+  expect(errors).toEqual([]);
+});
+
+test('the real collision GLB blocks normal and sprint routes around the plinth and every wall', async ({ page }) => {
+  test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
+  await page.goto('/?webgl=1&e2e=1&attract=0');
+  const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: 30_000 });
+  await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
+  await page.evaluate(async () => {
+    await window.archvizCamera?.setMode('walk');
+  });
+
+  const routes = await page.evaluate(() => {
+    const camera = window.archvizCamera;
+    const scene = document.querySelector('canvas#scene');
+    if (camera === undefined || scene === null) {
+      throw new Error('camera or canvas unavailable');
+    }
+    const run = (foot: [number, number, number], yaw: number, sprint: boolean): [number, number, number] => {
+      camera.walk?.setPose(foot, yaw, 0);
+      scene.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true }));
+      if (sprint) {
+        scene.dispatchEvent(new KeyboardEvent('keydown', { code: 'ShiftLeft', bubbles: true }));
+      }
+      for (let frame = 0; frame < 100; frame += 1) {
+        camera.walk?.update(100);
+      }
+      scene.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW', bubbles: true }));
+      scene.dispatchEvent(new KeyboardEvent('keyup', { code: 'ShiftLeft', bubbles: true }));
+      return camera.walk?.foot ?? [99, 99, 99];
+    };
+
+    return {
+      plinth: run([0, 0, 5.5], 0, false),
+      north: run([0, 0, 4], Math.PI, false),
+      south: run([0, 0, -4], 0, true),
+      east: run([4, 0, 0], Math.PI / 2, true),
+      west: run([-4, 0, 0], -Math.PI / 2, false),
+    };
+  });
+
+  expect(Math.hypot(routes.plinth[0], routes.plinth[2]), 'plinth blocks a direct approach').toBeGreaterThan(0.9);
+  expect(routes.north[2], 'north wall contains normal speed').toBeLessThan(8);
+  expect(routes.south[2], 'south wall contains sprint speed').toBeGreaterThan(-9);
+  expect(routes.east[0], 'east wall contains sprint speed').toBeLessThan(9.5);
+  expect(routes.west[0], 'west wall contains normal speed').toBeGreaterThan(-8);
+  for (const foot of Object.values(routes)) {
+    expect(foot[1], 'every route stays on the floor').toBeGreaterThanOrEqual(0);
+  }
+});
+
+test.describe('touch walkthrough controls', () => {
+  // Boot at the normal test size, then resize to the landscape-phone target below. Chromium's
+  // software WebGL loader cannot boot this scene with a touch-emulation GPU profile, but the
+  // synthetic PointerEvents below still exercise its `pointerType: 'touch'` production path.
+
+  test('keeps joystick movement and right-side look separate', async ({ page }) => {
+    test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
+    await page.addInitScript(() => {
+      const nativeMatchMedia = window.matchMedia.bind(window);
+      window.matchMedia = ((query: string) => {
+        const result = nativeMatchMedia(query);
+        if (query === '(pointer: coarse)') {
+          Object.defineProperty(result, 'matches', { configurable: true, value: true });
+        }
+        return result;
+      }) as typeof window.matchMedia;
+    });
+    await page.goto('/?webgl=1&e2e=1&attract=0');
+    const canvas = page.locator('canvas#scene');
+    await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: 30_000 });
+    await page.setViewportSize({ width: 767, height: 430 });
+    await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
+    await page.evaluate(async () => {
+      await window.archvizCamera?.setMode('walk');
+    });
+
+    const joystick = page.locator('.archviz-joystick-base');
+    await expect(joystick).toBeVisible();
+    const joyBox = await joystick.boundingBox();
+    const canvasBox = await canvas.boundingBox();
+    if (joyBox === null || canvasBox === null) {
+      throw new Error('touch controls have no layout box');
+    }
+    const before = await page.evaluate(() => ({
+      foot: window.archvizCamera?.walk?.foot,
+      yaw: window.archvizCamera?.walk?.yaw,
+    }));
+
+    await joystick.dispatchEvent('pointerdown', {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: joyBox.x + joyBox.width / 2,
+      clientY: joyBox.y + joyBox.height / 2,
+    });
+    await joystick.dispatchEvent('pointermove', {
+      pointerId: 1,
+      pointerType: 'touch',
+      clientX: joyBox.x + joyBox.width / 2,
+      clientY: joyBox.y + 8,
+    });
+    await canvas.dispatchEvent('pointerdown', {
+      pointerId: 2,
+      pointerType: 'touch',
+      clientX: canvasBox.x + canvasBox.width * 0.8,
+      clientY: canvasBox.y + canvasBox.height / 2,
+    });
+    await canvas.dispatchEvent('pointermove', {
+      pointerId: 2,
+      pointerType: 'touch',
+      clientX: canvasBox.x + canvasBox.width * 0.9,
+      clientY: canvasBox.y + canvasBox.height / 2,
+    });
+    await page.waitForTimeout(400);
+    await joystick.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'touch' });
+    await canvas.dispatchEvent('pointerup', { pointerId: 2, pointerType: 'touch' });
+
+    const after = await page.evaluate(() => ({
+      foot: window.archvizCamera?.walk?.foot,
+      yaw: window.archvizCamera?.walk?.yaw,
+    }));
+    expect(after.foot).not.toEqual(before.foot);
+    expect(after.yaw).not.toBe(before.yaw);
+  });
+});
+
+test('two round trips orbit-walk-orbit end at starting orbit position within 1 mm', async ({ page }) => {
+  test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
+  const errors: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') {
+      errors.push(msg.text());
+    }
+  });
+  await page.goto('/?webgl=1&e2e=1');
+  const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: 30_000 });
+
+  const walkBtn = page.locator('button[data-mode="walk"]');
+  await expect(walkBtn).toBeEnabled({ timeout: 10_000 });
+
+  const initial = await page.evaluate((): [number, number, number] => {
+    const pos = window.archvizCamera?.orbit.position ?? [0, 0, 0];
+    return [pos[0], pos[1], pos[2]];
+  });
+
+  for (let trip = 0; trip < 2; trip += 1) {
+    await page.evaluate(async () => {
+      await window.archvizCamera?.setMode('walk');
+    });
+    await expect(canvas).toHaveAttribute('data-camera', 'walk');
+
+    await page.evaluate(async () => {
+      await window.archvizCamera?.setMode('orbit');
+    });
+    await expect(canvas).toHaveAttribute('data-camera', 'orbit');
+  }
+
+  const finalPos = await page.evaluate((): [number, number, number] => {
+    const pos = window.archvizCamera?.orbit.position ?? [0, 0, 0];
+    return [pos[0], pos[1], pos[2]];
+  });
+
+  const diff = Math.hypot(
+    finalPos[0] - initial[0],
+    finalPos[1] - initial[1],
+    finalPos[2] - initial[2],
+  );
+  expect(diff, 'ends at starting orbit position within 1 mm').toBeLessThan(0.001);
+  expect(errors).toEqual([]);
+});
+
+test('attract loop tours presets when idle and cancels on input', async ({ page }) => {
+  test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
+  const errors: string[] = [];
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') {
+      errors.push(msg.text());
+    }
+  });
+  await page.goto('/?webgl=1&e2e=1&attract=1&attractIdle=500');
+  const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: 30_000 });
+
+  // data-attract becomes 1 within 5 s
+  await expect(canvas).toHaveAttribute('data-attract', '1', { timeout: 5_000 });
+
+  // Synthetic pointermove sets data-attract to 0
+  const box = await canvas.boundingBox();
+  if (box === null) {
+    throw new Error('the canvas has no box to move pointer over');
+  }
+  await page.mouse.move(box.x + 50, box.y + 50);
+  await expect(canvas).toHaveAttribute('data-attract', '0', { timeout: 2_000 });
+
+  expect(errors).toEqual([]);
+});

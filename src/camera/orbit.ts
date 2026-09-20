@@ -32,17 +32,30 @@ export interface OrbitOptions {
 export interface OrbitHandle {
   /** Integrates damping; true while the camera is still moving. */
   update(dtMs: number): boolean;
-  setPose(position: [number, number, number], target: [number, number, number]): void;
+  setPose(position: [number, number, number], target: [number, number, number], fov?: number): void;
   /**
    * Moves to a pose without making it the one reset() returns to: a pose that arrives in a link
    * is the visitor's own, and Reset still means the view the page was built with.
    */
-  moveTo(position: [number, number, number], target: [number, number, number]): void;
+  moveTo(position: [number, number, number], target: [number, number, number], fov?: number): void;
+  /**
+   * Smoothly eases to a pose over ms (0 ms is instantaneous). Respects limits and resolves on arrival.
+   */
+  glideTo(
+    position: [number, number, number],
+    target: [number, number, number],
+    ms?: number,
+    fov?: number,
+  ): Promise<void>;
+  /** Enables or disables input processing. */
+  setEnabled(on: boolean): void;
   /** back to the pose it was created or last setPose'd with */
   reset(): void;
   readonly moving: boolean;
   /** The camera's position in metres; the e2e suite reads it through window.archvizCamera. */
   readonly position: [number, number, number];
+  /** The orbit's target in metres. */
+  readonly target: [number, number, number];
   /** removes every listener it added */
   dispose(): void;
 }
@@ -102,6 +115,20 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
   let lastMoveMs = Number.NEGATIVE_INFINITY;
   let pinchSpread = 0;
   let capturedPointer: number | null = null;
+  let isEnabled = true;
+
+  interface ActiveGlide {
+    startPos: Vector3;
+    startTarget: Vector3;
+    destPos: Vector3;
+    destTarget: Vector3;
+    startFov: number;
+    destFov: number;
+    durationMs: number;
+    elapsedMs: number;
+    resolve: () => void;
+  }
+  let activeGlide: ActiveGlide | null = null;
 
   function clampPhi(phi: number): number {
     return MathUtils.clamp(phi, limits.minPolar, limits.maxPolar);
@@ -109,6 +136,18 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
 
   function clampDistance(distance: number): number {
     return MathUtils.clamp(distance, limits.minDistance, limits.maxDistance);
+  }
+
+  function clampFov(fov: number): number {
+    return MathUtils.clamp(fov, 1, 179);
+  }
+
+  function applyFov(fov: number): void {
+    const next = clampFov(fov);
+    if (camera.fov !== next) {
+      camera.fov = next;
+      camera.updateProjectionMatrix();
+    }
   }
 
   function apply(): void {
@@ -161,6 +200,14 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
   }
 
   function onPointerDown(event: PointerEvent): void {
+    if (!isEnabled) {
+      return;
+    }
+    if (activeGlide !== null) {
+      const finish = activeGlide.resolve;
+      activeGlide = null;
+      finish();
+    }
     if (event.pointerType === 'mouse' && event.button !== 0) {
       return; // the left button only; middle and right are not inspection inputs
     }
@@ -184,7 +231,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
   }
 
   function onPointerMove(event: PointerEvent): void {
-    if (!pointers.has(event.pointerId)) {
+    if (!isEnabled || !pointers.has(event.pointerId)) {
       return; // a hover, or a pointer this control never grabbed
     }
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -239,6 +286,9 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
   }
 
   function onWheel(event: WheelEvent): void {
+    if (!isEnabled) {
+      return;
+    }
     if (event.ctrlKey) {
       // A trackpad pinch reaches the page as ctrl plus wheel, and the browser answers it by
       // zooming the page. Dollying as well would move two things at once for the one gesture.
@@ -253,6 +303,9 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
   }
 
   function onKeyDown(event: KeyboardEvent): void {
+    if (!isEnabled) {
+      return;
+    }
     // The listener sits on the canvas itself, so it only fires while the canvas holds focus.
     switch (event.key) {
       case 'ArrowLeft':
@@ -301,6 +354,27 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
 
   return {
     update(dtMs: number): boolean {
+      if (activeGlide !== null) {
+        if (dtMs > 0) {
+          activeGlide.elapsedMs += dtMs;
+          const t = Math.min(1, activeGlide.elapsedMs / activeGlide.durationMs);
+          const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+          const curPos = new Vector3().lerpVectors(activeGlide.startPos, activeGlide.destPos, eased);
+          const curTarget = new Vector3().lerpVectors(activeGlide.startTarget, activeGlide.destTarget, eased);
+          target.copy(curTarget);
+          applyFov(MathUtils.lerp(activeGlide.startFov, activeGlide.destFov, eased));
+          spherical.setFromVector3(curPos.sub(target));
+          spherical.phi = clampPhi(spherical.phi);
+          spherical.radius = clampDistance(spherical.radius);
+          apply();
+          if (t >= 1) {
+            const finish = activeGlide.resolve;
+            activeGlide = null;
+            finish();
+          }
+        }
+        return true;
+      }
       if (dragging) {
         // rotateBy has already applied every move of this drag to the spherical state. Draining
         // the glide here would apply the last move a second time, at a scale set by how many
@@ -332,7 +406,12 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
       return pendingTheta !== 0 || pendingPhi !== 0;
     },
 
-    setPose(position: [number, number, number], poseTarget: [number, number, number]): void {
+    setPose(position: [number, number, number], poseTarget: [number, number, number], fov?: number): void {
+      if (activeGlide !== null) {
+        const finish = activeGlide.resolve;
+        activeGlide = null;
+        finish();
+      }
       target.set(...poseTarget);
       spherical.setFromVector3(new Vector3(...position).sub(target));
       spherical.phi = clampPhi(spherical.phi);
@@ -341,19 +420,85 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
       resetTarget.copy(target);
       pendingTheta = 0;
       pendingPhi = 0;
+      if (fov !== undefined) {
+        applyFov(fov);
+      }
       apply();
     },
 
-    moveTo(position: [number, number, number], poseTarget: [number, number, number]): void {
-      // setPose without the two resetSpherical/resetTarget copies. Written out rather than
-      // shared, so the pose setPose homes reset() on stays exactly the code it was.
-      target.set(...poseTarget);
-      spherical.setFromVector3(new Vector3(...position).sub(target));
-      spherical.phi = clampPhi(spherical.phi);
-      spherical.radius = clampDistance(spherical.radius);
+    glideTo(
+      position: [number, number, number],
+      poseTarget: [number, number, number],
+      ms = 0,
+      fov,
+    ): Promise<void> {
+      const destTarget = new Vector3(...poseTarget);
+      const destSpherical = new Spherical().setFromVector3(new Vector3(...position).sub(destTarget));
+      destSpherical.phi = clampPhi(destSpherical.phi);
+      destSpherical.radius = clampDistance(destSpherical.radius);
+      const destPos = new Vector3()
+        .setFromSphericalCoords(destSpherical.radius, destSpherical.phi, destSpherical.theta)
+        .add(destTarget);
+      const destFov = fov === undefined ? camera.fov : clampFov(fov);
+
+      if (activeGlide !== null) {
+        const finish = activeGlide.resolve;
+        activeGlide = null;
+        finish();
+      }
+
+      if (ms <= 0) {
+        target.copy(destTarget);
+        spherical.copy(destSpherical);
+        applyFov(destFov);
+        pendingTheta = 0;
+        pendingPhi = 0;
+        apply();
+        return Promise.resolve();
+      }
+
+      const startPos = new Vector3().copy(camera.position);
+      const startTarget = new Vector3().copy(target);
+      const startFov = camera.fov;
       pendingTheta = 0;
       pendingPhi = 0;
-      apply();
+
+      return new Promise<void>((resolve) => {
+        activeGlide = {
+          startPos,
+          startTarget,
+          destPos,
+          destTarget,
+          startFov,
+          destFov,
+          durationMs: ms,
+          elapsedMs: 0,
+          resolve,
+        };
+        onChange();
+      });
+    },
+
+    moveTo(position: [number, number, number], poseTarget: [number, number, number], fov?: number): void {
+      void this.glideTo(position, poseTarget, 0, fov);
+    },
+
+    setEnabled(on: boolean): void {
+      isEnabled = on;
+      if (!on) {
+        if (capturedPointer !== null) {
+          releaseCapture(capturedPointer);
+        }
+        pointers.clear();
+        dragging = false;
+        pendingTheta = 0;
+        pendingPhi = 0;
+        if (activeGlide !== null) {
+          const finish = activeGlide.resolve;
+          activeGlide = null;
+          finish();
+        }
+      }
     },
 
     reset,
@@ -361,11 +506,15 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     get moving(): boolean {
       // A held drag is motion too: the post chain drops its heavy effects to half resolution on
       // this signal, and a drag that only reported motion once it glided kept them at full.
-      return dragging || pendingTheta !== 0 || pendingPhi !== 0;
+      return dragging || pendingTheta !== 0 || pendingPhi !== 0 || activeGlide !== null;
     },
 
     get position(): [number, number, number] {
       return [camera.position.x, camera.position.y, camera.position.z];
+    },
+
+    get target(): [number, number, number] {
+      return [target.x, target.y, target.z];
     },
 
     dispose(): void {
@@ -382,6 +531,11 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
       dragging = false;
       pendingTheta = 0;
       pendingPhi = 0;
+      if (activeGlide !== null) {
+        const finish = activeGlide.resolve;
+        activeGlide = null;
+        finish();
+      }
     },
   };
 }
