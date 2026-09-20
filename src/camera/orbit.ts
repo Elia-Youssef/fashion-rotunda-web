@@ -359,7 +359,9 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     reset,
 
     get moving(): boolean {
-      return pendingTheta !== 0 || pendingPhi !== 0;
+      // A held drag is motion too: the post chain drops its heavy effects to half resolution on
+      // this signal, and a drag that only reported motion once it glided kept them at full.
+      return dragging || pendingTheta !== 0 || pendingPhi !== 0;
     },
 
     get position(): [number, number, number] {

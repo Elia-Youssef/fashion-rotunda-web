@@ -190,6 +190,18 @@ describe('createOrbit', () => {
     expect(readSpherical(target.orbit).theta).toBeCloseTo(held, 12);
   });
 
+  it('reports motion while a drag is held, and none after a still release', () => {
+    const clock = { ms: 1000 };
+    const target = make(clock);
+    pointer(target, 'pointerdown', 100, 100);
+    pointer(target, 'pointermove', 120, 100);
+    // The post chain lowers its heavy effects on this reading, so a held drag must count.
+    expect(target.orbit.moving).toBe(true);
+    clock.ms += 200;
+    pointer(target, 'pointerup', 120, 100);
+    expect(target.orbit.moving).toBe(false);
+  });
+
   it('glides when the release follows the last move inside the window', () => {
     const clock = { ms: 1000 };
     const target = make(clock);
