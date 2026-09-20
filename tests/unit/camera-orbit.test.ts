@@ -305,6 +305,33 @@ describe('createOrbit', () => {
     expect(target.orbit.moving).toBe(false);
   });
 
+  it('moveTo places the camera and leaves reset on the pose it was built with', () => {
+    const target = make();
+    const pose: [number, number, number] = [2, 1.6, 3];
+    target.orbit.moveTo(pose, TARGET);
+    const placed = target.orbit.position;
+    expect(placed[0]).toBeCloseTo(2, 9);
+    expect(placed[1]).toBeCloseTo(1.6, 9);
+    expect(placed[2]).toBeCloseTo(3, 9);
+    target.orbit.reset();
+    const back = target.orbit.position;
+    expect(back[0]).toBeCloseTo(PROOF_POSITION[0], 9);
+    expect(back[1]).toBeCloseTo(PROOF_POSITION[1], 9);
+    expect(back[2]).toBeCloseTo(PROOF_POSITION[2], 9);
+    expect(target.orbit.moving).toBe(false);
+  });
+
+  it('moveTo clamps the distance and the polar angle exactly as setPose does', () => {
+    const far = make();
+    const near = make();
+    const outside: [number, number, number] = [0, 40, 40];
+    far.orbit.setPose(outside, TARGET);
+    near.orbit.moveTo(outside, TARGET);
+    expect(readSpherical(near.orbit).radius).toBeCloseTo(readSpherical(far.orbit).radius, 9);
+    expect(readSpherical(near.orbit).phi).toBeCloseTo(readSpherical(far.orbit).phi, 9);
+    expect(readSpherical(near.orbit).theta).toBeCloseTo(readSpherical(far.orbit).theta, 9);
+  });
+
   it('asks for a frame on every applied change', () => {
     const target = make();
     pointer(target, 'pointerdown', 100, 100);

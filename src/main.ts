@@ -26,6 +26,7 @@ import { showLossNotice, showPoster } from './renderer/notices';
 import { detectSupport } from './renderer/support';
 import { SCENE_BACKGROUND, createShowroom } from './scene/showroom';
 import type { Showroom } from './scene/showroom';
+import { mountShare } from './share/mount';
 import { runBenchmark } from './tiers/benchmark';
 import { decideTier, tierOverrideFromUrl } from './tiers/decide';
 import type { TierInput } from './tiers/decide';
@@ -600,7 +601,22 @@ async function main(): Promise<void> {
         loop.invalidate();
       },
     });
-    // hook: share
+    mountShare({
+      root: aside,
+      search,
+      showroom,
+      defaultLook: catalog.looks[0].id,
+      defaultVariant: catalog.looks[0].defaultVariant,
+      lighting,
+      camera: cameraHandle,
+      music,
+      postFeatures: () => canvas.dataset.post ?? 'off',
+      proofTarget: catalog.views.proof.target,
+      renderer,
+      canvas,
+      drawFrame,
+      onChange: () => loop.invalidate(),
+    });
     mountA11y({ root: document.body, aside, canvas, search });
     // hook: loading reveal
 

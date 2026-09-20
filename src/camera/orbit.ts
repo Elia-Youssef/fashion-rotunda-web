@@ -33,6 +33,11 @@ export interface OrbitHandle {
   /** Integrates damping; true while the camera is still moving. */
   update(dtMs: number): boolean;
   setPose(position: [number, number, number], target: [number, number, number]): void;
+  /**
+   * Moves to a pose without making it the one reset() returns to: a pose that arrives in a link
+   * is the visitor's own, and Reset still means the view the page was built with.
+   */
+  moveTo(position: [number, number, number], target: [number, number, number]): void;
   /** back to the pose it was created or last setPose'd with */
   reset(): void;
   readonly moving: boolean;
@@ -334,6 +339,18 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
       spherical.radius = clampDistance(spherical.radius);
       resetSpherical.copy(spherical);
       resetTarget.copy(target);
+      pendingTheta = 0;
+      pendingPhi = 0;
+      apply();
+    },
+
+    moveTo(position: [number, number, number], poseTarget: [number, number, number]): void {
+      // setPose without the two resetSpherical/resetTarget copies. Written out rather than
+      // shared, so the pose setPose homes reset() on stays exactly the code it was.
+      target.set(...poseTarget);
+      spherical.setFromVector3(new Vector3(...position).sub(target));
+      spherical.phi = clampPhi(spherical.phi);
+      spherical.radius = clampDistance(spherical.radius);
       pendingTheta = 0;
       pendingPhi = 0;
       apply();
