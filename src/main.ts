@@ -36,6 +36,7 @@ import { mountA11y } from './ui/a11y';
 import { mountBadge } from './ui/badge';
 import { mountChrome } from './ui/chrome';
 import { gateWanted, mountLoadingGate } from './ui/loading-gate';
+import { mountShell } from './ui/shell';
 
 /** What the scene is made of, as the e2e suite reads it. Material names are three.js type strings. */
 interface SceneDescription {
@@ -173,7 +174,12 @@ function switchOrder(ids: string[], startId: string, count: number): string[] {
 async function main(): Promise<void> {
   const page = requireElement('main', 'main element');
   const aside = requireElement('aside', 'side panel');
-  // hook: shell
+  const shell = mountShell(document);
+  // The shell adopts index.html's side panel as its card root; the check keeps the lookup above
+  // read and the wiring honest.
+  if (shell.roots.card !== aside) {
+    throw new Error('the shell did not adopt the side panel as the card root');
+  }
 
   // Neither backend available means no renderer at all: show the poster and leave the canvas
   // untouched, so the page still explains itself instead of showing a dead rectangle.
@@ -219,7 +225,7 @@ async function main(): Promise<void> {
   // and the proof overlay keeps the last frame's numbers while the loop idles.
   renderer.info.autoReset = false;
 
-  const badge = mountBadge(aside, { backend, gpuName, tier: null });
+  const badge = mountBadge(shell.roots.proof, { backend, gpuName, tier: null });
 
   // The music switch (G5.6) mounts in the header here, before the content loads, so a
   // visitor can press it while the room is still arriving; the music needs no scene.
@@ -421,7 +427,7 @@ async function main(): Promise<void> {
   window.addEventListener('wheel', wake, { passive: true });
 
   if (proofOn) {
-    mountProofPanel(aside, {
+    mountProofPanel(shell.roots.proof, {
       read: () =>
         snapshot({
           info: renderer.info,
@@ -539,7 +545,7 @@ async function main(): Promise<void> {
     const lighting = await composeLighting({
       renderer,
       scene: showroom.scene,
-      panelRoot: aside,
+      panelRoot: shell.roots.lightPanel,
       shadowMapSize: settings.shadowMapSize,
       sunShadow: true,
       ...(rigParam === null ? {} : { initial: rigParam }),
@@ -604,7 +610,7 @@ async function main(): Promise<void> {
       catalog,
       contentBase: base,
       stripRoot: requireElement('#looks', 'looks strip'),
-      cardRoot: aside,
+      cardRoot: shell.roots.card,
       showroom,
       onRotateToggle: () => {
         cameraHandle.turntable.toggle();
@@ -624,7 +630,7 @@ async function main(): Promise<void> {
       },
     });
     mountShare({
-      root: aside,
+      root: shell.roots.card,
       search,
       showroom,
       defaultLook: catalog.looks[0].id,
@@ -639,7 +645,7 @@ async function main(): Promise<void> {
       drawFrame,
       onChange: () => loop.invalidate(),
     });
-    mountA11y({ root: document.body, aside, canvas, search });
+    mountA11y({ root: document.body, aside: shell.roots.card, canvas, search });
     // A let's narrowing does not reach inside a closure, so the non-null showroom is bound to a
     // const for the compile; switchLooks rebinds the same way for the same reason.
     const room = showroom;

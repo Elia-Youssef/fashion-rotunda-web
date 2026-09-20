@@ -59,8 +59,8 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
   await skipBtn.click();
   await expect(card).toBeHidden();
 
-  // 3. Tab walk from the body reaches:
-  // switch -> a thumbnail -> canvas -> an action button -> a swatch -> a light panel control
+  // 3. Tab walk from the body follows the shell's order: header controls, the rail, the canvas,
+  // the card (actions, swatches, share), the Light Control button then the panel, the footer.
   await page.evaluate(() => {
     (document.activeElement as HTMLElement | null)?.blur();
     document.body.focus();
@@ -105,13 +105,26 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
   const swatchChecked = await page.evaluate(() => document.activeElement?.getAttribute('aria-checked'));
   expect(swatchChecked, 'swatch tab stop is checked').toBe('true');
 
-  // Single tab stop: one Tab leaves the group, never landing on a second swatch. The share block
-  // (copy link, screenshot) sits between the card and the light panel, so a few more presses
-  // reach the panel; the bound keeps a lost focus from turning into a hang.
+  // Single tab stop: one Tab leaves the group for the share block, then the Light Control
+  // disclosure, then the panel itself. The stops are named one by one; the bounded loop after
+  // them keeps a lost focus from turning into a hang.
   await page.keyboard.press('Tab');
   expect(await focusMatches(page, '.product-card__swatch'), 'one Tab leaves the swatch group').toBe(
     false,
   );
+  expect(await focusMatches(page, '.share__button--copy'), 'activeElement is Copy link').toBe(true);
+  await page.keyboard.press('Tab');
+  expect(await focusMatches(page, '.share__button--screenshot'), 'activeElement is Screenshot').toBe(
+    true,
+  );
+  await page.keyboard.press('Tab');
+  expect(await focusMatches(page, '#shell-light-toggle'), 'activeElement is Light Control').toBe(
+    true,
+  );
+  expect(
+    await page.locator('#shell-light-toggle').getAttribute('aria-expanded'),
+    'the disclosure is open at the desktop width',
+  ).toBe('true');
   for (let i = 0; i < 4 && !(await focusMatches(page, '.lightpanel input, .lightpanel select')); i += 1) {
     await page.keyboard.press('Tab');
   }

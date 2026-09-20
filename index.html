@@ -9,20 +9,28 @@
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
-    <header>
+    <header id="shell-header">
       <h1>Fashion Rotunda, web edition</h1>
     </header>
 
     <main>
       <nav id="looks"></nav>
-      <canvas id="scene"></canvas>
+      <!-- The stage owns the canvas and nothing else drawn. The card root and the light row sit
+         inside it so that, on phones, their sheets overlay the stage without ever resizing it. -->
+      <div id="shell-stage">
+        <canvas id="scene"></canvas>
+        <aside id="shell-card"></aside>
+        <div id="shell-light-row">
+          <div id="shell-light-panel" hidden></div>
+        </div>
+      </div>
     </main>
 
-    <!-- The side panel takes the backend badge at G0.3 and the proof readout at G0.4. -->
-    <aside></aside>
-
-    <!-- The footer takes the licence and credit line when the first asset lands. -->
-    <footer></footer>
+    <!-- The footer takes the backend badge and the proof readout. The strip is an aside because
+         the numbers are tangential to the page itself, readouts rather than content. -->
+    <footer>
+      <aside id="shell-proof"></aside>
+    </footer>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
