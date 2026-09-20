@@ -9,6 +9,7 @@ const manifestJson = {
   sets: {
     full: {
       files: {
+        'env/school-field-cloudy-1k.hdr': { bytes: 200_000 },
         'rotunda.glb': { bytes: 700_000 },
         'plinth.glb': { bytes: 300_000 },
         'looks/first.glb': { bytes: 500_000 },
@@ -19,6 +20,7 @@ const manifestJson = {
 
 const catalogJson = {
   version: 1,
+  environment: { file: 'env/school-field-cloudy-1k.hdr' },
   rotunda: { file: 'rotunda.glb' },
   plinth: { file: 'plinth.glb' },
   looks: [
@@ -201,18 +203,19 @@ describe('the progress readout', () => {
     await flush();
     const dialog = gateElement();
     const bar = dialog.querySelector<HTMLProgressElement>('progress');
-    // The gate's own manifest fetch is under /content but is not one of the three first-frame
+    // The gate's own manifest fetch is under /content but is not one of the four first-frame
     // files, so its 400 bytes count for neither the bar nor the readout.
-    expect(bar?.value).toBeCloseTo(1_000_000 / 1_500_000, 6);
-    expect(dialog.querySelector('.loading-gate__readout')?.textContent).toBe('1.0 MB of 1.5 MB');
+    expect(bar?.value).toBeCloseTo(1_000_000 / 1_700_000, 6);
+    expect(dialog.querySelector('.loading-gate__readout')?.textContent).toBe('1.0 MB of 1.7 MB');
     expect(dialog.querySelector('.loading-gate__status')?.textContent).toBe(
-      'Loading the room - 2 of 3 files',
+      'Loading the room - 2 of 4 files',
     );
   });
 
   it('reads as loading from cache when the first arrival transferred zero bytes', async () => {
     mountGate([
       resourceEntry('http://localhost:5173/content/manifest.json', 0, 20),
+      resourceEntry('http://localhost:5173/content/env/school-field-cloudy-1k.hdr', 0, 300),
       resourceEntry('http://localhost:5173/content/rotunda.glb', 0, 400),
       resourceEntry('http://localhost:5173/content/plinth.glb', 0, 500),
       resourceEntry('http://localhost:5173/content/looks/first.glb', 0, 600),
@@ -220,9 +223,25 @@ describe('the progress readout', () => {
     await flush();
     const dialog = gateElement();
     expect(dialog.querySelector('.loading-gate__status')?.textContent).toBe(
-      'Loading from cache - 3 of 3 files',
+      'Loading from cache - 4 of 4 files',
     );
-    expect(dialog.querySelector('.loading-gate__readout')?.textContent).toBe('0.0 MB of 1.5 MB');
+    expect(dialog.querySelector('.loading-gate__readout')?.textContent).toBe('0.0 MB of 1.7 MB');
+  });
+
+  it('finishes when compressed responses all arrived even if their wire bytes are smaller', async () => {
+    mountGate([
+      resourceEntry('http://localhost:5173/content/env/school-field-cloudy-1k.hdr', 150_000, 300),
+      resourceEntry('http://localhost:5173/content/rotunda.glb', 680_000, 400),
+      resourceEntry('http://localhost:5173/content/plinth.glb', 290_000, 500),
+      resourceEntry('http://localhost:5173/content/looks/first.glb', 480_000, 600),
+    ]);
+    await flush();
+    const dialog = gateElement();
+    expect(dialog.querySelector<HTMLProgressElement>('progress')?.value).toBe(1);
+    expect(dialog.querySelector('.loading-gate__readout')?.textContent).toBe('1.7 MB of 1.7 MB');
+    expect(dialog.querySelector('.loading-gate__status')?.textContent).toBe(
+      'Loading the room - 4 of 4 files',
+    );
   });
 
   it('keeps the bar empty while it has no total', async () => {
@@ -255,10 +274,10 @@ describe('the progress readout', () => {
     ]);
     await flush();
     const dialog = gateElement();
-    expect(dialog.querySelector<HTMLProgressElement>('progress')?.value).toBeCloseTo(1 / 3, 6);
-    expect(dialog.querySelector('.loading-gate__readout')?.textContent).toBe('0.5 MB of 1.5 MB');
+    expect(dialog.querySelector<HTMLProgressElement>('progress')?.value).toBeCloseTo(500 / 1700, 6);
+    expect(dialog.querySelector('.loading-gate__readout')?.textContent).toBe('0.5 MB of 1.7 MB');
     expect(dialog.querySelector('.loading-gate__status')?.textContent).toBe(
-      'Loading the room - 1 of 3 files',
+      'Loading the room - 1 of 4 files',
     );
   });
 });

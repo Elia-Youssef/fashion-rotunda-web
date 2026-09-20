@@ -554,6 +554,9 @@ async function main(): Promise<void> {
     const lighting = await composeLighting({
       renderer,
       scene: showroom.scene,
+      // The environment is shared by both geometry sets, so even a phone loads it from the full
+      // content root rather than looking for a duplicate under /content/half.
+      environmentUrl: contentUrl(FULL_CONTENT_BASE, catalog.environment.file),
       panelRoot: shell.roots.lightPanel,
       shadowMapSize: settings.shadowMapSize,
       sunShadow: true,

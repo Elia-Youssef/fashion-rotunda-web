@@ -1,8 +1,20 @@
 {
-  "generated": "2026-09-19T18:37:32Z",
+  "generated": "2026-09-20T20:18:10Z",
   "sets": {
     "full": {
       "files": {
+        "env/school-field-cloudy-1k.hdr": {
+          "bytes": 1678323,
+          "triangles": 0,
+          "meshes": 0,
+          "nodes": 0,
+          "materials": 0,
+          "drawCalls": 0,
+          "textures": [],
+          "gpuBytes": 0,
+          "largestTexture": 0,
+          "largestNonFloorTexture": 0
+        },
         "looks/blue-silk-dress.glb": {
           "bytes": 2109612,
           "triangles": 116099,
@@ -1082,13 +1094,25 @@
         }
       },
       "totals": {
-        "bytes": 30120364,
+        "bytes": 31798687,
         "gpuBytes": 180834158,
         "triangles": 1518558
       }
     },
     "half": {
       "files": {
+        "env/school-field-cloudy-1k.hdr": {
+          "bytes": 1678323,
+          "triangles": 0,
+          "meshes": 0,
+          "nodes": 0,
+          "materials": 0,
+          "drawCalls": 0,
+          "textures": [],
+          "gpuBytes": 0,
+          "largestTexture": 0,
+          "largestNonFloorTexture": 0
+        },
         "looks/blue-silk-dress.glb": {
           "bytes": 1263888,
           "triangles": 116099,
@@ -2168,7 +2192,7 @@
         }
       },
       "totals": {
-        "bytes": 12346176,
+        "bytes": 14024499,
         "gpuBytes": 48921320,
         "triangles": 857093
       }

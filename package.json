@@ -17,6 +17,7 @@
     "gpu:check": "node tools/gpu-check.mjs",
     "pipeline:unreal": "node pipeline/unreal/run.mjs",
     "pipeline:assemble": "node pipeline/gltf/assemble.mjs",
+    "pipeline:env": "node pipeline/env.mjs",
     "pipeline:optimize": "node pipeline/gltf/optimize.mjs",
     "pipeline:music": "node pipeline/audio/music.mjs",
     "report": "node pipeline/gltf/report.mjs"

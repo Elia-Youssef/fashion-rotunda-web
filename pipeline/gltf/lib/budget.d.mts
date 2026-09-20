@@ -27,6 +27,7 @@ export declare function budgetRows(
   set: AssetSet,
   files: Record<string, ManifestFile>,
   firstLook: string,
+  environment: string,
 ): { rows: BudgetRow[]; info: BudgetInfo };
 export declare function formatBudgetTable(set: AssetSet, rows: BudgetRow[], info?: BudgetInfo): string;
 export declare function formatMb(bytes: number): string;

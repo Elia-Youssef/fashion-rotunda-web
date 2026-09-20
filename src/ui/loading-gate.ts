@@ -144,7 +144,7 @@ export function mountLoadingGate(options: LoadingGateOptions): LoadingGate {
   let gateState: 'loading' | 'ready' | 'entered' = 'loading';
   let compiling = false;
   let expected = 0;
-  /** The three first-frame file paths, for the "N of M files" half of the status line. */
+  /** The four first-frame file paths, for the "N of M files" half of the status line. */
   let expectedPaths: string[] = [];
   /** Set once the first of the counted files arrived with transferSize 0: the warm-load reading. */
   let fromCache = false;
@@ -186,7 +186,7 @@ export function mountLoadingGate(options: LoadingGateOptions): LoadingGate {
     if (gateState !== 'loading' || compiling) {
       return;
     }
-    // Only the three files the first frame waits for count. Everything else under the base (the
+    // Only the four files the first frame waits for count. Everything else under the base (the
     // transcoder, the strip's thumbnails, the music, the manifest itself) would push the bar to 1
     // before the look arrived and print more received bytes than the total.
     const mine = contentEntries().filter((one) => expectedPaths.includes(pathnameOf(one.name)));
@@ -201,13 +201,18 @@ export function mountLoadingGate(options: LoadingGateOptions): LoadingGate {
     }
     // Before the manifest answers there is no total, and progressRatio's documented "expected 0
     // means 1" would flash a full bar for one tick; an empty bar is the honest picture until then.
-    bar.value = expected > 0 ? progressRatio(received, expected) : 0;
-    readout.textContent = formatProgress(received, expected);
+    const ended = countEnded(mine);
+    const complete = expectedPaths.length > 0 && ended === expectedPaths.length;
+    // Resource Timing's transferSize is the encoded wire size while the manifest records the
+    // decoded file. A compressible HDR can therefore finish below 100%; completed file paths are
+    // the authoritative end signal. Cache hits still report zero bytes honestly.
+    bar.value = complete ? 1 : expected > 0 ? progressRatio(received, expected) : 0;
+    readout.textContent = formatProgress(complete && !fromCache ? expected : received, expected);
     // Resource Timing reports a file only when it has fully arrived, so the bar steps per file;
     // the count says so on the status line instead of the bar pretending to stream.
     const base = fromCache ? 'Loading from cache' : 'Loading the room';
     setStatus(
-      expectedPaths.length === 0 ? base : `${base} - ${countEnded(mine)} of ${expectedPaths.length} files`,
+      expectedPaths.length === 0 ? base : `${base} - ${ended} of ${expectedPaths.length} files`,
     );
   }
 
@@ -281,8 +286,13 @@ export function mountLoadingGate(options: LoadingGateOptions): LoadingGate {
         setForBase(options.contentBase),
       );
       const firstLook = catalog.looks[0]?.file ?? '';
-      expected = files === null ? 0 : expectedBytes(files, firstLook);
-      expectedPaths = [catalog.rotunda.file, catalog.plinth.file, firstLook].map((file) =>
+      expected = files === null ? 0 : expectedBytes(files, firstLook, catalog.environment.file);
+      expectedPaths = [
+        catalog.environment.file,
+        catalog.rotunda.file,
+        catalog.plinth.file,
+        firstLook,
+      ].map((file) =>
         contentUrl(options.contentBase, file),
       );
       update();

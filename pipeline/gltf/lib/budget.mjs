@@ -85,9 +85,10 @@ const BYTE_ROWS = new Set(['gpuTextureBytes', 'firstFrameBytes', 'furtherLookByt
  * @param set 'full' or 'half'.
  * @param files the manifest's `sets[set].files` object.
  * @param firstLook the catalogue's first look file, for the payload row.
+ * @param environment the catalogue's environment file, for the payload row.
  * @returns `{ rows, info }`, rows carrying `{ key, label, actual, target, unit, pass }`.
  */
-export function budgetRows(set, files, firstLook) {
+export function budgetRows(set, files, firstLook, environment) {
   const targets = BUDGETS[set];
   if (!targets) throw new Error(`budgetRows: unknown set "${set}"`);
   const entry = (name) => files[name] ?? null;
@@ -101,7 +102,7 @@ export function budgetRows(set, files, firstLook) {
 
   const sceneTriangles = num(rotunda?.triangles) + num(plinth?.triangles);
   const resident = [rotunda, plinth, heaviestGpu(lookEntries)];
-  const firstFrame = [rotunda, plinth, entry(firstLook)];
+  const firstFrame = [entry(environment), rotunda, plinth, entry(firstLook)];
   const further = lookEntries.filter((look) => look.name !== firstLook);
 
   const actual = {

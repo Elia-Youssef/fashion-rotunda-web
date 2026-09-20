@@ -6,16 +6,20 @@ export interface ManifestFile {
   bytes: number;
 }
 
-/** The two files every first frame needs, whatever look opens the room. Manifest key names. */
+/** The two geometry files every first frame needs, whatever look opens the room. */
 const STATIC_FILES = ['rotunda.glb', 'plinth.glb'];
 
 /**
- * The bytes the first frame needs: rotunda, plinth, the first look's file, from the manifest set.
+ * The bytes the first frame needs: environment, rotunda, plinth and the first look's file.
  * A missing entry counts 0: the total is advisory for the readout, never a reason to fail boot.
  */
-export function expectedBytes(files: Record<string, ManifestFile>, firstLookFile: string): number {
+export function expectedBytes(
+  files: Record<string, ManifestFile>,
+  firstLookFile: string,
+  environmentFile: string,
+): number {
   let total = 0;
-  for (const name of [...STATIC_FILES, firstLookFile]) {
+  for (const name of [...STATIC_FILES, environmentFile, firstLookFile]) {
     total += files[name]?.bytes ?? 0;
   }
   return total;

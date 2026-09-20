@@ -33,23 +33,35 @@ export interface Environment {
  */
 const ROOM_BLUR_RADIANS = 0.3;
 
-function fromRenderTarget(target: RenderTarget): Environment {
+function fromRenderTarget(target: RenderTarget, background: Texture | null = null): Environment {
   return {
     texture: target.texture,
     apply(scene: Scene, intensity: number): void {
       scene.environment = target.texture;
       scene.environmentIntensity = intensity;
+      if (background !== null) {
+        // The PMREM is correct for material lighting; the original equirectangular texture is the
+        // sharp source the visitor sees through the glazed dome. A little blur hides 1K sampling
+        // without turning the sky back into the featureless RoomEnvironment stand-in.
+        scene.background = background;
+        // The source sky contains values far above display white. Keeping the visible copy below
+        // the lighting strength preserves cloud detail through the dome instead of clipping it
+        // into a flat white ceiling; the PMREM still receives the source at full range.
+        scene.backgroundIntensity = 0.25;
+        scene.backgroundBlurriness = 0.08;
+      }
     },
     dispose(): void {
-      // Disposing the target disposes the texture it owns; nothing else here holds GPU memory.
+      // The target owns the PMREM texture; the optional background is the original HDR source.
       target.dispose();
+      background?.dispose();
     },
   };
 }
 
 /**
- * The stand-in sky: three's own RoomEnvironment, prefiltered. It is the default until the user supplies an
- * HDR of the real dome, and it costs no download at all.
+ * The no-download fallback sky: three's own RoomEnvironment, prefiltered. Production supplies an HDR,
+ * but this keeps local experiments and content-load failures lit instead of aborting the showroom.
  */
 export async function createRoomEnvironment(renderer: WebGPURenderer): Promise<Environment> {
   await renderer.init();
@@ -62,11 +74,11 @@ export async function createRoomEnvironment(renderer: WebGPURenderer): Promise<E
 }
 
 /**
- * The real sky, once there is one. HDRLoader is the current name for the Radiance .hdr reader: r186 marks
+ * The shipped sky. HDRLoader is the current name for the Radiance .hdr reader: r186 marks
  * RGBELoader deprecated in favour of it (@types/three/examples/jsm/loaders/RGBELoader.d.ts says so, and
  * RGBELoader.js is a two line subclass of HDRLoader.js), so the planned RGBELoader would have shipped a
- * deprecation. UltraHDRLoader was the other candidate and is not used: a gain map JPEG is smaller, but it
- * arrives as an sRGB image plus a gain map and the pipeline that writes one is G1.6's, not this goal's.
+ * deprecation. UltraHDRLoader was the other candidate and is not used: the authored asset is a linear
+ * EXR and the deterministic pipeline converts it to the Radiance HDR both render backends already read.
  */
 export async function createHdrEnvironment(renderer: WebGPURenderer, url: string): Promise<Environment> {
   await renderer.init();
@@ -74,8 +86,6 @@ export async function createHdrEnvironment(renderer: WebGPURenderer, url: string
   source.mapping = EquirectangularReflectionMapping;
   const generator = new PMREMGenerator(renderer);
   const target = generator.fromEquirectangular(source);
-  // The prefiltered target holds everything the scene reads; the source texture is a CPU side copy now.
-  source.dispose();
   generator.dispose();
-  return fromRenderTarget(target);
+  return fromRenderTarget(target, source);
 }

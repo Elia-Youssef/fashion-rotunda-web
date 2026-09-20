@@ -90,6 +90,15 @@ function texture(width: number, format: 'ktx2-uastc' | 'ktx2-etc1s', bytes: numb
 
 function files() {
   return {
+    'env/school-field-cloudy-1k.hdr': fileEntry({
+      bytes: 1 * MB,
+      triangles: 0,
+      meshes: 0,
+      nodes: 0,
+      materials: 0,
+      drawCalls: 0,
+      textures: [],
+    }),
     'rotunda.glb': fileEntry({
       bytes: 6 * MB,
       triangles: 69124,
@@ -130,7 +139,12 @@ function files() {
 }
 
 describe('budgetRows', () => {
-  const { rows, info } = budgetRows('full', files(), 'looks/wallis-dress.glb');
+  const { rows, info } = budgetRows(
+    'full',
+    files(),
+    'looks/wallis-dress.glb',
+    'env/school-field-cloudy-1k.hdr',
+  );
   const row = (key: string) => rows.find((entry) => entry.key === key)!;
 
   it('prints every budget in the table, in order', () => {
@@ -172,25 +186,42 @@ describe('budgetRows', () => {
   });
 
   it('adds the first look, not the heaviest, for the payload row', () => {
-    expect(row('firstFrameBytes').actual).toBe(9 * MB);
+    expect(row('firstFrameBytes').actual).toBe(10 * MB);
     expect(row('firstFrameBytes').pass).toBe(true);
     expect(row('furtherLookBytes').actual).toBe(9 * MB);
     expect(row('furtherLookBytes').pass).toBe(false);
   });
 
   it('measures the phone set against the phone targets', () => {
-    const half = budgetRows('half', files(), 'looks/wallis-dress.glb');
+    const half = budgetRows(
+      'half',
+      files(),
+      'looks/wallis-dress.glb',
+      'env/school-field-cloudy-1k.hdr',
+    );
     expect(half.rows.find((entry) => entry.key === 'lookTriangles')!.pass).toBe(false);
     expect(half.rows.find((entry) => entry.key === 'drawCalls')!.target).toBe(80);
   });
 
   it('refuses a set it does not know', () => {
-    expect(() => budgetRows('quarter' as never, files(), 'looks/wallis-dress.glb')).toThrow(/unknown set/);
+    expect(() =>
+      budgetRows(
+        'quarter' as never,
+        files(),
+        'looks/wallis-dress.glb',
+        'env/school-field-cloudy-1k.hdr',
+      ),
+    ).toThrow(/unknown set/);
   });
 });
 
 describe('formatBudgetTable', () => {
-  const { rows, info } = budgetRows('full', files(), 'looks/wallis-dress.glb');
+  const { rows, info } = budgetRows(
+    'full',
+    files(),
+    'looks/wallis-dress.glb',
+    'env/school-field-cloudy-1k.hdr',
+  );
   const text = formatBudgetTable('full', rows, info);
 
   it('names the set and marks a miss so it cannot be read as a pass', () => {

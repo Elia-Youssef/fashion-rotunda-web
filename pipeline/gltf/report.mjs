@@ -23,6 +23,7 @@ if (!existsSync(manifestPath) || !existsSync(catalogPath)) {
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
 const catalog = JSON.parse(readFileSync(catalogPath, 'utf8'));
 const firstLook = catalog.looks[0]?.file ?? null;
+const environment = catalog.environment?.file ?? null;
 const wanted = process.argv.slice(2).filter((arg) => !arg.startsWith('--'));
 const sets = wanted.length > 0 ? wanted : SET_NAMES;
 
@@ -34,7 +35,7 @@ for (const set of sets) {
     console.log(`report: no ${set} set in the manifest`);
     continue;
   }
-  const { rows, info } = budgetRows(set, files, firstLook);
+  const { rows, info } = budgetRows(set, files, firstLook, environment);
   console.log(formatBudgetTable(set, rows, info));
   misses += rows.filter((row) => !row.pass).length;
 }

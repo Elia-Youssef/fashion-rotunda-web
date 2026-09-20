@@ -7,7 +7,7 @@ import type { WebGPURenderer } from 'three/webgpu';
 
 import { mountLightPanel } from '../ui/lightpanel';
 import type { LightPanelHandle } from '../ui/lightpanel';
-import { createRoomEnvironment } from './environment';
+import { createHdrEnvironment, createRoomEnvironment } from './environment';
 import type { Environment } from './environment';
 import { LIGHTING_PRESETS, PRESET_ORDER } from './presets';
 import { registerRectAreaLights } from './rect-area-ltc';
@@ -24,6 +24,8 @@ export interface LightingOptions {
   /** From the tier table: the sun's shadow map edge in pixels. */
   shadowMapSize: number;
   sunShadow: boolean;
+  /** The shipped equirectangular Radiance HDR; absent keeps the no-download development fallback. */
+  environmentUrl?: string;
   /** A serialized rig (serializeRig) to boot with, for example from the URL; absent means the level's. */
   initial?: string;
   /** Called after every change so the on-demand loop draws a frame. */
@@ -72,17 +74,35 @@ export function enableShadows(root: { traverse(callback: (object: unknown) => vo
 
 /**
  * Unreal's sky light scale of 2 sits under a physical sky; three's prefiltered room at the same number
- * floods the marble. This factor maps the panel's sky value to scene.environmentIntensity and is the
- * one knob for that, tuned by eye against docs/reference on 2026-09-19.
+ * floods the marble. These factors map the panel's sky value to scene.environmentIntensity: the room
+ * keeps its original fallback tuning and the real outdoor HDR uses the reviewed lower contribution.
  */
-const ENVIRONMENT_SCALE = 0.35;
+const ROOM_ENVIRONMENT_SCALE = 0.35;
+/** A real outdoor HDR carries broader fill than the old synthetic room, so keep its contribution lower. */
+const HDR_ENVIRONMENT_SCALE = 0.2;
 
 export async function composeLighting(options: LightingOptions): Promise<Lighting> {
   // Before the first frame that draws a rect light, or its shader build throws (rect-area-ltc.ts).
   registerRectAreaLights();
   options.renderer.shadowMap.enabled = options.sunShadow;
 
-  const environment: Environment = await createRoomEnvironment(options.renderer);
+  let environment: Environment;
+  let environmentScale: number;
+  if (options.environmentUrl === undefined) {
+    environment = await createRoomEnvironment(options.renderer);
+    environmentScale = ROOM_ENVIRONMENT_SCALE;
+  } else {
+    try {
+      environment = await createHdrEnvironment(options.renderer, options.environmentUrl);
+      environmentScale = HDR_ENVIRONMENT_SCALE;
+    } catch (error) {
+      // A content/CDN fault must not turn the whole showroom into its error poster. The synthetic
+      // room is already a complete IBL fallback and costs no second download.
+      console.warn('[archviz] HDR environment failed; using the room fallback', error);
+      environment = await createRoomEnvironment(options.renderer);
+      environmentScale = ROOM_ENVIRONMENT_SCALE;
+    }
+  }
   let rig: Rig = options.initial === undefined ? DEFAULT_RIG : parseRig(options.initial, DEFAULT_RIG);
   const three: ThreeRig = createThreeRig(rig, {
     shadowMapSize: options.shadowMapSize,
@@ -102,7 +122,7 @@ export async function composeLighting(options: LightingOptions): Promise<Lightin
   function applyToScene(next: Rig): void {
     rig = next;
     three.apply(next);
-    environment.apply(options.scene, skyIntensity(next) * ENVIRONMENT_SCALE);
+    environment.apply(options.scene, skyIntensity(next) * environmentScale);
     options.renderer.toneMappingExposure = next.exposure;
     updatePresetSelect(next);
     options.onChange();

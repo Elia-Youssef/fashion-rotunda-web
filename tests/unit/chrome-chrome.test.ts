@@ -28,6 +28,7 @@ const LOOKS: CatalogLook[] = [
 function makeCatalog(): Catalog {
   return {
     version: 1,
+    environment: { file: 'env/school-field-cloudy-1k.hdr' },
     rotunda: { file: 'rotunda.glb' },
     plinth: { file: 'plinth.glb' },
     looks: LOOKS,

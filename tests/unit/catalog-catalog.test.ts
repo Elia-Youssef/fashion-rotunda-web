@@ -22,6 +22,7 @@ function lookJson(overrides: Record<string, unknown> = {}): Record<string, unkno
 function catalogJson(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     version: CATALOG_VERSION,
+    environment: { file: 'env/school-field-cloudy-1k.hdr' },
     rotunda: { file: 'rotunda.glb' },
     plinth: { file: 'plinth.glb' },
     looks: [lookJson()],
@@ -34,6 +35,7 @@ describe('parseCatalog', () => {
   it('reads the shape the optimize pass writes', () => {
     const catalog = parseCatalog(catalogJson());
     expect(catalog.version).toBe(CATALOG_VERSION);
+    expect(catalog.environment.file).toBe('env/school-field-cloudy-1k.hdr');
     expect(catalog.rotunda.file).toBe('rotunda.glb');
     expect(catalog.plinth.file).toBe('plinth.glb');
     expect(catalog.looks).toHaveLength(1);
@@ -71,6 +73,7 @@ describe('parseCatalog', () => {
     ['no looks at all', { looks: [] }, 'looks'],
     ['looks that are not a list', { looks: {} }, 'looks'],
     ['a missing rotunda file', { rotunda: {} }, 'rotunda.file'],
+    ['a missing environment file', { environment: {} }, 'environment.file'],
     [
       'views without the proof camera',
       { views: { orbit: { position: [0, 0, 0], target: [0, 0, 0], fov: 40 } } },

@@ -25,6 +25,7 @@ export interface CatalogView {
 
 export interface Catalog {
   version: number;
+  environment: { file: string };
   rotunda: { file: string };
   plinth: { file: string };
   looks: CatalogLook[];
@@ -141,6 +142,10 @@ export function parseCatalog(json: unknown): Catalog {
 
   const rotundaFile = readString(readFields(root.get('rotunda'), 'rotunda').get('file'), 'rotunda.file');
   const plinthFile = readString(readFields(root.get('plinth'), 'plinth').get('file'), 'plinth.file');
+  const environmentFile = readString(
+    readFields(root.get('environment'), 'environment').get('file'),
+    'environment.file',
+  );
 
   const lookItems = readArray(root.get('looks'), 'looks');
   if (lookItems.length === 0) {
@@ -164,7 +169,14 @@ export function parseCatalog(json: unknown): Catalog {
     views[name] = readView(value, `views.${name}`);
   }
 
-  return { version, rotunda: { file: rotundaFile }, plinth: { file: plinthFile }, looks, views };
+  return {
+    version,
+    environment: { file: environmentFile },
+    rotunda: { file: rotundaFile },
+    plinth: { file: plinthFile },
+    looks,
+    views,
+  };
 }
 
 /**

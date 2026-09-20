@@ -12,9 +12,10 @@ import {
 import type { ManifestFile, ResourceEntry } from '../../src/loading/progress';
 
 // The names and the bytes field are the real ones from public/content/manifest.json
-// (sets.full.files), shrunk to what the arithmetic needs: three files plus one the first frame
+// (sets.full.files), shrunk to what the arithmetic needs: four files plus one the first frame
 // must not count.
 const manifest: Record<string, ManifestFile> = {
+  'env/school-field-cloudy-1k.hdr': { bytes: 1678323 },
   'rotunda.glb': { bytes: 7095496 },
   'plinth.glb': { bytes: 1126464 },
   'looks/wallis-dress.glb': { bytes: 3250932 },
@@ -27,17 +28,23 @@ function entry(name: string, transferSize: number, responseEnd = 0): ResourceEnt
 }
 
 describe('expectedBytes', () => {
-  it('sums the rotunda, the plinth and the first look from the manifest set', () => {
-    expect(expectedBytes(manifest, 'looks/wallis-dress.glb')).toBe(7095496 + 1126464 + 3250932);
+  it('sums the environment, rotunda, plinth and first look from the manifest set', () => {
+    expect(
+      expectedBytes(manifest, 'looks/wallis-dress.glb', 'env/school-field-cloudy-1k.hdr'),
+    ).toBe(1678323 + 7095496 + 1126464 + 3250932);
   });
 
   it('does not count the looks the first frame does not need', () => {
-    expect(expectedBytes(manifest, 'looks/zoot-suit.glb')).toBe(7095496 + 1126464 + 4922068);
+    expect(expectedBytes(manifest, 'looks/zoot-suit.glb', 'env/school-field-cloudy-1k.hdr')).toBe(
+      1678323 + 7095496 + 1126464 + 4922068,
+    );
   });
 
   it('counts a missing file as zero, not as a failure', () => {
-    expect(expectedBytes(manifest, 'looks/not-in-the-set.glb')).toBe(7095496 + 1126464);
-    expect(expectedBytes({}, 'looks/wallis-dress.glb')).toBe(0);
+    expect(
+      expectedBytes(manifest, 'looks/not-in-the-set.glb', 'env/school-field-cloudy-1k.hdr'),
+    ).toBe(1678323 + 7095496 + 1126464);
+    expect(expectedBytes({}, 'looks/wallis-dress.glb', 'env/school-field-cloudy-1k.hdr')).toBe(0);
   });
 });
 
@@ -115,8 +122,13 @@ describe('formatProgress', () => {
   });
 
   it('shows the room the manifest on main describes', () => {
-    expect(formatProgress(0, expectedBytes(manifest, 'looks/wallis-dress.glb'))).toBe(
-      '0.0 MB of 11.5 MB',
+    expect(
+      formatProgress(
+        0,
+        expectedBytes(manifest, 'looks/wallis-dress.glb', 'env/school-field-cloudy-1k.hdr'),
+      ),
+    ).toBe(
+      '0.0 MB of 13.2 MB',
     );
   });
 });
@@ -149,6 +161,7 @@ describe('the shipped documents', () => {
     );
     const rotunda = asRecord(catalog.rotunda, 'catalog.rotunda').file;
     const plinth = asRecord(catalog.plinth, 'catalog.plinth').file;
+    const environment = asRecord(catalog.environment, 'catalog.environment').file;
     const looks = catalog.looks;
     if (!Array.isArray(looks) || looks.length === 0) {
       throw new Error('catalog.looks is empty');
@@ -158,10 +171,11 @@ describe('the shipped documents', () => {
     const keys = Object.keys(files);
     expect(keys).toContain(rotunda);
     expect(keys).toContain(plinth);
+    expect(keys).toContain(environment);
     expect(keys).toContain(firstLook);
 
-    // The same three files through the real arithmetic: a key that stopped matching would drop
-    // its bytes to 0 and this sum would not be the sum of the three entries.
+    // The same four files through the real arithmetic: a key that stopped matching would drop
+    // its bytes to 0 and this sum would not be the sum of the four entries.
     const bytes = (name: unknown): number => {
       const entry = asRecord(files[String(name)], `sets.full.files[${String(name)}]`).bytes;
       return typeof entry === 'number' ? entry : Number.NaN;
@@ -173,8 +187,8 @@ describe('the shipped documents', () => {
         real[name] = { bytes: size };
       }
     }
-    expect(expectedBytes(real, String(firstLook))).toBe(
-      bytes(rotunda) + bytes(plinth) + bytes(firstLook),
+    expect(expectedBytes(real, String(firstLook), String(environment))).toBe(
+      bytes(environment) + bytes(rotunda) + bytes(plinth) + bytes(firstLook),
     );
   });
 });

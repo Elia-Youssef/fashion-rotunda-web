@@ -39,6 +39,7 @@ import { MeshoptDecoder, MeshoptEncoder, MeshoptSimplifier } from 'meshoptimizer
 import sharp from 'sharp';
 
 import { contentDir, pipelineEnv, root, sourceDir } from '../config.mjs';
+import { ENVIRONMENT_FILE } from '../environment.mjs';
 import { assemble, assembledDir } from './assemble.mjs';
 import { writeCollision } from './collision.mjs';
 import { budgetRows, formatBudgetTable, formatMb } from './lib/budget.mjs';
@@ -137,6 +138,22 @@ async function main() {
     sets.half[item.file] = await finish(io, half, item, 'half', out, errors);
   }
 
+  const environmentPath = resolve(out, ENVIRONMENT_FILE);
+  const environmentBytes = statSync(environmentPath).size;
+  const environmentEntry = fileEntry({
+    bytes: environmentBytes,
+    triangles: 0,
+    meshes: 0,
+    nodes: 0,
+    materials: 0,
+    drawCalls: 0,
+    textures: [],
+  });
+  // Both asset sets share this one file under /content/env. It is listed in each set because it is
+  // part of either tier's first frame, even though it is stored only once on disk.
+  sets.full[ENVIRONMENT_FILE] = environmentEntry;
+  sets.half[ENVIRONMENT_FILE] = environmentEntry;
+
   await writeCollision(out);
 
   await writeThumbnails(catalog, out);
@@ -164,7 +181,12 @@ async function main() {
   }
   console.log('');
   for (const set of ['full', 'half']) {
-    const { rows, info } = budgetRows(set, manifest.sets[set].files, catalog.looks[0].file);
+    const { rows, info } = budgetRows(
+      set,
+      manifest.sets[set].files,
+      catalog.looks[0].file,
+      shipped.environment.file,
+    );
     console.log(formatBudgetTable(set, rows, info));
     console.log('');
   }
@@ -588,6 +610,7 @@ async function writeThumbnails(catalog, out) {
 function shippedCatalog(catalog) {
   return {
     ...catalog,
+    environment: { file: ENVIRONMENT_FILE },
     looks: catalog.looks.map((look) => ({
       ...look,
       thumbnail: look.thumbnail ? `thumbs/${look.id}.jpg` : null,
