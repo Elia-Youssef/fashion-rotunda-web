@@ -21,10 +21,21 @@ const POST_ATTRIBUTE_TIMEOUT = 10_000;
 
 /**
  * data-post is a comma-separated token list in a fixed order: ao, traa, msaa, then the SSGI token
- * ('ssgi-half' at half resolution, 'ssgi' at full) and then 'ssr'; the literal string 'off' when
- * nothing is on. The composition root's publishPostState writes it from chain.features.
+ * ('ssgi-half' at half resolution, 'ssgi' at full), 'ssr', then the finishing-pass tokens; the
+ * literal string 'off' when nothing is on. The composition root writes it from chain.features.
  */
-const POST_TOKEN_ORDER = ['ao', 'traa', 'msaa', 'ssgi-half', 'ssgi', 'ssr'];
+const POST_TOKEN_ORDER = [
+  'ao',
+  'traa',
+  'msaa',
+  'ssgi-half',
+  'ssgi',
+  'ssr',
+  'bloom',
+  'lut',
+  'vignette',
+  'dof',
+];
 
 /**
  * What each development slice publishes as data-post on this project's mid tier. SSGI and SSR are
@@ -294,3 +305,107 @@ test('ssgi drops to half resolution while the pointer drags on webgpu', async ({
   expect(errors, 'no console messages of type error').toEqual([]);
 });
 
+test('finishing pass reaches the screen on webgl2 on max and is absent on off', async ({ page }) => {
+  skipUnlessWebgl2();
+  const errors: string[] = [];
+  watchConsoleErrors(page, errors);
+
+  await page.goto('/?webgl=1&gate=off&post=max');
+  const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+
+  const wiredMax = await page
+    .waitForFunction(
+      () => document.querySelector<HTMLCanvasElement>('canvas#scene')?.dataset.post !== undefined,
+      null,
+      {
+        timeout: POST_ATTRIBUTE_TIMEOUT,
+      },
+    )
+    .then(() => true)
+    .catch(() => false);
+  test.skip(!wiredMax, 'post chain not wired');
+
+  const dataPostMax = (await canvas.getAttribute('data-post')) ?? '';
+  expect(dataPostMax, 'data-post on max contains lut').toContain('lut');
+  expect(dataPostMax, 'data-post on max contains vignette').toContain('vignette');
+  expect(dataPostMax, 'data-post on max contains bloom').toContain('bloom');
+  expect(dataPostMax, 'data-post on max does not contain dof').not.toContain('dof');
+
+  await page.goto('/?webgl=1&gate=off&post=off');
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+
+  const wiredOff = await page
+    .waitForFunction(
+      () => document.querySelector<HTMLCanvasElement>('canvas#scene')?.dataset.post !== undefined,
+      null,
+      {
+        timeout: POST_ATTRIBUTE_TIMEOUT,
+      },
+    )
+    .then(() => true)
+    .catch(() => false);
+  test.skip(!wiredOff, 'post chain not wired');
+
+  const dataPostOff = (await canvas.getAttribute('data-post')) ?? '';
+  expect(dataPostOff, 'data-post on off does not contain lut').not.toContain('lut');
+  expect(dataPostOff, 'data-post on off does not contain vignette').not.toContain('vignette');
+  expect(dataPostOff, 'data-post on off does not contain bloom').not.toContain('bloom');
+  expect(dataPostOff, 'data-post on off does not contain dof').not.toContain('dof');
+  expect(errors, 'no console messages of type error').toEqual([]);
+});
+
+test('depth of field follows camera rest and the walkthrough allowance on webgpu', async ({ page }) => {
+  test.skip(
+    test.info().project.name !== 'webgpu',
+    'depth of field is available on the high WebGPU tier only',
+  );
+  test.setTimeout(120_000);
+  const errors: string[] = [];
+  watchConsoleErrors(page, errors);
+
+  await page.goto('/?e2e=1&post=finish&music=off');
+  const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+  await expect
+    .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'dof'), {
+      timeout: POST_ATTRIBUTE_TIMEOUT,
+      message: 'depth of field turns on after the inspection camera rests',
+    })
+    .toBe(true);
+
+  await page.evaluate(() => window.archvizPost?.setDepthOfFieldAllowed(false));
+  await expect
+    .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'dof'))
+    .toBe(false);
+
+  await page.evaluate(() => window.archvizPost?.setDepthOfFieldAllowed(true));
+  await expect
+    .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'dof'))
+    .toBe(true);
+
+  const box = await canvas.boundingBox();
+  expect(box, 'the canvas has a box to drag inside').not.toBeNull();
+  if (box === null) {
+    return;
+  }
+  const originX = box.x + box.width / 2;
+  const originY = box.y + box.height / 2;
+  await page.mouse.move(originX, originY);
+  await page.mouse.down();
+  let sawReady = false;
+  for (let step = 1; step <= 24 && !sawReady; step += 1) {
+    await page.mouse.move(originX + step * 6, originY + (step % 2 === 0 ? 4 : -4));
+    sawReady = !hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'dof');
+  }
+  await page.mouse.up();
+  expect(sawReady, 'depth of field was visually disabled while the camera moved').toBe(true);
+
+  await expect
+    .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'dof'), {
+      timeout: 3000,
+      message: 'depth of field turns back on after the rest window',
+    })
+    .toBe(true);
+  expect(errors, 'no console messages of type error').toEqual([]);
+});

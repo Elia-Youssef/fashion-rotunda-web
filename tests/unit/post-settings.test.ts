@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { postSettingsFor } from '../../src/post/settings';
+import { postSettingsFor, settingsForLevel } from '../../src/post/settings';
 import type { Backend } from '../../src/post/settings';
 import { TIERS, TIER_ORDER } from '../../src/tiers/table';
 import type { TierSettings } from '../../src/tiers/table';
@@ -21,13 +21,18 @@ interface Row {
   samples: number;
   ssgi: 'off' | 'half-moving-full-at-rest';
   ssr: boolean;
+  bloom: boolean;
+  lut: boolean;
+  vignette: boolean;
+  dof: 'off' | 'at-rest';
 }
 
 const BACKENDS: readonly Backend[] = ['webgpu', 'webgl2'];
 
 describe('postSettingsFor pinned against TIERS', () => {
   const rows: Row[] = [
-    // base is MSAA; its AO is desktop only; SSGI and SSR are off on both backends.
+    // base is MSAA; its AO is desktop only; SSGI and SSR are off on both backends; bloom off;
+    // lut/vignette on.
     {
       tier: TIERS.base,
       isTouch: true,
@@ -39,6 +44,10 @@ describe('postSettingsFor pinned against TIERS', () => {
       samples: 4,
       ssgi: 'off',
       ssr: false,
+      bloom: false,
+      lut: true,
+      vignette: true,
+      dof: 'off',
     },
     {
       tier: TIERS.base,
@@ -51,6 +60,10 @@ describe('postSettingsFor pinned against TIERS', () => {
       samples: 4,
       ssgi: 'off',
       ssr: false,
+      bloom: false,
+      lut: true,
+      vignette: true,
+      dof: 'off',
     },
     {
       tier: TIERS.base,
@@ -63,6 +76,10 @@ describe('postSettingsFor pinned against TIERS', () => {
       samples: 4,
       ssgi: 'off',
       ssr: false,
+      bloom: false,
+      lut: true,
+      vignette: true,
+      dof: 'off',
     },
     {
       tier: TIERS.base,
@@ -75,8 +92,12 @@ describe('postSettingsFor pinned against TIERS', () => {
       samples: 4,
       ssgi: 'off',
       ssr: false,
+      bloom: false,
+      lut: true,
+      vignette: true,
+      dof: 'off',
     },
-    // mid carries AO on every device and antialiases with TRAA; SSGI and SSR off.
+    // mid carries AO on every device, TRAA, bloom, lut, vignette; SSGI, SSR and dof off.
     {
       tier: TIERS.mid,
       isTouch: true,
@@ -88,6 +109,10 @@ describe('postSettingsFor pinned against TIERS', () => {
       samples: 0,
       ssgi: 'off',
       ssr: false,
+      bloom: true,
+      lut: true,
+      vignette: true,
+      dof: 'off',
     },
     {
       tier: TIERS.mid,
@@ -100,6 +125,10 @@ describe('postSettingsFor pinned against TIERS', () => {
       samples: 0,
       ssgi: 'off',
       ssr: false,
+      bloom: true,
+      lut: true,
+      vignette: true,
+      dof: 'off',
     },
     {
       tier: TIERS.mid,
@@ -112,6 +141,10 @@ describe('postSettingsFor pinned against TIERS', () => {
       samples: 0,
       ssgi: 'off',
       ssr: false,
+      bloom: true,
+      lut: true,
+      vignette: true,
+      dof: 'off',
     },
     {
       tier: TIERS.mid,
@@ -124,8 +157,12 @@ describe('postSettingsFor pinned against TIERS', () => {
       samples: 0,
       ssgi: 'off',
       ssr: false,
+      bloom: true,
+      lut: true,
+      vignette: true,
+      dof: 'off',
     },
-    // high carries AO, TRAA, and SSGI/SSR on WebGPU only; WebGL 2 turns SSGI and SSR off.
+    // high carries AO, TRAA, SSGI/SSR and dof on WebGPU only; WebGL 2 turns SSGI, SSR and dof off.
     {
       tier: TIERS.high,
       isTouch: true,
@@ -137,6 +174,10 @@ describe('postSettingsFor pinned against TIERS', () => {
       samples: 0,
       ssgi: 'half-moving-full-at-rest',
       ssr: true,
+      bloom: true,
+      lut: true,
+      vignette: true,
+      dof: 'at-rest',
     },
     {
       tier: TIERS.high,
@@ -149,6 +190,10 @@ describe('postSettingsFor pinned against TIERS', () => {
       samples: 0,
       ssgi: 'half-moving-full-at-rest',
       ssr: true,
+      bloom: true,
+      lut: true,
+      vignette: true,
+      dof: 'at-rest',
     },
     {
       tier: TIERS.high,
@@ -161,6 +206,10 @@ describe('postSettingsFor pinned against TIERS', () => {
       samples: 0,
       ssgi: 'off',
       ssr: false,
+      bloom: true,
+      lut: true,
+      vignette: true,
+      dof: 'off',
     },
     {
       tier: TIERS.high,
@@ -173,6 +222,10 @@ describe('postSettingsFor pinned against TIERS', () => {
       samples: 0,
       ssgi: 'off',
       ssr: false,
+      bloom: true,
+      lut: true,
+      vignette: true,
+      dof: 'off',
     },
   ];
 
@@ -187,6 +240,10 @@ describe('postSettingsFor pinned against TIERS', () => {
         samples: row.samples,
         ssgi: row.ssgi,
         ssr: row.ssr,
+        bloom: row.bloom,
+        lut: row.lut,
+        vignette: row.vignette,
+        dof: row.dof,
       });
     }
   });
@@ -270,5 +327,87 @@ describe('postSettingsFor pinned against TIERS', () => {
       }
     }
   });
-});
 
+  it('enables bloom on mid and high on both backends and disables on base', () => {
+    for (const name of TIER_ORDER) {
+      for (const isTouch of [false, true]) {
+        for (const backend of BACKENDS) {
+          const settings = postSettingsFor(TIERS[name], isTouch, backend);
+          const expectedBloom = name !== 'base';
+          expect(settings.bloom, `${name} touch=${isTouch} ${backend} bloom`).toBe(expectedBloom);
+        }
+      }
+    }
+  });
+
+  it('enables LUT and vignette on every tier across touch and backend', () => {
+    for (const name of TIER_ORDER) {
+      for (const isTouch of [false, true]) {
+        for (const backend of BACKENDS) {
+          const settings = postSettingsFor(TIERS[name], isTouch, backend);
+          expect(settings.lut, `${name} touch=${isTouch} ${backend} lut`).toBe(true);
+          expect(settings.vignette, `${name} touch=${isTouch} ${backend} vignette`).toBe(true);
+          expect(settings.vignette).toBe(settings.lut);
+        }
+      }
+    }
+  });
+
+  it('enables depth of field at rest on high on webgpu only and forces off on webgl2', () => {
+    for (const name of TIER_ORDER) {
+      for (const isTouch of [false, true]) {
+        for (const backend of BACKENDS) {
+          const settings = postSettingsFor(TIERS[name], isTouch, backend);
+          if (name === 'high' && backend === 'webgpu') {
+            expect(settings.dof, `${name} touch=${isTouch} ${backend} dof`).toBe('at-rest');
+          } else {
+            expect(settings.dof, `${name} touch=${isTouch} ${backend} dof`).toBe('off');
+          }
+        }
+      }
+    }
+  });
+
+  describe('settingsForLevel governor degradation', () => {
+    it('preserves all features at full and ssgi-half', () => {
+      const initial = postSettingsFor(TIERS.high, false, 'webgpu');
+      expect(settingsForLevel(initial, 'full')).toEqual(initial);
+      expect(settingsForLevel(initial, 'ssgi-half')).toEqual(initial);
+    });
+
+    it('disables ssgi at no-ssgi while retaining ssr, bloom, lut, vignette and dof', () => {
+      const initial = postSettingsFor(TIERS.high, false, 'webgpu');
+      const degraded = settingsForLevel(initial, 'no-ssgi');
+      expect(degraded.ssgi).toBe('off');
+      expect(degraded.ssr).toBe(true);
+      expect(degraded.bloom).toBe(true);
+      expect(degraded.lut).toBe(true);
+      expect(degraded.vignette).toBe(true);
+      expect(degraded.dof).toBe('at-rest');
+    });
+
+    it('disables ssgi and ssr at no-ssr while retaining bloom, lut, vignette and dof', () => {
+      const initial = postSettingsFor(TIERS.high, false, 'webgpu');
+      const degraded = settingsForLevel(initial, 'no-ssr');
+      expect(degraded.ssgi).toBe('off');
+      expect(degraded.ssr).toBe(false);
+      expect(degraded.bloom).toBe(true);
+      expect(degraded.lut).toBe(true);
+      expect(degraded.vignette).toBe(true);
+      expect(degraded.dof).toBe('at-rest');
+    });
+
+    it('at base level drops bloom and dof along with ssgi/ssr, but retains lut and vignette', () => {
+      const initial = postSettingsFor(TIERS.high, false, 'webgpu');
+      const degraded = settingsForLevel(initial, 'base');
+      expect(degraded.ssgi).toBe('off');
+      expect(degraded.ssr).toBe(false);
+      expect(degraded.bloom).toBe(false);
+      expect(degraded.dof).toBe('off');
+      expect(degraded.lut).toBe(true);
+      expect(degraded.vignette).toBe(true);
+      expect(degraded.ao).toBe(initial.ao);
+      expect(degraded.traa).toBe(initial.traa);
+    });
+  });
+});
