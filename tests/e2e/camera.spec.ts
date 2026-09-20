@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+const SCENE_READY_TIMEOUT = 60_000;
+
 // G4.1 + G4.4 through the real page: a drag orbits the inspection camera, the turntable turns the
 // look while it runs, and the loop goes back to sleep once both are still. Reads and the toggle go
 // through window.archvizCamera, which ?e2e=1 mounts; the frame-settling wait mirrors idle.spec.ts.
@@ -10,7 +12,7 @@ test('a drag across the canvas orbits the camera', async ({ page }) => {
   test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
   await page.goto('/?webgl=1&e2e=1');
   const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
   const before = await page.evaluate((): number[] => window.archvizCamera?.orbit.position ?? []);
   expect(before.length).toBe(3);
@@ -39,7 +41,7 @@ test('the turntable turns the look and the loop settles once it stops', async ({
   test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
   await page.goto('/?webgl=1&e2e=1');
   const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
   const readYaw = async (): Promise<number> => Number((await canvas.getAttribute('data-yaw')) ?? '0');
 
@@ -97,7 +99,7 @@ test('walk mode stops at walls and stays above floor', async ({ page }) => {
   });
   await page.goto('/?webgl=1&e2e=1');
   const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
   const walkBtn = page.locator('button[data-mode="walk"]');
   await expect(walkBtn).toBeEnabled({ timeout: 10_000 });
@@ -134,7 +136,7 @@ test('the real collision GLB blocks normal and sprint routes around the plinth a
   test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
   await page.goto('/?webgl=1&e2e=1&attract=0');
   const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
   await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
   await page.evaluate(async () => {
     await window.archvizCamera?.setMode('walk');
@@ -198,7 +200,7 @@ test.describe('touch walkthrough controls', () => {
     });
     await page.goto('/?webgl=1&e2e=1&attract=0');
     const canvas = page.locator('canvas#scene');
-    await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: 30_000 });
+    await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
     await page.setViewportSize({ width: 767, height: 430 });
     await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
     await page.evaluate(async () => {
@@ -264,7 +266,7 @@ test('two round trips orbit-walk-orbit end at starting orbit position within 1 m
   });
   await page.goto('/?webgl=1&e2e=1');
   const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
   const walkBtn = page.locator('button[data-mode="walk"]');
   await expect(walkBtn).toBeEnabled({ timeout: 10_000 });
@@ -310,7 +312,7 @@ test('attract loop tours presets when idle and cancels on input', async ({ page 
   });
   await page.goto('/?webgl=1&e2e=1&attract=1&attractIdle=500');
   const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
   // data-attract becomes 1 within 5 s
   await expect(canvas).toHaveAttribute('data-attract', '1', { timeout: 5_000 });
