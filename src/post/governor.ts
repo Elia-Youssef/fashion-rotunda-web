@@ -4,6 +4,9 @@
 // The governor steps enhanced post-processing down when the measured frame work time repeatedly
 // misses the tier budget, so the page never stutters to show off. Degradation is one-way: once
 // stepped down, the level never re-ascends within the session.
+//
+// At the base level, the post chain keeps LUT and vignette (a single 3D texture lookup and math pass)
+// while dropping heavy passes (SSGI, SSR) as well as bloom and depth of field.
 
 export type EnhancedLevel = 'full' | 'ssgi-half' | 'no-ssgi' | 'no-ssr' | 'base';
 

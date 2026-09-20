@@ -4,6 +4,7 @@
 // The chain follows this and nothing else: it never reads the tier table itself.
 
 import type { TierSettings } from '../tiers/table';
+import type { EnhancedLevel } from './governor';
 
 export type Backend = 'webgpu' | 'webgl2';
 
@@ -18,6 +19,12 @@ export interface PostSettings {
   /** 'off', or 'half-moving-full-at-rest' straight from the tier row; never on for webgl2. */
   ssgi: 'off' | 'half-moving-full-at-rest';
   ssr: boolean;
+  bloom: boolean;
+  lut: boolean;
+  /** Rides with lut: the tier table groups Bloom, LUT and vignette. */
+  vignette: boolean;
+  /** 'off', or 'at-rest' straight from tier on webgpu; always 'off' on webgl2. */
+  dof: 'off' | 'at-rest';
 }
 
 /**
@@ -27,7 +34,8 @@ export interface PostSettings {
  * device. Touch means no pointer, which the caller reads from matchMedia.
  *
  * SSGI and SSR are applied on webgpu directly from the tier row and forced off on webgl2, because
- * compute shaders have no WebGL fallback.
+ * compute shaders have no WebGL fallback. Bloom, LUT and vignette run on both backends. Depth of
+ * field runs on webgpu at rest and is forced off on webgl2.
  */
 export function postSettingsFor(tier: TierSettings, isTouch: boolean, backend: Backend): PostSettings {
   const aoEnabled = tier.ao === 'gtao-half' || (tier.ao === 'gtao-half-desktop-only' && !isTouch);
@@ -42,5 +50,27 @@ export function postSettingsFor(tier: TierSettings, isTouch: boolean, backend: B
     samples: msaa ? 4 : 0,
     ssgi: isWebGPU ? tier.ssgi : 'off',
     ssr: isWebGPU ? tier.ssr : false,
+    bloom: tier.bloom,
+    lut: tier.lut,
+    vignette: tier.lut,
+    dof: isWebGPU ? tier.dof : 'off',
   };
+}
+
+/**
+ * Derives the active settings for a given governor degradation level.
+ * At 'base', compute features (SSGI, SSR) as well as bloom and depth of field are dropped,
+ * while LUT and vignette are kept as they cost only a single lookup.
+ */
+export function settingsForLevel(settings: PostSettings, level: EnhancedLevel): PostSettings {
+  if (level === 'full' || level === 'ssgi-half') {
+    return settings;
+  }
+  if (level === 'no-ssgi') {
+    return { ...settings, ssgi: 'off' };
+  }
+  if (level === 'no-ssr') {
+    return { ...settings, ssgi: 'off', ssr: false };
+  }
+  return { ...settings, ssgi: 'off', ssr: false, bloom: false, dof: 'off' };
 }

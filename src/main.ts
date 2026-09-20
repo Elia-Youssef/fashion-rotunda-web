@@ -496,7 +496,10 @@ async function main(): Promise<void> {
     }
   }
 
-  /** What the post chain is drawing, as the e2e suites read it: "ao,traa", "ao,msaa", "off". */
+  /**
+   * What the post chain is drawing, as the e2e suites read it: "ao,traa", "ao,msaa",
+   * "ao,traa,lut,vignette", "off".
+   */
   function publishPostState(): void {
     const on = chain?.features ?? null;
     const value =
@@ -508,7 +511,10 @@ async function main(): Promise<void> {
             on.msaa ? 'msaa' : '',
             on.ssgi === 'half' ? 'ssgi-half' : on.ssgi === 'full' ? 'ssgi' : '',
             on.ssr ? 'ssr' : '',
-            // hook: post tokens
+            on.bloom ? 'bloom' : '',
+            on.lut ? 'lut' : '',
+            on.vignette ? 'vignette' : '',
+            on.dof === 'on' ? 'dof' : '',
           ]
             .filter((feature) => feature !== '')
             .join(',') || 'off';

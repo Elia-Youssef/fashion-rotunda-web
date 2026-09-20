@@ -1,6 +1,6 @@
-// Goals G2.3, G2.5, G3.1, G3.2 and G3.5: ambient occlusion, anti-aliasing, screen-space global
-// illumination and screen-space reflections through the node post chain of three 0.186.0, governed
-// by frame work time.
+// Goals G2.3, G2.5, G3.1, G3.2, G3.3 and G3.5: ambient occlusion, anti-aliasing, screen-space global
+// illumination, screen-space reflections, bloom, color grade, vignette and depth of field through
+// the node post chain of three 0.186.0, governed by frame work time.
 //
 // The chain replaces renderer.render for every frame after the showroom exists:
 // 1. A pre-pass for normals, depth, metalness and roughness.
@@ -8,8 +8,13 @@
 // 3. The scene pass that carries beauty and, when TRAA is on, a velocity attachment.
 // 4. SSGI computing diffuse bounce illumination from the scene pass beauty, normal and depth.
 // 5. SSR computing specular screen-space reflections from beauty, normal, depth, metalness, roughness.
-// 6. Composite of beauty + GI + SSR fed to TRAA (reprojected along velocity) or MSAA.
-// 7. Output quad applying AgX tone mapping and sRGB color space conversion exactly once.
+// 6. Bloom extracted from the HDR beauty above luminance 1.15 and added back to the HDR composite.
+// 7. Composite of beauty + GI + SSR + bloom fed to TRAA (reprojected along velocity) or MSAA.
+// 8. Depth of field applied to the anti-aliased beauty on high tier at rest on WebGPU.
+// 9. Tone mapping (AgX) and output color space conversion (sRGB) transforming HDR to display space.
+// 10. Color grade through a 3D LUT (Data3DTexture) applied in display space.
+// 11. Aspect-aware vignette darkening the corners by at most 0.25 in display space.
+// 12. Output quad rendered through RenderPipeline with outputColorTransform disabled.
 //
 // The chain owns no DOM: what it turned on is read back through `features`, and the composition
 // root is the one place that writes it onto the canvas.
@@ -17,20 +22,39 @@
 // Source references below are to three.js 0.186.0 under node_modules/three/ and are quoted with
 // file and line.
 
-import { RenderPipeline, Vector2 } from 'three/webgpu';
+import {
+  ClampToEdgeWrapping,
+  Data3DTexture,
+  LinearFilter,
+  RenderPipeline,
+  RGBAFormat,
+  UnsignedByteType,
+  Vector2,
+  Vector3,
+} from 'three/webgpu';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
 import { ssgi } from 'three/addons/tsl/display/SSGINode.js';
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
+import { bloom } from 'three/addons/tsl/display/BloomNode.js';
+import { lut3D } from 'three/addons/tsl/display/Lut3DNode.js';
+import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js';
 import {
   builtinAOContext,
+  float,
   materialMetalness,
   materialRoughness,
+  mix,
   mrt,
   normalView,
   output,
   pass,
+  renderOutput,
   screenUV,
+  smoothstep,
+  texture3D,
+  uniform,
+  vec2,
   vec4,
   velocity,
 } from 'three/tsl';
@@ -38,15 +62,18 @@ import type GTAONode from 'three/addons/tsl/display/GTAONode.js';
 import type TRAANode from 'three/addons/tsl/display/TRAANode.js';
 import type SSGINode from 'three/addons/tsl/display/SSGINode.js';
 import type SSRNode from 'three/addons/tsl/display/SSRNode.js';
+import type BloomNode from 'three/addons/tsl/display/BloomNode.js';
+import type DepthOfFieldNode from 'three/addons/tsl/display/DepthOfFieldNode.js';
 import type { SSRNodeOptions } from 'three/addons/tsl/display/SSRNode.js';
 import type { PerspectiveCamera, Scene } from 'three';
-import type { Node, PassNode, WebGPURenderer } from 'three/webgpu';
+import type { Node, PassNode, UniformNode, WebGPURenderer } from 'three/webgpu';
 
-import { postSettingsFor } from './settings';
+import { postSettingsFor, settingsForLevel } from './settings';
 import type { Backend, PostSettings } from './settings';
 import type { TierSettings } from '../tiers/table';
 import { createGovernor } from './governor';
 import type { EnhancedLevel, Governor } from './governor';
+import { gradeLut, LUT_SIZE } from './grade';
 
 export interface PostChainOptions {
   renderer: WebGPURenderer;
@@ -62,6 +89,8 @@ export interface PostChainOptions {
    * for it to reach the screen. The composition root passes `() => loop.invalidate()`.
    */
   requestFrame?: () => void;
+  /** Where the depth of field focuses: the look on the plinth; default [0, 1, 0]. */
+  focusTarget?: [number, number, number];
 }
 
 export interface PostChain {
@@ -69,18 +98,25 @@ export interface PostChain {
   render(): void;
   /** True when the chain does more than pass the beauty through. */
   readonly active: boolean;
-  /** What is on: ao, traa, msaa, plus ssgi ('off' | 'half' | 'full') and ssr. */
+  /** What is on: ao, traa, msaa, ssgi, ssr, bloom, lut, vignette, dof. */
   readonly features: {
     ao: boolean;
     traa: boolean;
     msaa: boolean;
     ssgi: 'off' | 'half' | 'full';
     ssr: boolean;
+    bloom: boolean;
+    lut: boolean;
+    vignette: boolean;
+    /** 'off': not built or not allowed; 'ready': built and allowed, camera moving; 'on': drawing. */
+    dof: 'off' | 'ready' | 'on';
   };
   /** Feeds the loop's frame work time to the governor; the composition root calls it from onFrameTime. */
   observeFrame(workMs: number): void;
   /** TRAA and SSGI need to know when the camera or look moved, to reset history or switch resolution. */
   notifyMotion(): void;
+  /** False in walkthrough mode; main.ts wires the camera's mode callback to it. */
+  setDepthOfFieldAllowed(allowed: boolean): void;
   /** Call on every canvas size or pixel ratio change. */
   setSize(width: number, height: number): void;
   dispose(): void;
@@ -95,13 +131,29 @@ const PASS_THROUGH: PostSettings = {
   samples: 0,
   ssgi: 'off',
   ssr: false,
+  bloom: false,
+  lut: false,
+  vignette: false,
+  dof: 'off',
 };
 
 /** How long after the last motion notification the camera still counts as moving. */
 const MOTION_MS = 500;
 
+declare global {
+  interface Window {
+    /**
+     * Test-only handle, mounted behind the same gate as window.archvizCamera in camera/mount.ts:
+     * dev builds and `?e2e=1`. The finishing-pass check flips depth of field off from the console,
+     * which no visitor-facing control can do until the walkthrough mode is wired at integration.
+     */
+    archvizPost?: { setDepthOfFieldAllowed: (allowed: boolean) => void };
+  }
+}
+
 /**
- * `?post=` forces a slice of the chain for development: off, ao, aa, gi, ssr or max.
+ * `?post=` forces a slice of the chain for development: off, ao, aa, gi, ssr, finish or max.
+ * `finish` enables bloom, lut, vignette and dof allowed without heavy compute passes.
  * `max` enables everything the tier allows on this backend with the governor disabled.
  */
 function applyDevSwitch(
@@ -152,12 +204,25 @@ function applyDevSwitch(
       governorEnabled: false,
     };
   }
+  if (wanted === 'finish') {
+    return {
+      settings: {
+        ...PASS_THROUGH,
+        bloom: tier.bloom,
+        lut: tier.lut,
+        vignette: tier.vignette,
+        dof: backend === 'webgpu' ? tier.dof : 'off',
+      },
+      governorEnabled: false,
+    };
+  }
   if (wanted === 'max') {
     return {
       settings: {
         ...tier,
         ssgi: backend === 'webgpu' ? tier.ssgi : 'off',
         ssr: backend === 'webgpu' && tier.ssr,
+        dof: backend === 'webgpu' ? tier.dof : 'off',
       },
       governorEnabled: false,
     };
@@ -172,15 +237,57 @@ function backendName(renderer: WebGPURenderer): string {
   return 'isWebGPUBackend' in backend && backend.isWebGPUBackend === true ? 'webgpu' : 'webgl2';
 }
 
-/**
- * The graph behind one settings choice: null fields are features that are off, so dispose walks
- * exactly what was allocated.
- */
 /** SSGINode in three.js 0.186.0 defines setSize at SSGINode.js line 343, but @types/three omits it. */
 interface SSGINodeWithSize extends SSGINode {
   setSize(width: number, height: number): void;
 }
 
+/**
+ * BloomNode in three.js 0.186.0 defines getTextureNode at BloomNode.js line 284, but BloomNode.d.ts
+ * line 28 declares getTexture.
+ */
+interface BloomNodeWithTextureNode extends BloomNode {
+  getTextureNode(): Node<'vec4'>;
+}
+
+/**
+ * DepthOfFieldNode in three.js 0.186.0 defines setSize at DepthOfFieldNode.js line 242,
+ * but DepthOfFieldNode.d.ts lines 3-18 omits setSize.
+ */
+interface DepthOfFieldNodeFull extends DepthOfFieldNode {
+  setSize(width: number, height: number): void;
+}
+
+/**
+ * Builds the 3D texture containing the showroom's warm grade LUT.
+ * UnsignedByteType with LinearFilter ensures hardware filtering across both WebGPU and WebGL2.
+ */
+function createLutTexture(): Data3DTexture {
+  const raw = gradeLut(LUT_SIZE);
+  const data = new Uint8Array(LUT_SIZE * LUT_SIZE * LUT_SIZE * 4);
+  for (let i = 0, j = 0; i < raw.length; i += 3, j += 4) {
+    data[j] = Math.round(Math.min(1, Math.max(0, raw[i]!)) * 255);
+    data[j + 1] = Math.round(Math.min(1, Math.max(0, raw[i + 1]!)) * 255);
+    data[j + 2] = Math.round(Math.min(1, Math.max(0, raw[i + 2]!)) * 255);
+    data[j + 3] = 255;
+  }
+  const texture = new Data3DTexture(data, LUT_SIZE, LUT_SIZE, LUT_SIZE);
+  texture.format = RGBAFormat;
+  texture.type = UnsignedByteType;
+  texture.magFilter = LinearFilter;
+  texture.minFilter = LinearFilter;
+  texture.wrapS = ClampToEdgeWrapping;
+  texture.wrapT = ClampToEdgeWrapping;
+  texture.wrapR = ClampToEdgeWrapping;
+  texture.generateMipmaps = false;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/**
+ * The graph behind one settings choice: null fields are features that are off, so dispose walks
+ * exactly what was allocated.
+ */
 interface ChainGraph {
   pipeline: RenderPipeline;
   settings: PostSettings;
@@ -190,6 +297,15 @@ interface ChainGraph {
   traaNode: TRAANode | null;
   ssgiNode: SSGINodeWithSize | null;
   ssrNode: SSRNode | null;
+  bloomNode: BloomNodeWithTextureNode | null;
+  dofNode: DepthOfFieldNodeFull | null;
+  dofActiveUniform: UniformNode<'float', number> | null;
+  focusDistanceUniform: UniformNode<'float', number> | null;
+  bokehScaleUniform: UniformNode<'float', number> | null;
+  aspectUniform: UniformNode<'float', number>;
+  lutTexture: Data3DTexture | null;
+  /** Bloom creates its internal blur targets during the first render. */
+  hasRendered: boolean;
 }
 
 export function createPostChain(options: PostChainOptions): PostChain {
@@ -209,6 +325,17 @@ export function createPostChain(options: PostChainOptions): PostChain {
 
   let lastMotionTimestamp = 0;
   let currentSSGIScale = 1.0;
+  let depthOfFieldAllowed = true;
+  const focusTarget = new Vector3(...(options.focusTarget ?? [0, 1, 0]));
+  const focusDirection = new Vector3();
+  const focusOffset = new Vector3();
+
+  /** DepthOfFieldNode expects distance along the camera's look direction, not radial distance. */
+  function focusDistance(): number {
+    camera.getWorldDirection(focusDirection);
+    focusOffset.copy(focusTarget).sub(camera.position);
+    return Math.max(camera.near, focusOffset.dot(focusDirection));
+  }
 
   function currentLevel(): EnhancedLevel {
     return governor?.level ?? 'full';
@@ -238,6 +365,13 @@ export function createPostChain(options: PostChainOptions): PostChain {
     let gtao: GTAONode | null = null;
     let ssgiNode: SSGINodeWithSize | null = null;
     let ssrNode: SSRNode | null = null;
+    let bloomNode: BloomNodeWithTextureNode | null = null;
+    let dofNode: DepthOfFieldNodeFull | null = null;
+    let dofActiveUniform: UniformNode<'float', number> | null = null;
+    let focusDistanceUniform: UniformNode<'float', number> | null = null;
+    let bokehScaleUniform: UniformNode<'float', number> | null = null;
+    let lutTexture: Data3DTexture | null = null;
+    const aspectUniform = uniform(1.0);
 
     const needsPrePass = wanted.ao || wanted.ssgi !== 'off' || wanted.ssr;
     if (needsPrePass) {
@@ -311,23 +445,33 @@ export function createPostChain(options: PostChainOptions): PostChain {
       ssrNode.thickness.value = 0.5;
     }
 
-    // The composite exists only when SSGI or SSR has something to add. Null everywhere else, so a
-    // graph without them is the node sequence this chain had before SSGI and SSR: the pass itself
-    // reaches the pipeline, and nothing materialises its texture node before PassNode.setup does
-    // (PassNode.js line 810). The AO-only and AA-only graphs are that path.
+    if (wanted.bloom) {
+      // Bloom is extracted from the HDR beauty before tone mapping with a threshold > 1.0,
+      // so only super-white elements (sun disc through dome, brass specular peaks) bloom.
+      bloomNode = bloom(
+        scenePass.getTextureNode(),
+        0.15,
+        0.4,
+        1.15,
+      ) as BloomNodeWithTextureNode;
+    }
+
+    // Composite beauty with GI, SSR and bloom in linear HDR before TRAA and tone mapping.
     let compositeColor: Node<'vec4'> | null = null;
-    if (ssgiNode !== null && ssrNode !== null) {
+    const needsComposite = ssgiNode !== null || ssrNode !== null || bloomNode !== null;
+    if (needsComposite) {
       const beautyColor = scenePass.getTextureNode();
-      compositeColor = vec4(
-        beautyColor.rgb.add(ssgiNode.getGINode()).add(ssrNode.getTextureNode().rgb),
-        beautyColor.a,
-      );
-    } else if (ssgiNode !== null) {
-      const beautyColor = scenePass.getTextureNode();
-      compositeColor = vec4(beautyColor.rgb.add(ssgiNode.getGINode()), beautyColor.a);
-    } else if (ssrNode !== null) {
-      const beautyColor = scenePass.getTextureNode();
-      compositeColor = vec4(beautyColor.rgb.add(ssrNode.getTextureNode().rgb), beautyColor.a);
+      let rgb: Node<'vec3'> = beautyColor.rgb;
+      if (ssgiNode !== null) {
+        rgb = rgb.add(ssgiNode.getGINode());
+      }
+      if (ssrNode !== null) {
+        rgb = rgb.add(ssrNode.getTextureNode().rgb);
+      }
+      if (bloomNode !== null) {
+        rgb = rgb.add(bloomNode.getTextureNode().rgb);
+      }
+      compositeColor = vec4(rgb, beautyColor.a);
     }
 
     let traaNode: TRAANode | null = null;
@@ -342,10 +486,72 @@ export function createPostChain(options: PostChainOptions): PostChain {
       );
     }
 
-    const outputNode = traaNode ?? compositeColor ?? scenePass;
-    const pipeline = new RenderPipeline(renderer, outputNode);
+    const beautyInput = traaNode ?? compositeColor ?? scenePass.getTextureNode();
 
-    return { pipeline, settings: wanted, scenePass, prePass, gtao, traaNode, ssgiNode, ssrNode };
+    let beautyAfterDoF: Node<'vec4'> = beautyInput;
+    if (wanted.dof !== 'off' && backend === 'webgpu') {
+      const viewZ = scenePass.getViewZNode();
+      focusDistanceUniform = uniform(focusDistance());
+      bokehScaleUniform = uniform(2.5);
+      dofActiveUniform = uniform(0.0);
+
+      dofNode = dof(
+        beautyInput,
+        viewZ,
+        focusDistanceUniform,
+        3.0,
+        bokehScaleUniform,
+      ) as DepthOfFieldNodeFull;
+      beautyAfterDoF = mix(beautyInput, dofNode as unknown as Node<'vec4'>, dofActiveUniform);
+    }
+
+    // Tone mapping and output color transform: brings linear HDR into display space [0, 1].
+    const displayNode = renderOutput(beautyAfterDoF, renderer.toneMapping, renderer.outputColorSpace);
+
+    let lutGradedNode: Node<'vec4'> | null = null;
+    if (wanted.lut) {
+      lutTexture = createLutTexture();
+      lutGradedNode = lut3D(
+        displayNode,
+        texture3D(lutTexture),
+        LUT_SIZE,
+        float(1.0),
+      ) as unknown as Node<'vec4'>;
+    }
+
+    let vignettedNode: Node<'vec4'> | null = null;
+    if (wanted.vignette) {
+      const baseDisplay = lutGradedNode ?? displayNode;
+      const uvOffset = screenUV.sub(vec2(0.5, 0.5));
+      const coord = vec2(uvOffset.x.mul(aspectUniform), uvOffset.y);
+      const maxDist = float(0.5).mul(aspectUniform.mul(aspectUniform).add(1.0).sqrt());
+      const dist = coord.length().div(maxDist);
+      const factor = float(1.0).sub(float(0.25).mul(smoothstep(0.0, 1.0, dist)));
+      vignettedNode = vec4(baseDisplay.rgb.mul(factor), baseDisplay.a);
+    }
+
+    const finalOutput = vignettedNode ?? lutGradedNode ?? displayNode;
+    const pipeline = new RenderPipeline(renderer, finalOutput);
+    pipeline.outputColorTransform = false;
+
+    return {
+      pipeline,
+      settings: wanted,
+      scenePass,
+      prePass,
+      gtao,
+      traaNode,
+      ssgiNode,
+      ssrNode,
+      bloomNode,
+      dofNode,
+      dofActiveUniform,
+      focusDistanceUniform,
+      bokehScaleUniform,
+      aspectUniform,
+      lutTexture,
+      hasRendered: false,
+    };
   }
 
   function disposeGraph(target: ChainGraph): void {
@@ -356,6 +562,9 @@ export function createPostChain(options: PostChainOptions): PostChain {
     target.traaNode?.dispose();
     target.ssgiNode?.dispose();
     target.ssrNode?.dispose();
+    target.bloomNode?.dispose();
+    target.dofNode?.dispose();
+    target.lutTexture?.dispose();
   }
 
   let graph = buildGraph(settings);
@@ -369,22 +578,15 @@ export function createPostChain(options: PostChainOptions): PostChain {
     graph.gtao?.setSize(pixelWidth, pixelHeight);
     graph.ssgiNode?.setSize(pixelWidth, pixelHeight);
     graph.ssrNode?.setSize(pixelWidth, pixelHeight);
+    if (graph.bloomNode !== null && graph.hasRendered) {
+      graph.bloomNode.setSize(pixelWidth, pixelHeight);
+    }
+    graph.dofNode?.setSize(pixelWidth, pixelHeight);
+    graph.aspectUniform.value = pixelHeight > 0 ? pixelWidth / pixelHeight : 1.0;
   }
 
   const born = renderer.getDrawingBufferSize(new Vector2());
   forwardSize(Math.floor(born.width), Math.floor(born.height));
-
-  /** What each governor level asks for, off the settings the tier and `?post=` settled on. */
-  function settingsForLevel(level: EnhancedLevel): PostSettings {
-    if (level === 'full' || level === 'ssgi-half') {
-      return settings;
-    }
-    if (level === 'no-ssgi') {
-      return { ...settings, ssgi: 'off' };
-    }
-    // 'no-ssr' and 'base' both land on the chain without the enhanced passes: AO and TRAA only.
-    return { ...settings, ssgi: 'off', ssr: false };
-  }
 
   /**
    * What the chain is drawing, which is the graph's own settings and never the level's wish: a
@@ -397,17 +599,21 @@ export function createPostChain(options: PostChainOptions): PostChain {
   }
 
   /**
-   * Builds the level's graph when the governor has dropped SSGI or SSR. Zeroing giIntensity and
-   * intensity would not do: SSGINode.updateBefore (SSGINode.js line 357) and SSRNode.updateBefore
-   * (SSRNode.js line 742) render their targets every frame whatever the uniforms say, so a step
-   * down that only zeroes them recovers no GPU time at all. The node has to leave the graph.
+   * Builds the level's graph when the governor has dropped SSGI, SSR, bloom or depth of field.
+   * Zeroing intensities would not prevent render targets from evaluating every frame, so inactive
+   * passes leave the graph entirely to reclaim GPU budget.
    */
   function applyGovernorLevel(): void {
     if (fellBack) {
       return;
     }
-    const wanted = settingsForLevel(currentLevel());
-    if (wanted.ssgi === graph.settings.ssgi && wanted.ssr === graph.settings.ssr) {
+    const wanted = settingsForLevel(settings, currentLevel());
+    if (
+      wanted.ssgi === graph.settings.ssgi &&
+      wanted.ssr === graph.settings.ssr &&
+      wanted.bloom === graph.settings.bloom &&
+      wanted.dof === graph.settings.dof
+    ) {
       return;
     }
     const superseded = graph;
@@ -427,16 +633,47 @@ export function createPostChain(options: PostChainOptions): PostChain {
     if (effective.ssgi !== 'off') {
       ssgiFeature = wantedSSGIScale() < 1 ? 'half' : 'full';
     }
+
+    let dofFeature: 'off' | 'ready' | 'on' = 'off';
+    if (effective.dof !== 'off' && graph.dofNode !== null) {
+      if (!depthOfFieldAllowed) {
+        dofFeature = 'off';
+      } else {
+        const isMoving = performance.now() - lastMotionTimestamp < MOTION_MS;
+        dofFeature = isMoving ? 'ready' : 'on';
+      }
+    }
+
     return {
       ao: effective.ao,
       traa: effective.traa,
       msaa: effective.msaa,
       ssgi: ssgiFeature,
       ssr: effective.ssr,
+      bloom: effective.bloom,
+      lut: effective.lut,
+      vignette: effective.vignette,
+      dof: dofFeature,
     };
   }
 
   let motionTimer: number | null = null;
+
+  /** The one gate behind the interface method and the test-only handle below. */
+  function applyDepthOfFieldAllowed(allowed: boolean): void {
+    if (depthOfFieldAllowed !== allowed) {
+      depthOfFieldAllowed = allowed;
+      // A change decided while the loop is idle needs a frame drawn for data-post to show it.
+      requestFrame?.();
+    }
+  }
+
+  const exposed =
+    typeof window !== 'undefined' &&
+    (import.meta.env.DEV || new URLSearchParams(window.location.search).get('e2e') === '1');
+  if (exposed) {
+    window.archvizPost = { setDepthOfFieldAllowed: applyDepthOfFieldAllowed };
+  }
 
   return {
     render(): void {
@@ -452,7 +689,22 @@ export function createPostChain(options: PostChainOptions): PostChain {
           }
         }
 
+        if (graph.dofNode !== null) {
+          const isMoving = performance.now() - lastMotionTimestamp < MOTION_MS;
+          const isDofOn = depthOfFieldAllowed && !isMoving;
+          if (graph.dofActiveUniform !== null) {
+            graph.dofActiveUniform.value = isDofOn ? 1.0 : 0.0;
+          }
+          if (graph.bokehScaleUniform !== null) {
+            graph.bokehScaleUniform.value = isDofOn ? 2.5 : 0.0;
+          }
+          if (graph.focusDistanceUniform !== null) {
+            graph.focusDistanceUniform.value = focusDistance();
+          }
+        }
+
         graph.pipeline.render();
+        graph.hasRendered = true;
       } catch (error) {
         if (fellBack) {
           throw error;
@@ -475,7 +727,16 @@ export function createPostChain(options: PostChainOptions): PostChain {
 
     get active(): boolean {
       const effective = effectiveSettings();
-      return effective.ao || effective.traa || effective.ssgi !== 'off' || effective.ssr;
+      return (
+        effective.ao ||
+        effective.traa ||
+        effective.ssgi !== 'off' ||
+        effective.ssr ||
+        effective.bloom ||
+        effective.lut ||
+        effective.vignette ||
+        effective.dof !== 'off'
+      );
     },
 
     get features(): {
@@ -484,8 +745,16 @@ export function createPostChain(options: PostChainOptions): PostChain {
       msaa: boolean;
       ssgi: 'off' | 'half' | 'full';
       ssr: boolean;
+      bloom: boolean;
+      lut: boolean;
+      vignette: boolean;
+      dof: 'off' | 'ready' | 'on';
     } {
       return currentFeatures();
+    },
+
+    setDepthOfFieldAllowed(allowed: boolean): void {
+      applyDepthOfFieldAllowed(allowed);
     },
 
     observeFrame(workMs: number): void {
@@ -515,7 +784,10 @@ export function createPostChain(options: PostChainOptions): PostChain {
           motionTimer = null;
           // Rest puts the SSGI target back to full resolution, which only happens inside render().
           // Without this the loop idles and no full-resolution frame is ever drawn.
-          if (graph.ssgiNode !== null && wantedSSGIScale() !== currentSSGIScale) {
+          const ssgiNeedsRedraw = graph.ssgiNode !== null && wantedSSGIScale() !== currentSSGIScale;
+          // Rest also switches DoF from 'ready' to 'on', which is applied inside render().
+          const dofNeedsRedraw = graph.dofNode !== null && depthOfFieldAllowed;
+          if (ssgiNeedsRedraw || dofNeedsRedraw) {
             requestFrame?.();
           }
         }, MOTION_MS + 10);
@@ -536,6 +808,11 @@ export function createPostChain(options: PostChainOptions): PostChain {
       if (motionTimer !== null && typeof window !== 'undefined') {
         window.clearTimeout(motionTimer);
         motionTimer = null;
+      }
+      if (typeof window !== 'undefined') {
+        if (window.archvizPost?.setDepthOfFieldAllowed === applyDepthOfFieldAllowed) {
+          delete window.archvizPost;
+        }
       }
       disposeGraph(graph);
     },
