@@ -81,6 +81,9 @@ test('visual baselines for the first look and the New Look Dress', async ({ page
   const newLookButton = page.locator('#looks button[data-look="new-look-dress"]');
   await expect(newLookButton).toBeVisible({ timeout: SWITCH_TIMEOUT });
   await newLookButton.click();
+  // The click focuses the rail button and opens its accessibility tooltip over the canvas. The
+  // baseline owns renderer output, not transient page chrome, so dismiss it before capturing.
+  await page.keyboard.press('Escape');
 
   await expect(canvas).toHaveAttribute('data-look', 'new-look-dress', { timeout: SWITCH_TIMEOUT });
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });

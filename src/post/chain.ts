@@ -140,17 +140,6 @@ const PASS_THROUGH: PostSettings = {
 /** How long after the last motion notification the camera still counts as moving. */
 const MOTION_MS = 500;
 
-declare global {
-  interface Window {
-    /**
-     * Test-only handle, mounted behind the same gate as window.archvizCamera in camera/mount.ts:
-     * dev builds and `?e2e=1`. The finishing-pass check flips depth of field off from the console,
-     * which no visitor-facing control can do until the walkthrough mode is wired at integration.
-     */
-    archvizPost?: { setDepthOfFieldAllowed: (allowed: boolean) => void };
-  }
-}
-
 /**
  * `?post=` forces a slice of the chain for development: off, ao, aa, gi, ssr, finish or max.
  * `finish` enables bloom, lut, vignette and dof allowed without heavy compute passes.
@@ -668,13 +657,6 @@ export function createPostChain(options: PostChainOptions): PostChain {
     }
   }
 
-  const exposed =
-    typeof window !== 'undefined' &&
-    (import.meta.env.DEV || new URLSearchParams(window.location.search).get('e2e') === '1');
-  if (exposed) {
-    window.archvizPost = { setDepthOfFieldAllowed: applyDepthOfFieldAllowed };
-  }
-
   return {
     render(): void {
       try {
@@ -808,11 +790,6 @@ export function createPostChain(options: PostChainOptions): PostChain {
       if (motionTimer !== null && typeof window !== 'undefined') {
         window.clearTimeout(motionTimer);
         motionTimer = null;
-      }
-      if (typeof window !== 'undefined') {
-        if (window.archvizPost?.setDepthOfFieldAllowed === applyDepthOfFieldAllowed) {
-          delete window.archvizPost;
-        }
       }
       disposeGraph(graph);
     },

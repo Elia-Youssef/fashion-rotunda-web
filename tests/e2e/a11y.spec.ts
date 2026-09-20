@@ -47,6 +47,7 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
   await page.goto('/?webgl=1&e2e=1&onboarding=1');
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+  await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
 
   // 1. Onboarding card appears with the first step
   const card = page.locator('.onboarding-card');
@@ -72,7 +73,11 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
     true,
   );
 
-  // Tab to first thumbnail
+  // Tab through both camera modes, then to the first thumbnail.
+  await page.keyboard.press('Tab');
+  expect(await focusMatches(page, 'button[data-mode="orbit"]'), 'activeElement is Orbit').toBe(true);
+  await page.keyboard.press('Tab');
+  expect(await focusMatches(page, 'button[data-mode="walk"]'), 'activeElement is Walk').toBe(true);
   await page.keyboard.press('Tab');
   expect(await focusMatches(page, '#looks button'), 'activeElement is a thumbnail').toBe(true);
 

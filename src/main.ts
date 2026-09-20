@@ -231,7 +231,7 @@ async function main(): Promise<void> {
   // The music switch (G5.6) mounts in the header here, before the content loads, so a
   // visitor can press it while the room is still arriving; the music needs no scene.
   const music = mountMusic({
-    headerRoot: requireElement('header', 'page header'),
+    headerRoot: shell.roots.header,
     search,
     baseUrl: '/content/music',
   });
@@ -616,7 +616,12 @@ async function main(): Promise<void> {
     });
     cameraMount = cameraHandle;
     proofView = catalog.views.proof;
-    mountModeSwitch(requireElement('header', 'page header'), cameraHandle);
+    mountModeSwitch(shell.roots.header, cameraHandle);
+    const finishingPass = chain;
+    finishingPass.setDepthOfFieldAllowed(cameraHandle.mode === 'orbit');
+    cameraHandle.onModeChange((mode) => {
+      finishingPass.setDepthOfFieldAllowed(mode === 'orbit');
+    });
     mountChrome({
       catalog,
       contentBase: base,

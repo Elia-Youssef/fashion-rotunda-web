@@ -374,12 +374,16 @@ test('depth of field follows camera rest and the walkthrough allowance on webgpu
     })
     .toBe(true);
 
-  await page.evaluate(() => window.archvizPost?.setDepthOfFieldAllowed(false));
+  const walkButton = page.locator('button[data-mode="walk"]');
+  await expect(walkButton).toBeEnabled({ timeout: POST_ATTRIBUTE_TIMEOUT });
+  await page.evaluate(async () => window.archvizCamera?.setMode('walk'));
+  await expect(canvas).toHaveAttribute('data-camera', 'walk');
   await expect
     .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'dof'))
     .toBe(false);
 
-  await page.evaluate(() => window.archvizPost?.setDepthOfFieldAllowed(true));
+  await page.evaluate(async () => window.archvizCamera?.setMode('orbit'));
+  await expect(canvas).toHaveAttribute('data-camera', 'orbit');
   await expect
     .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'dof'))
     .toBe(true);
