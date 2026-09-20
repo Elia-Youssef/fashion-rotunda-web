@@ -9,6 +9,7 @@ import { mountLightPanel } from '../ui/lightpanel';
 import type { LightPanelHandle } from '../ui/lightpanel';
 import { createRoomEnvironment } from './environment';
 import type { Environment } from './environment';
+import { LIGHTING_PRESETS, PRESET_ORDER } from './presets';
 import { registerRectAreaLights } from './rect-area-ltc';
 import { DEFAULT_RIG, parseRig, serializeRig, skyIntensity } from './rig';
 import type { Rig } from './rig';
@@ -38,7 +39,16 @@ export interface Lighting {
 }
 
 function isTransparent(material: unknown): boolean {
-  return typeof material === 'object' && material !== null && 'transparent' in material && material.transparent === true;
+  if (typeof material !== 'object' || material === null) {
+    return false;
+  }
+  if ('transparent' in material && material.transparent === true) {
+    return true;
+  }
+  if ('transmission' in material && typeof material.transmission === 'number' && material.transmission > 0) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -80,23 +90,33 @@ export async function composeLighting(options: LightingOptions): Promise<Lightin
   });
   options.scene.add(three.group);
 
+  function updatePresetSelect(currentRig: Rig): void {
+    if (options.panelRoot === null) return;
+    const select = options.panelRoot.querySelector<HTMLSelectElement>('.lightpanel__select');
+    if (select === null) return;
+    const currentSerialized = serializeRig(currentRig);
+    const match = PRESET_ORDER.find((name) => serializeRig(LIGHTING_PRESETS[name]) === currentSerialized);
+    select.value = match ?? '';
+  }
+
   function applyToScene(next: Rig): void {
     rig = next;
     three.apply(next);
     environment.apply(options.scene, skyIntensity(next) * ENVIRONMENT_SCALE);
     options.renderer.toneMappingExposure = next.exposure;
+    updatePresetSelect(next);
     options.onChange();
   }
   applyToScene(rig);
 
   let panel: LightPanelHandle | null = null;
   if (options.panelRoot !== null) {
-    // The one preset is the level's own rig, which makes the select the panel's reset action.
     panel = mountLightPanel(options.panelRoot, {
       rig,
       onChange: applyToScene,
-      presets: { 'Level lighting': DEFAULT_RIG },
+      presets: LIGHTING_PRESETS,
     });
+    updatePresetSelect(rig);
   }
 
   return {
