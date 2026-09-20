@@ -100,6 +100,8 @@ function census(): CensusControl[] {
     ['Copy link', '.share__button--copy', 'card'],
     ['Screenshot', '.share__button--screenshot', 'card'],
     ['music switch', 'header button.music-switch', 'both'],
+    ['Orbit mode', 'button[data-mode="orbit"]', 'both'],
+    ['Walk mode', 'button[data-mode="walk"]', 'both'],
     ['Light Control', '#shell-light-toggle', 'light'],
     ['first light on switch', '.lightpanel__row[data-light="top"] .lightpanel__switch', 'light'],
     ['preset select', '.lightpanel__select', 'light'],
@@ -159,11 +161,11 @@ async function assertPhase(
     }
     if (viewport !== null) {
       const onScreen =
-        box.x < viewport.width &&
-        box.y < viewport.height &&
-        box.x + box.width > 0 &&
-        box.y + box.height > 0;
-      expect(onScreen, `${label}: ${control.name} reaches the viewport`).toBe(true);
+        box.x >= 0 &&
+        box.y >= 0 &&
+        box.x + box.width <= viewport.width &&
+        box.y + box.height <= viewport.height;
+      expect(onScreen, `${label}: ${control.name} is fully inside the viewport`).toBe(true);
     }
   }
   for (let i = 0; i < boxes.length; i += 1) {
@@ -178,7 +180,11 @@ async function assertPhase(
   }
   const scroll = await page.evaluate(() => {
     const scroller = document.scrollingElement;
-    return scroller !== null && scroller.scrollHeight <= scroller.clientHeight;
+    return (
+      scroller !== null &&
+      scroller.scrollHeight <= scroller.clientHeight &&
+      scroller.scrollWidth <= scroller.clientWidth
+    );
   });
   expect(scroll, `${label}: the page never scrolls`).toBe(true);
 }
@@ -258,7 +264,11 @@ async function assertShortLandscape(page: Page, controls: CensusControl[], tag: 
 
   const scroll = await page.evaluate(() => {
     const scroller = document.scrollingElement;
-    return scroller !== null && scroller.scrollHeight <= scroller.clientHeight;
+    return (
+      scroller !== null &&
+      scroller.scrollHeight <= scroller.clientHeight &&
+      scroller.scrollWidth <= scroller.clientWidth
+    );
   });
   expect(scroll, `${tag}: the page never scrolls`).toBe(true);
 }
