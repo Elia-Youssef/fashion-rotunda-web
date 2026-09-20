@@ -1,15 +1,29 @@
-// Goal G4.1 + G4.4 wiring: the one place the camera code touches the page. The showroom's camera
-// and look, the render loop and the catalogue's proof view come together here; main.ts adds a
-// single mountCamera call at its hook and drives update(dtMs) from the loop's render
-// callback. Everything the orbit and the turntable need from the page is passed in, so they stay
-// testable without a renderer.
+// Goal G4.1 + G4.2 + G4.3 + G4.4 + G4.6 wiring: the one place the camera code touches the page.
+// Integrates the orbit inspection camera, turntable, walkthrough camera with capsule collision,
+// blended mode transitions, catalogue view presets, and the idle attract tour.
 
+import { BufferGeometry } from 'three';
 import type { PerspectiveCamera } from 'three/webgpu';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
+import type { CatalogView } from '../catalog/catalog';
+import { prefersReducedMotion } from '../ui/announce';
+import { ATTRACT_HOLD_MS, ATTRACT_IDLE_MS, ATTRACT_MOVE_MS, createAttract } from './attract';
+import type { AttractHandle } from './attract';
+import { BLEND_MS, blendPose } from './blend';
+import type { Pose } from './blend';
+import { mountJoystick } from './joystick';
+import type { JoystickHandle } from './joystick';
 import { createOrbit } from './orbit';
 import type { OrbitHandle, OrbitLimits } from './orbit';
+import { createPresets } from './presets';
+import type { PresetsHandle } from './presets';
 import { createTurntable } from './turntable';
 import type { Turntable } from './turntable';
+import { createWalkthrough } from './walkthrough';
+import type { WalkthroughHandle } from './walkthrough';
+
+export type CameraMode = 'orbit' | 'walk';
 
 export interface CameraMountOptions {
   camera: PerspectiveCamera;
@@ -17,18 +31,32 @@ export interface CameraMountOptions {
   showroom: { setLookYaw(radians: number): void; readonly lookYaw: number };
   loop: { invalidate(): void; setAnimating(on: boolean): void };
   proofView: { position: [number, number, number]; target: [number, number, number] };
+  views: Record<string, CatalogView>; // catalog.views; the proof view is one of them
+  isTouch: boolean;
+  collisionUrl: string; // contentUrl(base, 'collision.glb')
+  search: string; // location.search: ?attract=0|1 and ?attractIdle=<ms>
+  now?: () => number;
 }
 
 export interface CameraMount {
   orbit: OrbitHandle;
   turntable: Turntable;
-  /** Call from the loop's render callback with the frame's dt: drives damping and the turntable. */
+  walk: WalkthroughHandle;
+  readonly mode: CameraMode;
+  /** Resolves once the blend has landed and the target mode has control. */
+  setMode(mode: CameraMode): Promise<void>;
+  onModeChange(listener: (mode: CameraMode) => void): () => void;
+  presets: PresetsHandle;
+  attract: AttractHandle;
+  /** Call from the loop's render callback with the frame's dt. */
   update(dtMs: number): void;
   /**
-   * True while the orbit glides or the turntable runs: what main.ts's wake window asks before it
-   * switches the loop off.
+   * True while the orbit glides, the turntable runs, a walk step or a blend or a preset glide
+   * is in flight.
    */
   readonly moving: boolean;
+  readonly walkReady: boolean;
+  onWalkReady(listener: () => void): () => void;
   dispose(): void;
 }
 
@@ -39,57 +67,101 @@ const LIMITS: OrbitLimits = {
   minPolar: 0.15,
   maxPolar: Math.PI / 2 - 0.05,
 };
+
 /** The per-frame fraction of remaining motion the orbit sheds at 60 Hz. */
 const DAMPING = 0.12;
 const TURNTABLE_DEGREES_PER_SECOND = 20;
-/**
- * The loop's dt is the time since the last drawn frame, idle time included: the first frame after
- * a still page carries the whole gap, and the turntable would replay every idle second as an
- * instant jump the moment it is switched on. One frame's worth at most may advance anything here;
- * on a slow machine the motion falls behind wall time instead of teleporting, which is the lesser
- * evil on a page whose whole point is looking at the thing.
- */
 const MAX_STEP_MS = 100;
+
+interface JoystickLayer {
+  root: HTMLElement;
+  dispose(): void;
+}
+
+/** Keeps the touch control inside the canvas rect when the shell flattens #shell-stage on tablet. */
+function mountJoystickLayer(canvas: HTMLCanvasElement): JoystickLayer {
+  const root = document.createElement('div');
+  root.className = 'archviz-joystick-layer';
+  document.body.appendChild(root);
+
+  function place(): void {
+    const rect = canvas.getBoundingClientRect();
+    root.style.left = `${rect.left}px`;
+    root.style.top = `${rect.top}px`;
+    root.style.width = `${rect.width}px`;
+    root.style.height = `${rect.height}px`;
+  }
+
+  place();
+  window.addEventListener('resize', place, { passive: true });
+  const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
+  observer?.observe(canvas);
+  return {
+    root,
+    dispose(): void {
+      window.removeEventListener('resize', place);
+      observer?.disconnect();
+      root.remove();
+    },
+  };
+}
+
+export function attractIdleMsFromSearch(search: string): number {
+  const value = new URLSearchParams(search).get('attractIdle');
+  if (value === null) {
+    return ATTRACT_IDLE_MS;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.max(100, parsed) : ATTRACT_IDLE_MS;
+}
 
 declare global {
   interface Window {
-    /**
-     * Test-only handle, mounted behind the same gate as window.archvizE2E in main.ts: dev builds
-     * and `?e2e=1`. The e2e suite drags the camera and toggles the turntable through it, which no
-     * visitor-facing control can do until G5.1 mounts the product card.
-     */
-    archvizCamera?: { orbit: OrbitHandle; turntable: Turntable };
+    archvizCamera?: {
+      orbit: OrbitHandle;
+      turntable: Turntable;
+      walk?: WalkthroughHandle;
+      readonly mode: CameraMode;
+      setMode: (mode: CameraMode) => Promise<void>;
+      presets: PresetsHandle;
+      attract: AttractHandle;
+    };
   }
 }
 
 export function mountCamera(options: CameraMountOptions): CameraMount {
-  const { camera, canvas, showroom, loop, proofView } = options;
+  const {
+    camera,
+    canvas,
+    showroom,
+    loop,
+    proofView,
+    views = { proof: { position: proofView.position, target: proofView.target, fov: 40 } },
+    isTouch = false,
+    collisionUrl,
+    search = '',
+  } = options;
+
+  const clock = options.now ?? ((): number => performance.now());
 
   const hadTouchAction = canvas.style.touchAction;
-  // One finger belongs to the orbit, not to the page scroll; restored on dispose.
   canvas.style.touchAction = 'none';
-  // The attribute, not the IDL property: canvas.tabIndex reads -1 when no attribute is set, so
-  // restoring the property would leave a tabindex="-1" behind that was never there.
   const hadTabIndex = canvas.getAttribute('tabindex');
-  // Keys reach the canvas only while it can hold focus.
   canvas.tabIndex = 0;
 
-  // True while this mount has asked the loop for continuous frames. Guards the settle path so
-  // setAnimating(false) is called exactly once per motion, not once per frame.
   let holding = false;
   let appliedYaw = showroom.lookYaw;
+  let currentMode: CameraMode = 'orbit';
+  canvas.dataset.camera = 'orbit';
+  canvas.dataset.attract = '0';
 
   function writeYaw(yaw: number): void {
     appliedYaw = yaw;
     showroom.setLookYaw(yaw);
-    // Readable from outside without exposing the showroom: the e2e suite watches this attribute.
     canvas.dataset.yaw = yaw.toFixed(3);
   }
 
   function hold(): void {
-    // Re-asserted on every call, not only the first: main.ts's wake window writes the same flag
-    // on its own four-second timer and the loop's animating flag is last writer wins. The loop
-    // treats a repeat setAnimating(true) as a no-op once a frame is already scheduled.
     loop.setAnimating(true);
     if (holding) {
       return;
@@ -105,20 +177,17 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     loop.setAnimating(false);
   }
 
-  // Neither createOrbit nor createTurntable fires onChange during construction, so these closures
-  // can name the handles they belong to; the first onChange comes from setPose below, after both
-  // handles exist.
   const orbit = createOrbit({
     camera,
     element: canvas,
     target: proofView.target,
     limits: LIMITS,
     damping: DAMPING,
+    now: clock,
     onChange: () => {
       if (orbit.moving) {
         hold();
       } else {
-        // An instant change (a wheel notch, a key step): one frame shows it.
         loop.invalidate();
       }
     },
@@ -130,46 +199,440 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
       if (turntable.running) {
         hold();
       } else if (showroom.lookYaw !== turntable.yaw) {
-        // Stopped, and the yaw moved anyway: setYaw, the Reset action putting the look back.
         writeYaw(turntable.yaw);
         loop.invalidate();
       }
     },
   });
 
-  // The pose the page starts at and the one Home and reset() return to.
   orbit.setPose(proofView.position, proofView.target);
 
-  const exposed = import.meta.env.DEV || new URLSearchParams(window.location.search).get('e2e') === '1';
+  // Stored poses for seamless blending.
+  let storedOrbitPose: Pose = {
+    position: [...proofView.position],
+    target: [...proofView.target],
+  };
+  let storedWalkFoot: [number, number, number] = [0, 0, 5.5];
+  let storedWalkYaw = 0;
+  let storedWalkPitch = 0;
+
+  // Collision and walkthrough setup.
+  let isWalkReady = false;
+  let collisionGeometry: BufferGeometry | null = null;
+  const walkReadyListeners = new Set<() => void>();
+
+  // Initialize walkthrough with placeholder geometry so handle is never null.
+  let currentWalk: WalkthroughHandle = createWalkthrough({
+    camera,
+    element: canvas,
+    collision: new BufferGeometry(),
+    eyeHeight: 1.65,
+    radius: 0.3,
+    walkSpeed: 1.4,
+    isTouch,
+    now: clock,
+    onChange: () => {
+      if (currentWalk.moving) {
+        hold();
+      } else {
+        loop.invalidate();
+      }
+    },
+  });
+
+  let joystick: JoystickHandle | null = null;
+  let joystickLayer: JoystickLayer | null = null;
+  if (isTouch) {
+    joystickLayer = mountJoystickLayer(canvas);
+    joystick = mountJoystick(joystickLayer.root, (x, y) => {
+      currentWalk.setJoystickVector(x, y);
+    });
+  }
+
+  function setupCollision(geometry: BufferGeometry): void {
+    collisionGeometry = geometry;
+    const previousFoot = currentWalk.foot;
+    const previousYaw = currentWalk.yaw;
+    const previousPitch = currentWalk.pitch;
+    const wasEnabled = currentWalk.enabled;
+
+    currentWalk.dispose();
+    currentWalk = createWalkthrough({
+      camera,
+      element: canvas,
+      collision: geometry,
+      eyeHeight: 1.65,
+      radius: 0.3,
+      walkSpeed: 1.4,
+      isTouch,
+      now: clock,
+      onChange: () => {
+        if (currentWalk.moving) {
+          hold();
+        } else {
+          loop.invalidate();
+        }
+      },
+    });
+
+    currentWalk.setPose(previousFoot, previousYaw, previousPitch);
+    if (wasEnabled) {
+      currentWalk.enable();
+    }
+    isWalkReady = true;
+    for (const listener of walkReadyListeners) {
+      listener();
+    }
+  }
+
+  // Fetch collision after the first frame as instructed. GLTFLoader.load() does not expose the
+  // underlying request, so fetch owns the AbortController and GLTFLoader parses the response.
+  let collisionTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  let collisionAbort: AbortController | null = null;
+  let disposed = false;
+  if (collisionUrl) {
+    collisionTimeoutId = setTimeout(() => {
+      try {
+        collisionAbort = new AbortController();
+        const loader = new GLTFLoader();
+        void fetch(collisionUrl, { signal: collisionAbort.signal })
+          .then((response) => {
+            if (!response.ok) {
+              throw new Error(`collision mesh answered ${response.status}`);
+            }
+            return response.arrayBuffer();
+          })
+          .then((data) => {
+            if (disposed) {
+              return;
+            }
+            loader.parse(
+              data,
+              '',
+              (gltf) => {
+                const mesh = gltf.scene.children[0] as { geometry?: BufferGeometry };
+                if (disposed) {
+                  mesh?.geometry?.dispose();
+                } else if (mesh?.geometry) {
+                  setupCollision(mesh.geometry);
+                }
+              },
+              (err) => {
+                if (!disposed) {
+                  console.warn('[archviz] failed to parse collision mesh', err);
+                }
+              },
+            );
+          })
+          .catch((err: unknown) => {
+            if (!disposed && !(err instanceof DOMException && err.name === 'AbortError')) {
+              console.warn('[archviz] failed to load collision mesh', err);
+            }
+          });
+      } catch {
+        // Ignored if loader URL resolution fails in test environments
+      }
+    }, 0);
+  }
+
+  // Presets
+  const presets = createPresets(views, orbit, prefersReducedMotion);
+
+  // Attract Loop configuration from search params.
+  const searchParams = new URLSearchParams(search);
+  let attractEnabled = !isTouch;
+  if (searchParams.get('attract') === '1') {
+    attractEnabled = true;
+  } else if (searchParams.get('attract') === '0') {
+    attractEnabled = false;
+  }
+  const attractIdleMs = attractIdleMsFromSearch(search);
+
+  const attract = createAttract({
+    views: presets.list,
+    idleMs: attractIdleMs,
+    holdMs: ATTRACT_HOLD_MS,
+    moveMs: ATTRACT_MOVE_MS,
+    enabled: attractEnabled,
+    reducedMotion: prefersReducedMotion(),
+    now: clock,
+  });
+
+  const onWindowInput = (): void => {
+    attract.noteInput();
+  };
+  window.addEventListener('pointerdown', onWindowInput, { passive: true });
+  window.addEventListener('pointermove', onWindowInput, { passive: true });
+  window.addEventListener('keydown', onWindowInput, { passive: true });
+  window.addEventListener('wheel', onWindowInput, { passive: true });
+  window.addEventListener('touchstart', onWindowInput, { passive: true });
+
+  // Mode switching & blending
+  const modeListeners = new Set<(mode: CameraMode) => void>();
+
+  interface ActiveBlend {
+    fromPose: Pose;
+    toPose: Pose;
+    durationMs: number;
+    elapsedMs: number;
+    targetMode: CameraMode;
+    targetFoot?: [number, number, number];
+    targetYaw?: number;
+    targetPitch?: number;
+    resolve: () => void;
+  }
+  let activeBlend: ActiveBlend | null = null;
+
+  function getWalkCameraPose(
+    footPos: [number, number, number],
+    lookYaw: number,
+    lookPitch: number,
+  ): Pose {
+    const eyeY = footPos[1] + 1.65;
+    const targetX = footPos[0] + Math.sin(lookYaw) * Math.cos(lookPitch);
+    const targetY = eyeY + Math.sin(lookPitch);
+    const targetZ = footPos[2] - Math.cos(lookYaw) * Math.cos(lookPitch);
+    return {
+      position: [footPos[0], eyeY, footPos[2]],
+      target: [targetX, targetY, targetZ],
+    };
+  }
+
+  function applyModeHandover(mode: CameraMode): void {
+    currentMode = mode;
+    canvas.dataset.camera = mode;
+    if (mode === 'walk') {
+      orbit.setEnabled(false);
+      currentWalk.enable();
+      joystick?.setVisible(true);
+    } else {
+      currentWalk.disable();
+      orbit.setEnabled(true);
+      joystick?.setVisible(false);
+    }
+    for (const listener of modeListeners) {
+      listener(mode);
+    }
+  }
+
+  function setMode(mode: CameraMode): Promise<void> {
+    if (mode === currentMode && activeBlend === null) {
+      return Promise.resolve();
+    }
+
+    if (activeBlend !== null) {
+      const finish = activeBlend.resolve;
+      activeBlend = null;
+      finish();
+    }
+
+    // Capture leaving mode pose.
+    if (currentMode === 'orbit') {
+      storedOrbitPose = {
+        position: [...orbit.position],
+        target: [...orbit.target],
+      };
+    } else {
+      storedWalkFoot = currentWalk.foot;
+      storedWalkYaw = currentWalk.yaw;
+      storedWalkPitch = currentWalk.pitch;
+    }
+
+    const fromPose: Pose = {
+      position: [camera.position.x, camera.position.y, camera.position.z],
+      target:
+        currentMode === 'orbit'
+          ? storedOrbitPose.target
+          : getWalkCameraPose(storedWalkFoot, storedWalkYaw, storedWalkPitch).target,
+    };
+
+    let toPose: Pose;
+    let targetFoot: [number, number, number] | undefined;
+    let targetYaw: number | undefined;
+    let targetPitch: number | undefined;
+
+    if (mode === 'walk') {
+      targetFoot = storedWalkFoot;
+      targetYaw = storedWalkYaw;
+      targetPitch = storedWalkPitch;
+      toPose = getWalkCameraPose(targetFoot, targetYaw, targetPitch);
+    } else {
+      toPose = storedOrbitPose;
+    }
+
+    const duration = prefersReducedMotion() ? 0 : BLEND_MS;
+
+    if (duration <= 0) {
+      camera.position.set(...toPose.position);
+      camera.lookAt(...toPose.target);
+      if (mode === 'walk') {
+        currentWalk.setPose(targetFoot!, targetYaw!, targetPitch!);
+      } else {
+        orbit.moveTo(toPose.position, toPose.target);
+      }
+      applyModeHandover(mode);
+      loop.invalidate();
+      return Promise.resolve();
+    }
+
+    // Disable controls during blend.
+    orbit.setEnabled(false);
+    currentWalk.disable();
+    joystick?.setVisible(false);
+    hold();
+
+    return new Promise<void>((resolve) => {
+      activeBlend = {
+        fromPose,
+        toPose,
+        durationMs: duration,
+        elapsedMs: 0,
+        targetMode: mode,
+        ...(targetFoot !== undefined ? { targetFoot } : {}),
+        ...(targetYaw !== undefined ? { targetYaw } : {}),
+        ...(targetPitch !== undefined ? { targetPitch } : {}),
+        resolve,
+      };
+      loop.invalidate();
+    });
+  }
+
+  const exposed =
+    import.meta.env.DEV || new URLSearchParams(window.location.search).get('e2e') === '1';
   if (exposed) {
-    window.archvizCamera = { orbit, turntable };
+    window.archvizCamera = {
+      orbit,
+      turntable,
+      get walk(): WalkthroughHandle {
+        return currentWalk;
+      },
+      get mode(): CameraMode {
+        return currentMode;
+      },
+      setMode,
+      presets,
+      attract,
+    };
   }
 
   return {
     orbit,
     turntable,
+    get walk(): WalkthroughHandle {
+      return currentWalk;
+    },
+    get mode(): CameraMode {
+      return currentMode;
+    },
+    setMode,
+    onModeChange(listener: (mode: CameraMode) => void): () => void {
+      modeListeners.add(listener);
+      return () => modeListeners.delete(listener);
+    },
+    presets,
+    attract,
+
+    get walkReady(): boolean {
+      return isWalkReady;
+    },
+
+    onWalkReady(listener: () => void): () => void {
+      walkReadyListeners.add(listener);
+      return () => walkReadyListeners.delete(listener);
+    },
 
     update(dtMs: number): void {
       const step = Math.min(Math.max(dtMs, 0), MAX_STEP_MS);
+
+      // Handle active blend transition.
+      if (activeBlend !== null) {
+        if (step > 0) {
+          activeBlend.elapsedMs += step;
+          const t = Math.min(1, activeBlend.elapsedMs / activeBlend.durationMs);
+          const blended = blendPose(activeBlend.fromPose, activeBlend.toPose, t);
+          camera.position.set(...blended.position);
+          camera.lookAt(...blended.target);
+          loop.invalidate();
+
+          if (t >= 1) {
+            const blend = activeBlend;
+            activeBlend = null;
+            if (blend.targetMode === 'walk') {
+              currentWalk.setPose(blend.targetFoot!, blend.targetYaw!, blend.targetPitch!);
+            } else {
+              orbit.moveTo(blend.toPose.position, blend.toPose.target);
+            }
+            applyModeHandover(blend.targetMode);
+            blend.resolve();
+            release();
+          }
+        }
+        return;
+      }
+
+      // Normal mode updates.
       const orbitMoving = orbit.update(step);
+      const walkMoving = currentMode === 'walk' ? currentWalk.update(step) : false;
       const yaw = turntable.update(step);
-      // While stopped the update returns the held yaw and notifies nothing; the look stays put.
+
       if (turntable.running && yaw !== appliedYaw) {
         writeYaw(yaw);
       }
-      if (!orbitMoving && !turntable.running) {
+
+      // Attract loop ticking (orbit mode only, turntable not running).
+      if (currentMode === 'orbit' && !turntable.running && !orbit.moving) {
+        const tickResult = attract.tick();
+        if (tickResult !== null) {
+          canvas.dataset.attract = '1';
+          orbit.moveTo(tickResult.pose.position, tickResult.pose.target, tickResult.fov);
+          hold();
+        } else {
+          canvas.dataset.attract = '0';
+        }
+      } else {
+        canvas.dataset.attract = '0';
+      }
+
+      if (!orbitMoving && !walkMoving && !turntable.running && !attract.running) {
         release();
       }
     },
 
     get moving(): boolean {
-      return orbit.moving || turntable.running;
+      return (
+        orbit.moving ||
+        turntable.running ||
+        currentWalk.moving ||
+        activeBlend !== null ||
+        attract.running
+      );
     },
 
     dispose(): void {
+      disposed = true;
       release();
+      if (collisionTimeoutId !== null) {
+        clearTimeout(collisionTimeoutId);
+      }
+      collisionAbort?.abort();
+      window.removeEventListener('pointerdown', onWindowInput);
+      window.removeEventListener('pointermove', onWindowInput);
+      window.removeEventListener('keydown', onWindowInput);
+      window.removeEventListener('wheel', onWindowInput);
+      window.removeEventListener('touchstart', onWindowInput);
+
+      if (activeBlend !== null) {
+        activeBlend.resolve();
+        activeBlend = null;
+      }
+
       orbit.dispose();
       turntable.stop();
+      currentWalk.dispose();
+      joystick?.dispose();
+      joystickLayer?.dispose();
+      collisionGeometry?.dispose();
+
       canvas.style.touchAction = hadTouchAction;
       if (hadTabIndex === null) {
         canvas.removeAttribute('tabindex');
@@ -177,6 +640,8 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
         canvas.setAttribute('tabindex', hadTabIndex);
       }
       delete canvas.dataset.yaw;
+      delete canvas.dataset.camera;
+      delete canvas.dataset.attract;
       if (window.archvizCamera?.orbit === orbit) {
         delete window.archvizCamera;
       }

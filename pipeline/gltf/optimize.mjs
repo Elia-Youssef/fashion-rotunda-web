@@ -40,6 +40,7 @@ import sharp from 'sharp';
 
 import { contentDir, pipelineEnv, root, sourceDir } from '../config.mjs';
 import { assemble, assembledDir } from './assemble.mjs';
+import { writeCollision } from './collision.mjs';
 import { budgetRows, formatBudgetTable, formatMb } from './lib/budget.mjs';
 import { buildManifest, fileEntry, textureEntry } from './lib/manifest.mjs';
 import { colorSpaceOfSlots, encodingOfSlots, isMannequinMaterial, ktx2Format } from './lib/naming.mjs';
@@ -135,6 +136,8 @@ async function main() {
     sets.full[item.file] = await finish(io, prepared.document, item, 'full', out, errors);
     sets.half[item.file] = await finish(io, half, item, 'half', out, errors);
   }
+
+  await writeCollision(out);
 
   await writeThumbnails(catalog, out);
   const shipped = shippedCatalog(catalog);

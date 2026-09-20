@@ -26,16 +26,23 @@ import type { WebGPURenderer } from 'three/webgpu';
 import { contentUrl } from '../catalog/catalog';
 
 /**
- * Builds the loader. `contentBase` is the folder the content set lives in ('/content' or
- * '/content/half'); the transcoder sits in its `basis/` subfolder, copied there by the optimize
- * pass from node_modules/three/examples/jsm/libs/basis/.
+ * The half content set is nested under the full set, while the shared transcoder is emitted once
+ * at `/content/basis/`. Keeping the runtime path shared avoids duplicating the same WASM payload in
+ * both sets and, more importantly, prevents touch devices from requesting a directory that is not
+ * part of the optimized output.
  */
+export function transcoderPath(contentBase: string): string {
+  const normalized = contentBase.endsWith('/') ? contentBase.slice(0, -1) : contentBase;
+  const sharedBase = normalized.endsWith('/half') ? normalized.slice(0, -'/half'.length) : normalized;
+  return contentUrl(sharedBase, 'basis/');
+}
+
 export async function createGltfLoader(
   renderer: WebGPURenderer,
   contentBase: string,
 ): Promise<GLTFLoader> {
   const ktx2Loader = new KTX2Loader()
-    .setTranscoderPath(contentUrl(contentBase, 'basis/'))
+    .setTranscoderPath(transcoderPath(contentBase))
     .detectSupport(renderer);
 
   await MeshoptDecoder.ready;

@@ -42,7 +42,7 @@ afterEach(() => {
  * drive the stale-release guard by hand; without one the orbit reads performance.now, which the
  * tests that do not care about the release window leave in place.
  */
-function make(clock?: { ms: number }): { element: HTMLElement; orbit: OrbitHandle } {
+function make(clock?: { ms: number }): { element: HTMLElement; orbit: OrbitHandle; camera: PerspectiveCamera } {
   const element = document.createElement('div');
   document.body.appendChild(element);
   const camera = new PerspectiveCamera(40, 1, 0.1, 100);
@@ -58,7 +58,7 @@ function make(clock?: { ms: number }): { element: HTMLElement; orbit: OrbitHandl
     ...(clock === undefined ? {} : { now: (): number => clock.ms }),
   });
   mounted.push({ element, orbit });
-  return { element, orbit };
+  return { element, orbit, camera };
 }
 
 /** The camera's spherical state around the target, recomputed from the position it renders from. */
@@ -366,5 +366,78 @@ describe('createOrbit', () => {
     expect(target.orbit.position).toEqual(before);
     expect(onChange).not.toHaveBeenCalled();
     expect(target.orbit.moving).toBe(false);
+  });
+
+  it('glideTo 0ms lands immediately and resolves', async () => {
+    const target = make();
+    const destPos: [number, number, number] = [0, 2.0, 3.0];
+    const destTarget: [number, number, number] = [0, 1.0, 0];
+    await target.orbit.glideTo(destPos, destTarget, 0);
+
+    expect(target.orbit.position[0]).toBeCloseTo(0, 5);
+    expect(target.orbit.position[1]).toBeCloseTo(2.0, 5);
+    expect(target.orbit.position[2]).toBeCloseTo(3.0, 5);
+    expect(target.orbit.moving).toBe(false);
+  });
+
+  it('glideTo over duration reports moving, eases, respects limits, and lands exactly', async () => {
+    const target = make();
+    const destPos: [number, number, number] = [0, 2.0, 3.0];
+    const destTarget: [number, number, number] = [0, 1.0, 0];
+
+    let resolved = false;
+    const glidePromise = target.orbit.glideTo(destPos, destTarget, 300).then(() => {
+      resolved = true;
+    });
+
+    expect(target.orbit.moving).toBe(true);
+    expect(resolved).toBe(false);
+
+    // Halfway (150 ms): in flight.
+    target.orbit.update(150);
+    expect(target.orbit.moving).toBe(true);
+    expect(resolved).toBe(false);
+
+    // Finish remaining (150 ms): arrives.
+    target.orbit.update(150);
+    await glidePromise;
+    expect(resolved).toBe(true);
+    expect(target.orbit.moving).toBe(false);
+    expect(target.orbit.position[0]).toBeCloseTo(0, 5);
+    expect(target.orbit.position[1]).toBeCloseTo(2.0, 5);
+    expect(target.orbit.position[2]).toBeCloseTo(3.0, 5);
+  });
+
+  it('interpolates FOV during a glide and lands on the authored value exactly', async () => {
+    const target = make();
+    const glide = target.orbit.glideTo([0, 2, 3], TARGET, 300, 55);
+    target.orbit.update(150);
+    expect(target.camera.fov).toBeGreaterThan(40);
+    expect(target.camera.fov).toBeLessThan(55);
+    target.orbit.update(150);
+    await glide;
+    expect(target.camera.fov).toBe(55);
+  });
+
+  it('cuts FOV immediately when a reduced-motion preset asks for zero duration', async () => {
+    const target = make();
+    await target.orbit.glideTo([0, 2, 3], TARGET, 0, 35);
+    expect(target.camera.fov).toBe(35);
+  });
+
+  it('setEnabled(false) ignores input gestures', () => {
+    const target = make();
+    const before = target.orbit.position;
+    target.orbit.setEnabled(false);
+
+    pointer(target, 'pointerdown', 100, 100);
+    pointer(target, 'pointermove', 200, 100);
+    expect(target.orbit.moving).toBe(false);
+    expect(target.orbit.position).toEqual(before);
+
+    target.orbit.setEnabled(true);
+    pointer(target, 'pointerdown', 100, 100);
+    pointer(target, 'pointermove', 200, 100);
+    expect(target.orbit.moving).toBe(true);
   });
 });

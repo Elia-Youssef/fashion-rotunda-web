@@ -174,8 +174,12 @@ export async function assemble({ out = assembledDir, log = console.log } = {}) {
     plinth: { file: 'plinth.glb' },
     looks,
     views: {
-      // A first proof pose on the plinth; G1.5's views.json replaces it. Metres, y up.
+      // The showroom camera presets. Metres, Y up. All kept strictly inside the orbit limits.
       proof: { position: [0, 1.7, 4.2], target: [0, 1.0, 0], fov: 40 },
+      entrance: { position: [0, 2.2, 6.2], target: [0, 1.0, 0], fov: 52 },
+      detail: { position: [0, 1.4, 1.396], target: [0, 1.3, 0], fov: 35 },
+      inlay: { position: [0, 3.8, 1.8], target: [0, 0.1, 0], fov: 45 },
+      dome: { position: [0, 1.1, 3.5], target: [0, 0.9, 0], fov: 55 },
     },
   };
   writeFileSync(resolve(out, 'catalog.json'), JSON.stringify(catalog, null, 2) + '\n');
