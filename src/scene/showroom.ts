@@ -10,9 +10,12 @@
 import {
   Box3,
   Color,
+  Euler,
+  Group,
   Material,
   Mesh,
   PerspectiveCamera,
+  Quaternion,
   Scene,
   Texture,
 } from 'three/webgpu';
@@ -87,6 +90,19 @@ export interface Showroom {
   readonly lookYaw: number;
   readonly currentLook: string | null;
   readonly currentVariant: string | null;
+  /** Read-only scene-graph state used by the e2e regression for the turntable contract. */
+  readonly turntableState: TurntableState;
+}
+
+/** The turntable's actual graph ownership and world-space yaw, without exposing mutable nodes. */
+export interface TurntableState {
+  yaw: number;
+  plinthWorldYaw: number | null;
+  activeLookWorldYaw: number | null;
+  outgoingLookWorldYaw: number | null;
+  plinthAttached: boolean;
+  activeLookAttached: boolean;
+  outgoingLookAttached: boolean;
 }
 
 /**
@@ -240,6 +256,11 @@ export function createShowroom(options: ShowroomOptions): Showroom {
 
   const scene = new Scene();
   scene.background = new Color(SCENE_BACKGROUND);
+  // The rotunda is deliberately not here: only the product turntable moves. The plinth and every
+  // active fade participant share this one transform, so a look arriving mid-rotation cannot
+  // start at a different yaw or receive the turn twice.
+  const turntable = new Group();
+  scene.add(turntable);
 
   const view = catalog.views[PROOF_VIEW];
   const camera = new PerspectiveCamera(view.fov, 1, CAMERA_NEAR, CAMERA_FAR);
@@ -252,6 +273,7 @@ export function createShowroom(options: ShowroomOptions): Showroom {
 
   /** The plinth's top in metres, so the look's feet stand on it. 0 until the plinth has loaded. */
   let plinthTopY = 0;
+  let plinthRoot: Object3D | null = null;
   let onScreen: LoadedLook | null = null;
   let currentVariant: string | null = null;
   /** The swatch the visitor chose, carried to every later look that offers it. */
@@ -262,6 +284,14 @@ export function createShowroom(options: ShowroomOptions): Showroom {
   let fadeWaiters: (() => void)[] = [];
   /** The latest 'look-switch' measure's duration; null until a fade has drawn its first frame. */
   let lastSwitchMs: number | null = null;
+
+  function worldYaw(root: Object3D | null): number | null {
+    if (root === null) {
+      return null;
+    }
+    const orientation = root.getWorldQuaternion(new Quaternion());
+    return new Euler().setFromQuaternion(orientation, 'YXZ').y;
+  }
 
   /**
    * Turns the dissolve on or off for every material the look holds. On, the look keeps
@@ -441,11 +471,10 @@ export function createShowroom(options: ShowroomOptions): Showroom {
       const previous = onScreen;
       onScreen = loaded;
       loaded.root.position.y = plinthTopY;
-      loaded.root.rotation.y = lookYaw;
       decorate(loaded.root);
       // After the decorator, so the record holds the caster flags the lighting decided.
       captureCasters(loaded);
-      scene.add(loaded.root);
+      turntable.add(loaded.root);
       currentVariant = loaded.applied;
       if (previous === null) {
         // The first look has nothing to fade against; it stands on the plinth as loaded.
@@ -478,7 +507,8 @@ export function createShowroom(options: ShowroomOptions): Showroom {
       decorate(rotunda.scene);
       decorate(plinth.scene);
       scene.add(rotunda.scene);
-      scene.add(plinth.scene);
+      turntable.add(plinth.scene);
+      plinthRoot = plinth.scene;
       plinthTopY = new Box3().setFromObject(plinth.scene).max.y;
       if (onScreen !== null) {
         // A look that arrived before the plinth was measured is standing at floor height.
@@ -531,15 +561,7 @@ export function createShowroom(options: ShowroomOptions): Showroom {
 
     setLookYaw(radians: number): void {
       lookYaw = radians;
-      if (onScreen === null) {
-        return;
-      }
-      onScreen.root.rotation.y = radians;
-      const outgoing = machine.outgoing;
-      if (outgoing !== null) {
-        // Both looks turn while the fade runs, so the dissolve does not swing.
-        outgoing.root.rotation.y = radians;
-      }
+      turntable.rotation.y = radians;
       onChange();
     },
 
@@ -582,6 +604,21 @@ export function createShowroom(options: ShowroomOptions): Showroom {
 
     get currentVariant(): string | null {
       return currentVariant;
+    },
+
+    get turntableState(): TurntableState {
+      // The e2e reader runs between frames too, so update before reading world-space transforms.
+      turntable.updateWorldMatrix(true, true);
+      const outgoing = machine.outgoing;
+      return {
+        yaw: turntable.rotation.y,
+        plinthWorldYaw: worldYaw(plinthRoot),
+        activeLookWorldYaw: worldYaw(onScreen?.root ?? null),
+        outgoingLookWorldYaw: worldYaw(outgoing?.root ?? null),
+        plinthAttached: plinthRoot?.parent === turntable,
+        activeLookAttached: onScreen?.root.parent === turntable,
+        outgoingLookAttached: outgoing?.root.parent === turntable,
+      };
     },
   };
 }

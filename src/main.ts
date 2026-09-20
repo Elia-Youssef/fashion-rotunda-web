@@ -26,7 +26,7 @@ import { createRenderer } from './renderer/create';
 import { showLossNotice, showPoster } from './renderer/notices';
 import { detectSupport } from './renderer/support';
 import { SCENE_BACKGROUND, createShowroom } from './scene/showroom';
-import type { Showroom } from './scene/showroom';
+import type { Showroom, TurntableState } from './scene/showroom';
 import { mountShare } from './share/mount';
 import { runBenchmark } from './tiers/benchmark';
 import { decideTier, tierOverrideFromUrl } from './tiers/decide';
@@ -60,6 +60,8 @@ declare global {
       /** The lighting rig as the URL carries it, and the music's state, for the browser tests. */
       rigState(): string;
       musicState(): string;
+      /** Scene-graph turntable state, kept test-only so yaw coverage is not a canvas scalar check. */
+      turntableState(): TurntableState;
     };
   }
 }
@@ -721,6 +723,13 @@ async function main(): Promise<void> {
         },
         musicState(): string {
           return music.player.state;
+        },
+        turntableState(): TurntableState {
+          const active = showroom;
+          if (active === null) {
+            throw new Error('the showroom has not loaded');
+          }
+          return active.turntableState;
         },
       };
     }

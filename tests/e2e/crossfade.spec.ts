@@ -25,9 +25,35 @@ const SWITCH_MEASURE_LIMIT_MS = 15_000;
 const RAPID_CLICK_GAP_MS = 150;
 /** Three look loads of the unoptimized set, 6 to 17 MB each, well past the 60 s default. */
 const RAPID_RUN_TIMEOUT = 180_000;
+const TURNTABLE_YAW = Math.PI / 3;
 
 function skipUnlessWebgl2(): void {
   test.skip(test.info().project.name !== 'webgl2', 'the fade is backend independent');
+}
+
+function expectTurntableYaw(
+  state: {
+    yaw: number;
+    plinthWorldYaw: number | null;
+    activeLookWorldYaw: number | null;
+    outgoingLookWorldYaw: number | null;
+    plinthAttached: boolean;
+    activeLookAttached: boolean;
+    outgoingLookAttached: boolean;
+  },
+  outgoing: boolean,
+): void {
+  expect(state.yaw).toBeCloseTo(TURNTABLE_YAW, 5);
+  expect(state.plinthAttached).toBe(true);
+  expect(state.activeLookAttached).toBe(true);
+  expect(state.plinthWorldYaw).toBeCloseTo(TURNTABLE_YAW, 5);
+  expect(state.activeLookWorldYaw).toBeCloseTo(TURNTABLE_YAW, 5);
+  if (outgoing) {
+    expect(state.outgoingLookAttached).toBe(true);
+    expect(state.outgoingLookWorldYaw).toBeCloseTo(TURNTABLE_YAW, 5);
+  } else {
+    expect(state.outgoingLookWorldYaw).toBeNull();
+  }
 }
 
 /** Opens the page and waits for the frame that has the first look on the plinth. */
@@ -54,11 +80,29 @@ test('cross-fades to the third look and measures the switch', async ({ page }) =
   const thirdId = await thumbnails.nth(2).getAttribute('data-look');
   expect(thirdId, 'the third thumbnail carries its look id').not.toBeNull();
 
+  const turntableSet = await page.evaluate((yaw) => {
+    const camera = window.archvizCamera;
+    if (camera === undefined) {
+      return false;
+    }
+    camera.turntable.setYaw(yaw);
+    return true;
+  }, TURNTABLE_YAW);
+  expect(turntableSet, 'the test camera handle is mounted').toBe(true);
+  const beforeSwitch = await page.evaluate(() => window.archvizE2E?.turntableState());
+  expect(beforeSwitch).toBeDefined();
+  expectTurntableYaw(beforeSwitch!, false);
+
   await thumbnails.nth(2).click();
 
   // The fade begins when the incoming look is on the plinth, which is load bound, and ends
   // CROSSFADE_MS after that, which is not: the second window is the fade's own, not the load's.
   await expect(canvas).toHaveAttribute('data-fade', '1', { timeout: FADE_TIMEOUT });
+  // Reads the rendered objects' world transforms and parents, not canvas data-yaw. The outgoing
+  // look is still alive here, so this proves both fade participants and the pedestal share one yaw.
+  const duringFade = await page.evaluate(() => window.archvizE2E?.turntableState());
+  expect(duringFade).toBeDefined();
+  expectTurntableYaw(duringFade!, true);
   await expect(canvas).toHaveAttribute('data-fade', '0', { timeout: FADE_END_TIMEOUT });
 
   const switches = await page.evaluate(() =>
