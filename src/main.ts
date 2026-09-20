@@ -173,6 +173,7 @@ function switchOrder(ids: string[], startId: string, count: number): string[] {
 async function main(): Promise<void> {
   const page = requireElement('main', 'main element');
   const aside = requireElement('aside', 'side panel');
+  // hook: shell
 
   // Neither backend available means no renderer at all: show the poster and leave the canvas
   // untouched, so the page still explains itself instead of showing a dead rectangle.
@@ -507,6 +508,7 @@ async function main(): Promise<void> {
             on.msaa ? 'msaa' : '',
             on.ssgi === 'half' ? 'ssgi-half' : on.ssgi === 'full' ? 'ssgi' : '',
             on.ssr ? 'ssr' : '',
+            // hook: post tokens
           ]
             .filter((feature) => feature !== '')
             .join(',') || 'off';
@@ -597,6 +599,7 @@ async function main(): Promise<void> {
     });
     cameraMount = cameraHandle;
     proofView = catalog.views.proof;
+    // hook: camera modes
     mountChrome({
       catalog,
       contentBase: base,
