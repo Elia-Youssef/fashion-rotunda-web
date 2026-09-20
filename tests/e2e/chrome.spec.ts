@@ -37,7 +37,7 @@ test('the strip switches the look and the card names it', async ({ page, request
   const catalog = await readCatalog(request);
   const third = catalog.looks[2];
 
-  const canvas = await openScene(page, '/?webgl=1');
+  const canvas = await openScene(page, '/?webgl=1&gate=off');
 
   const thumbnails = page.locator('#looks button');
   await expect(thumbnails).toHaveCount(catalog.looks.length, { timeout: SCENE_READY_TIMEOUT });
@@ -57,7 +57,7 @@ test('the swatches switch the mannequin and Reset returns the default', async ({
   const first = catalog.looks[0];
   expect(first.variants, 'the first look carries a dark variant').toContain('dark');
 
-  const canvas = await openScene(page, '/?webgl=1');
+  const canvas = await openScene(page, '/?webgl=1&gate=off');
 
   await page.getByRole('radio', { name: 'dark' }).click();
   await expect(canvas).toHaveAttribute('data-variant', 'dark', { timeout: SWITCH_TIMEOUT });

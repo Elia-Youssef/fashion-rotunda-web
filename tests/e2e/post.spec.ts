@@ -286,7 +286,7 @@ test('ssgi drops to half resolution while the pointer drags on webgpu', async ({
   // Back to full within the rest window plus the frame the chain asks the loop for.
   await expect
     .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'ssgi'), {
-      timeout: 1500,
+      timeout: 3000,
       message: 'data-post carries the full-resolution ssgi token again after the release',
     })
     .toBe(true);

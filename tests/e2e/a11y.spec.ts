@@ -105,8 +105,16 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
   const swatchChecked = await page.evaluate(() => document.activeElement?.getAttribute('aria-checked'));
   expect(swatchChecked, 'swatch tab stop is checked').toBe('true');
 
-  // Single tab stop: Tab from checked swatch leaves group and lands on light panel control
+  // Single tab stop: one Tab leaves the group, never landing on a second swatch. The share block
+  // (copy link, screenshot) sits between the card and the light panel, so a few more presses
+  // reach the panel; the bound keeps a lost focus from turning into a hang.
   await page.keyboard.press('Tab');
+  expect(await focusMatches(page, '.product-card__swatch'), 'one Tab leaves the swatch group').toBe(
+    false,
+  );
+  for (let i = 0; i < 4 && !(await focusMatches(page, '.lightpanel input, .lightpanel select')); i += 1) {
+    await page.keyboard.press('Tab');
+  }
   expect(
     await focusMatches(page, '.lightpanel input, .lightpanel select'),
     'activeElement is a light panel control',

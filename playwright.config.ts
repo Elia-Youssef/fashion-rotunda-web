@@ -8,9 +8,13 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: 'tests/e2e',
   fullyParallel: false,
+  // Four workers: the headless project renders in software, and a dozen pages loading eleven
+  // megabytes and rasterising the room at once turned every wait into a timeout. Ninety seconds
+  // per test is the budget that software rendering needs for a load plus a look switch.
+  workers: 4,
   retries: 0,
   reporter: 'list',
-  timeout: 60_000,
+  timeout: 90_000,
   webServer: {
     command: 'npm run build && npm run preview -- --port 4173 --strictPort',
     url: 'http://localhost:4173',
