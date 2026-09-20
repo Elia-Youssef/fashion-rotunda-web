@@ -7,6 +7,7 @@ function sampleSnapshot(): ProofSnapshot {
   return {
     loadMs: 1234,
     payloadBytes: 3500,
+    payloadNowBytes: 9100,
     drawCalls: 42,
     triangles: 123456,
     backend: 'webgpu',
@@ -17,6 +18,9 @@ function sampleSnapshot(): ProofSnapshot {
     frameP50Ms: 8.2,
     frameP95Ms: 16.7,
     lookSwitchMs: 250,
+    gpu: { p50: 7.0, p95: 12.0, available: true },
+    post: 'off',
+    cacheState: 'cold',
   };
 }
 

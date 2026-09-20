@@ -16,7 +16,7 @@ export interface DeviceLostInfo {
   message: string;
 }
 
-export interface CreateRendererOptions {
+export interface RendererOptions {
   canvas: HTMLCanvasElement;
   /** The caller owns this number; from goal G0.5 on, the tier table owns it. */
   pixelRatioCap: number;
@@ -24,9 +24,13 @@ export interface CreateRendererOptions {
   /** Default true. A renderer option that covers the default framebuffer only; the post chain a
    * later goal adds sets its own MSAA on the scene pass. */
   antialias?: boolean;
+  /** Enables the backend's timestamp queries; renderer.info.render.timestamp then reads GPU ms. */
+  trackTimestamp?: boolean;
   onDeviceLost?: (info: DeviceLostInfo) => void;
   onError?: (error: unknown) => void;
 }
+
+export type CreateRendererOptions = RendererOptions;
 
 export interface RendererHandle {
   renderer: WebGPURenderer;
@@ -199,6 +203,7 @@ export async function createRenderer(options: CreateRendererOptions): Promise<Re
     canvas: options.canvas,
     antialias: options.antialias ?? true,
     forceWebGL: options.forceWebGL === true,
+    ...(options.trackTimestamp !== undefined ? { trackTimestamp: options.trackTimestamp } : {}),
   });
 
   // init() may swap in the WebGL backend through the automatic fallback (WebGPURenderer.js lines

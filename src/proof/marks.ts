@@ -71,9 +71,47 @@ export function payloadBytes(untilFirstFrame?: boolean): number {
   return total;
 }
 
+/**
+ * Reads whether the rotunda asset arrived cold (transferSize > 0) or warm (from cache, transferSize 0).
+ * With no rotunda entry at all the answer is 'cold': the panel is read from the first frame on, and
+ * before the fetch has been observed nothing has proved a cache hit. Reporting 'warm' there would
+ * claim a hit that may never have happened, and the load number beside it would contradict it.
+ */
+export function cacheState(): 'cold' | 'warm' {
+  for (const entry of performance.getEntriesByType('resource')) {
+    const resource: { name?: string; transferSize?: number } = entry;
+    if (typeof resource.name === 'string' && resource.name.includes('rotunda.glb')) {
+      if (typeof resource.transferSize === 'number' && resource.transferSize > 0) {
+        return 'cold';
+      }
+      return 'warm';
+    }
+  }
+  return 'cold';
+}
+
+/**
+ * Returns the duration of the most recent 'look-switch' performance measure entry, or null if none.
+ */
+export function latestLookSwitchMs(): number | null {
+  if (typeof performance === 'undefined' || typeof performance.getEntriesByName !== 'function') {
+    return null;
+  }
+  const entries = performance.getEntriesByName('look-switch');
+  if (entries.length === 0) {
+    return null;
+  }
+  return entries[entries.length - 1].duration;
+}
+
 export interface ProofSnapshot {
   loadMs: number | null;
   payloadBytes: number;
+  /**
+   * The second payload number the definition asks for: every byte transferred so far, so a client
+   * sees what the load cost and what the whole session cost once the looks have been fetched.
+   */
+  payloadNowBytes: number;
   drawCalls: number;
   triangles: number;
   backend: string;
@@ -84,6 +122,9 @@ export interface ProofSnapshot {
   frameP50Ms: number;
   frameP95Ms: number;
   lookSwitchMs: number | null;
+  gpu: { p50: number | null; p95: number | null; available: boolean };
+  post: string;
+  cacheState: 'cold' | 'warm';
 }
 
 export interface SnapshotInput {
@@ -99,18 +140,28 @@ export interface SnapshotInput {
   renderScale: number;
   gpuName: string;
   frames: FrameTimes;
-  lookSwitchMs?: number | null;
+  gpu: { p50: number | null; p95: number | null; available: boolean };
+  lookSwitchMs: number | null;
+  /**
+   * The canvas's data-post value. Required, and passed in by the composition root: this module
+   * owns no element, and a DOM query here would read a second source for a number the caller
+   * already holds, which is how the panel and the e2e suite drift apart.
+   */
+  post: string;
+  cacheState?: 'cold' | 'warm';
 }
 
 /**
  * Assembles the panel payload from live inputs plus the marks module. payloadBytes is taken
  * until the first frame on purpose: it is the payload of the load, the number that pairs with
- * loadMs, and it stops growing as the showroom streams in later assets.
+ * loadMs, and it stops growing as the showroom streams in later assets. payloadNowBytes is the
+ * running total beside it.
  */
 export function snapshot(input: SnapshotInput): ProofSnapshot {
   return {
     loadMs: firstFrameMs(),
     payloadBytes: payloadBytes(true),
+    payloadNowBytes: payloadBytes(),
     drawCalls: input.info.render.drawCalls,
     triangles: input.info.render.triangles,
     backend: input.backend,
@@ -120,6 +171,9 @@ export function snapshot(input: SnapshotInput): ProofSnapshot {
     gpuName: input.gpuName,
     frameP50Ms: input.frames.p50(),
     frameP95Ms: input.frames.p95(),
-    lookSwitchMs: input.lookSwitchMs ?? null,
+    lookSwitchMs: input.lookSwitchMs,
+    gpu: input.gpu,
+    post: input.post,
+    cacheState: input.cacheState ?? cacheState(),
   };
 }

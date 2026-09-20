@@ -1,0 +1,63 @@
+/* Goal G2.8 and G6.4: Proof panel styles matching the side panel theme. */
+
+.proof-panel {
+  max-width: 24rem;
+  margin: 0.5rem 0.75rem;
+  padding: 0.5rem;
+  border: 1px solid #3a4048;
+  border-radius: 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: #9aa2ab;
+}
+
+.proof-panel__list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.5rem;
+}
+
+.proof-panel__term {
+  color: #c0c6ce;
+  font-weight: 500;
+}
+
+.proof-panel__desc {
+  margin: 0;
+  word-break: break-word;
+}
+
+.proof-panel__orbit {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #2a3038;
+}
+
+.proof-panel__actions {
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.proof-panel__measure {
+  padding: 0.3rem 0.8rem;
+  background: #20242a;
+  color: #e6e8ea;
+  border: 1px solid #3a4048;
+  border-radius: 3px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.proof-panel__measure:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.proof-panel__status {
+  font-size: 0.65rem;
+  color: #7b838c;
+}

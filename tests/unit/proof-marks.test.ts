@@ -108,12 +108,39 @@ describe('payloadBytes', () => {
   });
 });
 
+describe('cacheState', () => {
+  it('returns cold when rotunda.glb has transferSize > 0', async () => {
+    const marks = await loadMarks();
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([
+      fakeResource('content/rotunda.glb', 12345, 100),
+    ]);
+    expect(marks.cacheState()).toBe('cold');
+  });
+
+  it('returns warm when rotunda.glb has transferSize 0', async () => {
+    const marks = await loadMarks();
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([
+      fakeResource('content/rotunda.glb', 0, 10),
+    ]);
+    expect(marks.cacheState()).toBe('warm');
+  });
+
+  it('returns cold when rotunda.glb is not in entries', async () => {
+    const marks = await loadMarks();
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([
+      fakeResource('content/catalog.json', 500, 10),
+    ]);
+    expect(marks.cacheState()).toBe('cold');
+  });
+});
+
 describe('snapshot', () => {
   it('assembles every field from the input, the marks module and the frame buffer', async () => {
     const marks = await loadMarks();
     vi.spyOn(performance, 'getEntriesByType').mockReturnValue([
       fakeResource('load.bin', 4000, 10),
       fakeResource('later.bin', 6000, 90),
+      fakeResource('content/rotunda.glb', 5000, 20),
     ]);
     marks.markFirstFrame(() => 50);
     const frames = new FrameTimes();
@@ -128,11 +155,14 @@ describe('snapshot', () => {
       renderScale: 0.85,
       gpuName: 'Intel(R) UHD Graphics',
       frames,
+      gpu: { p50: 8.2, p95: 14.5, available: true },
       lookSwitchMs: 250,
+      post: 'ao,traa',
     });
     expect(snap).toEqual({
       loadMs: 50,
-      payloadBytes: 4000,
+      payloadBytes: 9000,
+      payloadNowBytes: 15000,
       drawCalls: 42,
       triangles: 123456,
       backend: 'webgpu',
@@ -143,11 +173,15 @@ describe('snapshot', () => {
       frameP50Ms: 5,
       frameP95Ms: 10,
       lookSwitchMs: 250,
+      gpu: { p50: 8.2, p95: 14.5, available: true },
+      post: 'ao,traa',
+      cacheState: 'cold',
     });
   });
 
-  it('reads null loadMs before the mark and null lookSwitchMs when the field is absent', async () => {
+  it('reads null loadMs before the mark and passes null lookSwitchMs and gpu', async () => {
     const marks = await loadMarks();
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([]);
     const snap = marks.snapshot({
       info: { render: { drawCalls: 0, triangles: 0 } },
       backend: 'webgl2',
@@ -156,11 +190,18 @@ describe('snapshot', () => {
       renderScale: 1,
       gpuName: 'SwiftShader',
       frames: new FrameTimes(),
+      gpu: { p50: null, p95: null, available: false },
+      lookSwitchMs: null,
+      post: 'off',
     });
     expect(snap.loadMs).toBeNull();
     expect(snap.payloadBytes).toBe(0);
+    expect(snap.payloadNowBytes).toBe(0);
     expect(snap.frameP50Ms).toBe(0);
     expect(snap.frameP95Ms).toBe(0);
     expect(snap.lookSwitchMs).toBeNull();
+    expect(snap.gpu).toEqual({ p50: null, p95: null, available: false });
+    expect(snap.post).toBe('off');
+    expect(snap.cacheState).toBe('cold');
   });
 });

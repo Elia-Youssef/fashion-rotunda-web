@@ -17,8 +17,10 @@ import { ResolutionScaler } from './loop/scaler';
 import { createPostChain } from './post/chain';
 import type { PostChain } from './post/chain';
 import { FrameTimes } from './proof/frametime';
-import { markFirstFrame, snapshot } from './proof/marks';
-import { mountOverlay, overlayWanted } from './proof/overlay';
+import { createGpuTimes, handleTimestampError } from './proof/gpu';
+import { latestLookSwitchMs, markFirstFrame, snapshot } from './proof/marks';
+import { PROOF_POSITION, PROOF_TARGET, runProofOrbit } from './proof/orbit-run';
+import { mountProofPanel, overlayWanted } from './proof/panel';
 import { createRenderer } from './renderer/create';
 import { showLossNotice, showPoster } from './renderer/notices';
 import { detectSupport } from './renderer/support';
@@ -188,12 +190,19 @@ async function main(): Promise<void> {
   // the first paint; its reveal comes after the content and the controls, further down.
   // hook: loading mount
 
+  // Decided before the renderer exists because it decides how the renderer is built: the timestamp
+  // queries and their per-frame resolve serve the panel and nothing else, so a visitor who never
+  // asks for the panel pays for neither. Read once, used by the renderer options, by drawFrame and
+  // by the mount below, so the three can never disagree.
+  const proofOn = overlayWanted(search, import.meta.env.DEV);
+
   // The tier owns the pixel ratio cap, but the decision needs the backend and the GPU name, which
   // only exist once the renderer is up. Start at the Base cap and apply the tier's cap below.
   const { renderer, backend, gpuName } = await createRenderer({
     canvas,
     pixelRatioCap: TIERS.base.pixelRatioCap,
     forceWebGL,
+    trackTimestamp: proofOn,
     onDeviceLost: (info) => showLossNotice(document.body, info, () => location.reload()),
     onError: (error) => console.error('[archviz] renderer error', error),
   });
@@ -245,7 +254,14 @@ async function main(): Promise<void> {
     } else {
       chain.render();
     }
-    // hook: proof frame
+    if (proofOn) {
+      // Read first, then ask for the next resolve: the resolve is asynchronous, so the number
+      // standing in info.render.timestamp now is the one an earlier frame's resolve wrote, and the
+      // reading lags the frame it belongs to by one. Never awaited here, which would stall the
+      // render callback on the GPU.
+      gpuSeries.push(renderer.info.render.timestamp);
+      void renderer.resolveTimestampsAsync().catch(handleTimestampError);
+    }
     frameCount += 1;
     // Readable from outside without exposing the renderer: the e2e tests watch this counter to prove
     // the loop draws when asked and stops when idle.
@@ -328,7 +344,13 @@ async function main(): Promise<void> {
 
   // Null until the showroom has loaded; then it drives the orbit, the turntable and the loop.
   let cameraMount: CameraMount | null = null;
+  /** The pose the camera mounted with, so the Measure run orbits the view the catalogue defines. */
+  let proofView: { position: [number, number, number]; target: [number, number, number] } | null =
+    null;
   const frames = new FrameTimes();
+  // One window per series, the same 240 frames the FrameTimes default holds, so the CPU and GPU
+  // percentiles printed side by side cover the same stretch of the run.
+  const gpuSeries = createGpuTimes(240);
   const loop = createLoop({
     render: (dtMs) => {
       cameraMount?.update(dtMs);
@@ -389,18 +411,43 @@ async function main(): Promise<void> {
   window.addEventListener('keydown', wake);
   window.addEventListener('wheel', wake, { passive: true });
 
-  if (overlayWanted(search, import.meta.env.DEV)) {
-    mountOverlay(aside, () =>
-      snapshot({
-        info: renderer.info,
-        backend,
-        tier,
-        pixelRatio: renderer.getPixelRatio(),
-        renderScale,
-        gpuName,
-        frames,
-      }),
-    );
+  if (proofOn) {
+    mountProofPanel(aside, {
+      read: () =>
+        snapshot({
+          info: renderer.info,
+          backend,
+          tier,
+          pixelRatio: renderer.getPixelRatio(),
+          renderScale,
+          gpuName,
+          frames,
+          gpu: { p50: gpuSeries.p50(), p95: gpuSeries.p95(), available: gpuSeries.available },
+          lookSwitchMs: latestLookSwitchMs(),
+          post: canvas.dataset.post ?? 'off',
+        }),
+      measure: async () => {
+        if (cameraMount === null) {
+          throw new Error('camera not mounted yet');
+        }
+        const mount = cameraMount;
+        // The orbit's percentiles must describe the orbit. Both windows hold the last 240 samples
+        // whatever their age, so without this the row could report frames drawn minutes earlier.
+        frames.clear();
+        gpuSeries.clear();
+        // The catalogue's view once the camera has mounted, which is the only state this runs in;
+        // the module constants are the fallback and are pinned to the catalogue by a unit test.
+        const view = proofView;
+        await runProofOrbit({
+          setPose: (pos, tgt) => mount.orbit.setPose(pos, tgt),
+          proofPosition: view === null ? PROOF_POSITION : view.position,
+          proofTarget: view === null ? PROOF_TARGET : view.target,
+          durationMs: 10_000,
+          onFrame: () => loop.invalidate(),
+          now: () => performance.now(),
+        });
+      },
+    });
   }
 
   loop.start();
@@ -529,6 +576,7 @@ async function main(): Promise<void> {
       proofView: catalog.views.proof,
     });
     cameraMount = cameraHandle;
+    proofView = catalog.views.proof;
     mountChrome({
       catalog,
       contentBase: base,

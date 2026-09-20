@@ -5,7 +5,11 @@
 import { describe, expect, it } from 'vitest';
 
 import { installLossHandlers, normaliseLoss } from '../../src/renderer/create';
-import type { DeviceLostInfo, RendererLossReport } from '../../src/renderer/create';
+import type {
+  DeviceLostInfo,
+  RendererLossReport,
+  RendererOptions,
+} from '../../src/renderer/create';
 
 describe('normaliseLoss', () => {
   it('keeps the reason and message the WebGPU backend reports', () => {
@@ -143,5 +147,13 @@ describe('installLossHandlers', () => {
     restore();
     expect(fake.onDeviceLost).toBe(originalOnDeviceLost);
     expect(fake.onError).toBe(originalOnError);
+  });
+
+  it('supports the trackTimestamp option in RendererOptions', () => {
+    const options: Pick<RendererOptions, 'pixelRatioCap' | 'trackTimestamp'> = {
+      pixelRatioCap: 2,
+      trackTimestamp: true,
+    };
+    expect(options.trackTimestamp).toBe(true);
   });
 });
