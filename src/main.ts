@@ -358,7 +358,11 @@ async function main(): Promise<void> {
   const loop = createLoop({
     render: (dtMs) => {
       cameraMount?.update(dtMs);
-      // hook: showroom update
+      showroom?.update(dtMs);
+      const fade = showroom?.fading === true ? '1' : '0';
+      if (canvas.dataset.fade !== fade) {
+        canvas.dataset.fade = fade;
+      }
       if (cameraMount?.moving === true) {
         chain?.notifyMotion();
       }
@@ -636,7 +640,7 @@ async function main(): Promise<void> {
           }
           for (const id of switchOrder(ids, active.currentLook ?? ids[0], count)) {
             await active.showLook(id);
-            // hook: showroom settle
+            await active.settle();
             chain?.notifyMotion();
             publishSceneState();
           }
