@@ -11,7 +11,6 @@ function lookJson(overrides: Record<string, unknown> = {}): Record<string, unkno
     description: 'In 1937, Wallis Simpson married Prince Edward of Great Britain.',
     thumbnail: 'thumbs/wallis-dress.png',
     file: 'looks/wallis-dress.glb',
-    audio: null,
     variants: ['base', 'light', 'dark'],
     defaultVariant: 'base',
     mannequinNode: 'mannequin',
@@ -46,10 +45,22 @@ describe('parseCatalog', () => {
     expect(catalog.views['proof'].fov).toBe(40);
   });
 
-  it('keeps a null thumbnail and a null audio reference', () => {
+  it('keeps a null thumbnail and schema without audio', () => {
     const catalog = parseCatalog(catalogJson({ looks: [lookJson({ thumbnail: null })] }));
     expect(catalog.looks[0].thumbnail).toBeNull();
-    expect(catalog.looks[0].audio).toBeNull();
+    expect(Object.hasOwn(catalog.looks[0], 'audio')).toBe(false);
+  });
+
+  it('parses both shipped catalogues without audio fields', async () => {
+    const mainCatalog = (await import('../../public/content/catalog.json')).default;
+    const halfCatalog = (await import('../../public/content/half/catalog.json')).default;
+    const main = parseCatalog(mainCatalog);
+    const half = parseCatalog(halfCatalog);
+    expect(main.looks).toHaveLength(7);
+    expect(half.looks).toHaveLength(7);
+    for (const look of [...main.looks, ...half.looks]) {
+      expect(Object.hasOwn(look, 'audio')).toBe(false);
+    }
   });
 
   it('ignores fields it does not read, so the optimize pass can add its own', () => {

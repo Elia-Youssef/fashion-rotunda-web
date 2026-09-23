@@ -1,0 +1,65 @@
+/* GOAL ENTRY-3: Scene Reveal Black Veil Overlay Styles
+   Uses tokens exclusively from src/styles.css; zero banned unit or color literals. */
+
+#scene-veil {
+  position: fixed;
+  inset: 0;
+  background-color: var(--brand-transition-black);
+  z-index: var(--z-veil);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+#scene-veil[data-state='ready-hidden'],
+#scene-veil[data-state='cover-to-black'],
+#scene-veil[data-state='error'] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+#scene-veil[data-state='black-hold'] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: none;
+  animation: none;
+}
+
+#scene-veil[data-state='revealing'] {
+  opacity: 0;
+  visibility: visible;
+  pointer-events: auto;
+  animation: scene-veil-reveal var(--dur-scene-reveal) var(--ease-architectural) forwards;
+}
+
+/* E2E-only, guarded by ?e2e=1&gate=on: freeze a non-terminal opacity for deterministic proof. */
+#scene-veil[data-state='revealing'][data-e2e-freeze='revealing'] {
+  animation-delay: var(--dur-scene-reveal-e2e-sample-delay);
+  animation-play-state: paused;
+}
+
+@keyframes scene-veil-reveal {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+#scene-veil[data-state='revealed'] {
+  display: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #scene-veil {
+    transition: none !important;
+    animation: none !important;
+  }
+}

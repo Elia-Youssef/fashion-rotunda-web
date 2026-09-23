@@ -13,7 +13,10 @@
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-1);
-  background: var(--surface);
+  /* The header is an overlay over the scene, so its controls read as glass rather than bars. */
+  background: var(--surface-chrome);
+  backdrop-filter: var(--blur-chrome);
+  -webkit-backdrop-filter: var(--blur-chrome);
   color: var(--text);
   font: inherit;
   font-size: var(--type-sm);

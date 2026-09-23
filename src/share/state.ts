@@ -51,6 +51,35 @@ function encodeValue(value: string): string {
   return encodeURIComponent(value).replace(/%2C/g, ',').replace(/%3B/g, ';');
 }
 
+function isValidRigString(raw: string): boolean {
+  if (raw.startsWith('v2;')) {
+    const parts = raw.split(';').slice(1);
+    if (parts.length === 0) return false;
+    return parts.every((part) => {
+      const id = part.split(',')[0];
+      return id === 'key' || id === 'fill' || id === 'back' || id === 'day' || id === 'e';
+    });
+  }
+  if (raw.startsWith('v1;')) {
+    const parts = raw.split(';').slice(1);
+    if (parts.length === 0) return false;
+    return parts.every((part) => {
+      const id = part.split(',')[0];
+      return (
+        id === 'top' ||
+        id === 'indirect' ||
+        id === 'key' ||
+        id === 'fill' ||
+        id === 'back' ||
+        id === 'sun' ||
+        id === 'sky' ||
+        id === 'e'
+      );
+    });
+  }
+  return false;
+}
+
 /** Reads the state from a search string; unknown or malformed values read as null. */
 export function parseShareState(search: string): ShareState {
   const clean = search.startsWith('?') ? search.slice(1) : search;
@@ -76,7 +105,7 @@ export function parseShareState(search: string): ShareState {
   const variant = rawVariant !== null && rawVariant.trim().length > 0 ? rawVariant : null;
 
   const rawRig = params.get('rig');
-  const rig = rawRig !== null && rawRig.startsWith('v1;') ? rawRig : null;
+  const rig = rawRig !== null && isValidRigString(rawRig) ? rawRig : null;
 
   let camera: [number, number, number] | null = null;
   const rawCam = params.get('cam');

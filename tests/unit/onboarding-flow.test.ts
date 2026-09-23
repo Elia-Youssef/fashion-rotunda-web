@@ -23,8 +23,11 @@ beforeEach(() => {
   looks.id = 'looks';
   const lightpanel = document.createElement('section');
   lightpanel.className = 'lightpanel';
+  const lightToggle = document.createElement('button');
+  lightToggle.id = 'shell-light-toggle';
+  lightToggle.textContent = 'Light Control';
 
-  document.body.append(scene, looks, lightpanel);
+  document.body.append(scene, looks, lightToggle, lightpanel);
 
   fakeStorage = new Map<string, string>();
 });
@@ -35,6 +38,7 @@ afterEach(() => {
   root.remove();
   document.querySelector('#scene')?.remove();
   document.querySelector('#looks')?.remove();
+  document.querySelector('#shell-light-toggle')?.remove();
   document.querySelector('.lightpanel')?.remove();
 });
 
@@ -53,7 +57,7 @@ describe('ONBOARDING_STEPS', () => {
   it('defines the three required steps in order', () => {
     expect(ONBOARDING_STEPS).toHaveLength(3);
     expect(ONBOARDING_STEPS.map((s) => s.id)).toEqual(['orbit', 'looks', 'lights']);
-    expect(ONBOARDING_STEPS.map((s) => s.anchor)).toEqual(['#scene', '#looks', '.lightpanel']);
+    expect(ONBOARDING_STEPS.map((s) => s.anchor)).toEqual(['#scene', '#looks', '#shell-light-toggle']);
   });
 });
 
@@ -157,6 +161,26 @@ describe('mountOnboarding', () => {
     const card = root.querySelector<HTMLElement>('.onboarding-card');
     expect(card?.tabIndex).toBe(-1);
     expect(document.activeElement).toBe(card);
+  });
+
+  it('keeps the Lights step actionable when the panel starts closed', () => {
+    const panel = document.querySelector<HTMLElement>('.lightpanel');
+    panel?.setAttribute('hidden', '');
+    handle = mountOnboarding({
+      root,
+      storage: storageAdapter(),
+    });
+    handle.start();
+
+    const nextBtn = root.querySelector<HTMLButtonElement>('.onboarding-card__next');
+    nextBtn?.click();
+    nextBtn?.click();
+
+    const card = root.querySelector<HTMLElement>('.onboarding-card');
+    expect(card?.querySelector('.onboarding-card__title')?.textContent).toBe('Adjust lighting');
+    expect(document.activeElement).toBe(card);
+    expect(panel?.hidden).toBe(true);
+    expect(document.querySelector('#shell-light-toggle')).not.toBeNull();
   });
 
   it('complete(id) advances step and fires onDismissed callback', () => {

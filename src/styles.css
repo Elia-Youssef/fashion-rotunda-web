@@ -1,9 +1,16 @@
-/* The page is one screen that never scrolls: a grid hands the canvas whatever the chrome around
-   it leaves, and every chrome region scrolls inside itself instead. The :root block is the one
-   token sheet: every colour, size, duration and z-order the components use is named here, so a
-   rebrand edits this block and nothing else. */
+/* The page is one screen that never scrolls: the stage is the whole viewport and every chrome
+   region — header, rail, card, light control, badge — floats over it as an overlay, so opening or
+   closing any of them never resizes the canvas. The :root block is the one token sheet: every
+   colour, size, duration and z-order the components use is named here, so a rebrand edits this
+   block and nothing else. */
 
 :root {
+  /* Physical display cut-outs. Keeping the platform env() values behind tokens lets the E2E
+     suite exercise a non-zero safe rectangle without pretending Chromium exposes a notch. */
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
   /* Colour. The accents stay neutral so a client palette drops in as a handful of values. */
   --surface: #101214;
   --surface-raised: #1a1e23;
@@ -18,6 +25,95 @@
   --focus: #e6e8ea;
   --scrim: rgb(10 12 14 / 0.88);
   --danger: #d98282;
+  /* Brand tokens from ENTRY-1 (brand-tokens.json) */
+  --brand-bg-deepest: #0a0c0e;
+  --brand-surface-raised: #14171a;
+  --brand-surface-overlay: #1a1e23;
+  --brand-surface-chrome: rgba(16, 18, 20, 0.7);
+  --brand-image-veil: rgba(10, 12, 14, 0.72);
+  --brand-image-veil-loading: rgba(10, 12, 14, 0.82);
+  --brand-image-veil-error: rgba(10, 12, 14, 0.86);
+  --brand-text-primary: #f0efeb;
+  --brand-text-secondary: #9aa2ab;
+  --brand-text-disabled: #8a9096;
+  --brand-accent-architectural: #d0d4d8;
+  --brand-accent-brass: #c8a97e;
+  --brand-accent-brass-hover: #dfc096;
+  --brand-deep-bronze: #645037;
+  --brand-error: #d98282;
+  --brand-focus: #ffffff;
+  --brand-transition-black: #000000;
+  --font-display: Didot, "Bodoni MT", "Cinzel", "Playfair Display", "Times New Roman", serif;
+  /* Lobby component design tokens */
+  --lobby-card-bg: rgba(20, 23, 26, 0.88);
+  --lobby-music-bg: rgba(16, 18, 20, 0.75);
+  --lobby-btn-bg: rgba(20, 23, 26, 0.9);
+  --lobby-btn-hover-bg: rgba(200, 169, 126, 0.14);
+  --lobby-btn-active-bg: rgba(200, 169, 126, 0.24);
+  --lobby-error-bg: rgba(217, 130, 130, 0.15);
+  --lobby-fact-border: rgba(58, 64, 72, 0.6);
+  --lobby-card-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  --lobby-btn-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --lobby-btn-glow: 0 0 16px rgba(200, 169, 126, 0.25);
+  --lobby-mark-size: 44px;
+  --lobby-mark-size-tablet: 36px;
+  --lobby-mark-size-landscape: 32px;
+  --lobby-divider-height: 28px;
+  --lobby-divider-height-landscape: 20px;
+  --lobby-card-max-width: 600px;
+  --lobby-card-max-width-tablet: 520px;
+  --lobby-card-max-width-landscape: 620px;
+  --lobby-progress-max-width: 320px;
+  --lobby-progress-max-width-phone: 260px;
+  --lobby-progress-height: 6px;
+  --lobby-progress-radius: 3px;
+  --lobby-card-inner-inset: 6px;
+  --lobby-corner-size: 12px;
+  --lobby-corner-accent-size: 6px;
+  --lobby-diamond-size: 8px;
+  --lobby-diamond-offset: -4px;
+  --lobby-btn-min-height: 48px;
+  --lobby-btn-min-width: 260px;
+  --lobby-btn-pad-y: 14px;
+  --lobby-btn-pad-x: 32px;
+  --lobby-btn-pad-y-landscape: 10px;
+  --lobby-btn-pad-x-landscape: 24px;
+  --lobby-error-icon-size: 44px;
+  --lobby-retry-min-width: 180px;
+  --lobby-retry-pad-y: 12px;
+  --lobby-retry-pad-x: 28px;
+  --lobby-header-min-height-landscape: 2.75rem;
+  --type-eyebrow: 0.75rem;
+  --type-eyebrow-sm: 0.6875rem;
+  --type-eyebrow-xs: 0.625rem;
+  --type-desc: 0.875rem;
+  --type-desc-sm: 0.8125rem;
+  --type-desc-xs: 0.78rem;
+  --type-lobby-title: 1.0625rem;
+  --type-lobby-title-sm: 0.9375rem;
+  --type-lobby-title-xs: 0.875rem;
+  --type-lobby-subtitle: 0.6875rem;
+  --type-lobby-subtitle-sm: 0.625rem;
+  --type-lobby-subtitle-xs: 0.5625rem;
+  --type-telemetry: 0.6875rem;
+  --type-telemetry-sm: 0.5625rem;
+  --type-fact-heading: 0.6875rem;
+  --type-fact-heading-sm: 0.625rem;
+  --type-fact-text: 0.8125rem;
+  --type-fact-text-sm: 0.75rem;
+  --type-fact-source: 0.6875rem;
+  --type-loading-title: 0.9375rem;
+  --type-error-title: 1rem;
+  --type-error-msg: 0.84rem;
+  --type-btn-action: 0.8125rem;
+  --type-btn-action-sm: 0.75rem;
+  --space-micro: 2px;
+  --blur-card: 12px;
+  /* Overlay surfaces: the floating card, drawer and badge read as glass over the showroom. */
+  --surface-overlay: rgb(26 30 35 / 0.85);
+  --surface-chrome: rgb(16 18 20 / 0.7);
+  --blur-chrome: 8px;
+  --blur-overlay: 12px;
   /* Mannequin swatch tones, one per catalogue variant the card offers. */
   --swatch-light: #e6e8ea;
   --swatch-base: #8a9096;
@@ -38,12 +134,18 @@
   --control-height: 2.75rem;
   --focus-ring: 2px;
   --focus-offset: 2px;
-  /* Region sizes. The two heights carry a dvh ceiling so a short landscape screen shrinks the
-     panel and the proof strip instead of collapsing the stage to nothing. */
+  /* Region sizes. The header keeps one height every overlay below it anchors against; the panel
+     and proof ceilings carry a dvh share so a short landscape screen shrinks them instead of
+     crowding the scene out from under the chrome. */
+  --header-height: 3.5rem;
   --rail-width: 5rem;
+  --rail-max-height: 370px;
   --card-width: 24rem;
   --panel-height: min(20rem, 38dvh);
   --footer-proof-height: min(12rem, 24dvh);
+  /* When a phone sheet is open, its bottom edge clears the compact badge/Measure strip instead
+     of painting over the controls. The two touch rows are also enough room when proof is absent. */
+  --sheet-footer-reserve: calc(2 * var(--control-height) + 6 * var(--space-2));
   --size-thumb: 3.25rem;
   --size-media: 4rem;
   --size-value: 4.5rem;
@@ -52,12 +154,21 @@
   --dur-fast: 120ms;
   --dur-base: 200ms;
   --dur-slow: 400ms;
+  --dur-cover-black: 250ms;
+  --dur-black-hold: 200ms;
+  --dur-scene-reveal: 600ms;
+  --dur-scene-reveal-e2e-sample-delay: -150ms;
+  --ease-architectural: cubic-bezier(0.16, 1, 0.3, 1);
   /* Paint order, low to high. */
+  --z-canvas: 0;
   --z-stage: 0;
   --z-chrome: 10;
   --z-sheet: 20;
   --z-overlay: 30;
   --z-gate: 40;
+  --z-lobby: 100;
+  --z-veil: 110;
+  --z-loss-notice: 200;
   /* Type. */
   --font-ui: system-ui, sans-serif;
   --font-mono: ui-monospace, monospace;
@@ -67,6 +178,7 @@
   /* Elevation. */
   --shadow-raised: 0 var(--space-1) var(--space-3) rgb(0 0 0 / 0.5);
   --shadow-overlay: 0 var(--space-1) var(--space-4) rgb(0 0 0 / 0.6);
+  --shadow-text: 0 var(--space-1) var(--space-2) rgb(0 0 0 / 0.55);
 }
 
 /* Reduced motion in one place: the duration tokens collapse and every transition or animation
@@ -76,6 +188,10 @@
     --dur-fast: 0ms;
     --dur-base: 0ms;
     --dur-slow: 0ms;
+    --dur-cover-black: 0ms;
+    --dur-black-hold: 0ms;
+    --dur-scene-reveal: 0ms;
+    --dur-scene-reveal-e2e-sample-delay: 0ms;
   }
 }
 
@@ -100,75 +216,28 @@ body {
   overscroll-behavior: none;
 }
 
-/* Phone layout, the default: header, the rail as a horizontal strip, the stage, the footer. The
-   card and the light panel are sheets over the stage (see aside and #shell-light-row below) and
-   never take part in the grid, so opening one never resizes the canvas. */
+/* Phone layout, the default: the stage is the full screen and every region floats over it. The
+   card and the light panel are bottom sheets over the stage (see aside and #shell-light-row
+   below) and never take part in any flow, so opening one never resizes the canvas. */
 body {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  grid-template-areas:
-    'header'
-    'rail'
-    'stage'
-    'footer';
+  position: relative;
   height: 100dvh;
   background: var(--surface);
   color: var(--text);
   font-family: var(--font-ui);
 }
 
-header {
-  grid-area: header;
-  /* The title on the left, the music switch and the camera's mode switch on the right: a
-     row, so the controls never push the title down or the canvas up. */
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  padding-top: calc(var(--space-2) + env(safe-area-inset-top));
-  border-bottom: 1px solid var(--border);
-}
-
-h1 {
-  margin: 0 auto 0 0;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--type-md);
-  font-weight: 600;
-}
-
-/* main holds the rail and the stage on the phone; above the phone width it lends both to the page
-   grid by collapsing its own box. position: relative keeps the poster overlay inside the canvas
-   area while main still has a box. */
+/* main carries the rail mount and the stage; as an overlay field it simply spans the screen. */
 main {
-  grid-area: stage;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  grid-template-areas:
-    'rail'
-    'stage';
-  min-width: 0;
-  min-height: 0;
-  position: relative;
+  position: absolute;
+  inset: 0;
 }
 
-#looks {
-  grid-area: rail;
-  min-width: 0;
-}
-
-/* The stage owns the canvas and nothing else drawn. On the phone it is the containing block the
-   two sheets and the pill strip overlay; above the phone width it collapses so the canvas, the
-   card and the light row become page-grid items directly. */
+/* The stage owns the canvas and nothing else drawn. It is the containing block the two sheets,
+   the pills and the drawer overlay; it always spans the whole viewport. */
 #shell-stage {
-  grid-area: stage;
-  position: relative;
-  min-width: 0;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
 }
 
 /* The renderer reads this element's client box, so CSS owns the size and the script never sets it. */
@@ -180,19 +249,74 @@ main {
   min-height: 0;
 }
 
-/* The card as a phone sheet: over the stage, out of the flow, scrolling inside itself. The Look
-   pill in the shell opens it; above the phone width the column layout below replaces all of it.
-   The selector is the id, not the element: the footer's proof strip is also an aside. */
-#shell-card {
+/* The header overlay: the title on the left, the music switch and the camera's mode switch
+   on the right, transparent-backed over the scene. The bar itself passes pointer events through
+   to the canvas; only the mounted controls take them back, so the overlay never blocks camera
+   drags across the top of the screen. */
+header {
   position: absolute;
+  top: 0;
   left: 0;
   right: 0;
-  bottom: 0;
+  z-index: var(--z-chrome);
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-3);
+  min-height: calc(var(--header-height) + var(--safe-area-top));
+  padding: calc(var(--space-2) + var(--safe-area-top))
+    calc(var(--space-3) + var(--safe-area-right)) var(--space-2)
+    calc(var(--space-3) + var(--safe-area-left));
+  pointer-events: none;
+}
+
+header > .music-switch,
+header > .archviz-mode-switch {
+  pointer-events: auto;
+}
+
+h1 {
+  margin: 0 auto 0 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--type-md);
+  font-weight: 600;
+  /* The brand floats over the dome in the reference; a soft shadow keeps it legible on the bright
+     sky without giving the header a bar to sit on. */
+  text-shadow: var(--shadow-text);
+}
+
+/* chrome.css owns the rail's presentation. Its placement is repeated here with a more specific
+   selector so every breakpoint consumes the same safe-area abstraction, including the horizontal
+   browser rail whose source stylesheet is intentionally component-owned. */
+body #looks {
+  top: calc(var(--header-height) + var(--safe-area-top));
+  left: calc(var(--space-2) + var(--safe-area-left));
+  right: calc(var(--space-2) + var(--safe-area-right));
+  max-width: calc(100% - var(--safe-area-left) - var(--safe-area-right) - 2 * var(--space-2));
+}
+
+/* The mobile Look launcher mirrors the light launcher and must clear a left-side cut-out even
+   though its component stylesheet only owns its visual treatment. */
+body #shell-stage .shell-pill--look {
+  left: calc(var(--space-3) + var(--safe-area-left));
+}
+
+/* The card as a phone sheet: over the stage, out of the flow, scrolling inside itself. The Look
+   pill in the shell opens it; from the tablet width up the floating card below replaces all of
+   it. The selector is the id, not the element: the footer's proof strip is also an aside. */
+#shell-card {
+  position: absolute;
+  left: var(--safe-area-left);
+  right: var(--safe-area-right);
+  bottom: var(--safe-area-bottom);
   z-index: var(--z-sheet);
   max-height: 85%;
   overflow-y: auto;
   padding: calc(var(--control-height) + var(--space-1)) var(--space-3)
-    calc(var(--space-3) + env(safe-area-inset-bottom));
+    calc(var(--space-3) + var(--safe-area-bottom));
   background: var(--surface-raised);
   border-radius: var(--radius-3) var(--radius-3) 0 0;
   box-shadow: var(--shadow-overlay);
@@ -210,8 +334,8 @@ main {
    through to the canvas; the button takes them back. */
 #shell-light-row {
   position: absolute;
-  right: var(--space-3);
-  bottom: calc(var(--space-2) + env(safe-area-inset-bottom));
+  right: calc(var(--space-3) + var(--safe-area-right));
+  bottom: calc(var(--space-2) + var(--safe-area-bottom));
   z-index: var(--z-sheet);
   display: flex;
   flex-direction: column;
@@ -227,9 +351,9 @@ main {
 
 /* Open on the phone: the row is the light sheet, from the very bottom of the stage. */
 #shell-light-row[data-open='true'] {
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: var(--safe-area-left);
+  right: var(--safe-area-right);
+  bottom: var(--safe-area-bottom);
   align-items: stretch;
   pointer-events: auto;
   max-height: 85%;
@@ -243,7 +367,7 @@ main {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 0 var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom));
+  padding: 0 var(--space-3) calc(var(--space-3) + var(--safe-area-bottom));
 }
 
 /* While any sheet is open the pill strip is covered, so the shell hides it instead. */
@@ -252,24 +376,65 @@ main {
   display: none;
 }
 
-/* The footer strip: the backend badge and, when the URL asks for it, the proof panel. The strip
-   never scrolls the page; the proof readout scrolls inside itself with Measure pinned below. */
-footer {
-  grid-area: footer;
-  display: flex;
-  min-height: 0;
-  padding: var(--space-1) var(--space-3) calc(var(--space-1) + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--border);
+/* A phone sheet must not turn the status and Measure controls into painted-but-unreachable
+   chrome. Keep a compact footer strip below either sheet; its data list is deliberately hidden
+   only while a sheet is up, since the Measure action and backend badge are the persistent controls
+   the visitor may need before closing the sheet. `main` is the footer's preceding sibling, so this
+   stays scoped to the overlay state rather than changing the ordinary footer. */
+@media (max-width: 767px) {
+  body[data-shell-sheet-open] > footer {
+    bottom: calc(var(--space-2) + var(--safe-area-bottom));
+  }
+
+  body[data-shell-sheet-open] > footer .proof-panel__list {
+    display: none;
+  }
+
+  body[data-shell-sheet-open] #shell-card,
+  body[data-shell-sheet-open] #shell-light-row[data-open='true'] {
+    bottom: calc(var(--sheet-footer-reserve) + var(--safe-area-bottom));
+    max-height: calc(
+      100dvh - var(--header-height) - var(--safe-area-top) - var(--sheet-footer-reserve) -
+        var(--safe-area-bottom) - var(--space-2)
+    );
+  }
 }
 
-/* The strip itself is the proof root: badge above panel on the phone, side by side from the
+/* The badge corner: the footer floats over the scene instead of claiming a row. In sheet mode it
+   rides above the Light Control pill that owns the same corner; the strip inside stacks the
+   proof panel over the badge so the badge stays nearest the corner. The bar passes pointer
+   events through; the badge and the panel take them back. */
+footer {
+  position: absolute;
+  right: calc(var(--space-3) + var(--safe-area-right));
+  bottom: calc(
+    var(--safe-area-bottom) + var(--space-2) + var(--control-height) + var(--space-2)
+  );
+  z-index: var(--z-chrome);
+  display: flex;
+  width: min(
+    var(--card-width),
+    calc(100vw - var(--safe-area-left) - var(--safe-area-right) - 2 * var(--space-3))
+  );
+  max-width: var(--card-width);
+  padding: 0;
+  border-top: none;
+  pointer-events: none;
+}
+
+footer > * {
+  pointer-events: auto;
+}
+
+/* The strip itself is the proof root: badge under panel on the phone, side by side from the
    tablet up. */
 #shell-proof {
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
+  align-items: flex-end;
   gap: var(--space-2);
 }
 
@@ -283,6 +448,9 @@ footer {
   min-height: var(--control-height);
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
+  background: var(--surface-chrome);
+  backdrop-filter: var(--blur-chrome);
+  -webkit-backdrop-filter: var(--blur-chrome);
   font-size: var(--type-sm);
   white-space: nowrap;
 }
@@ -296,9 +464,9 @@ footer {
   color: var(--text-muted);
 }
 
-/* The proof panel inside the footer strip: the list scrolls, the actions stay pinned so Measure
+/* The proof panel inside the badge corner: the list scrolls, the actions stay pinned so Measure
    is reachable however long the readout grows. The panel's own look stays in src/proof/panel.css;
-   only its place in the strip is styled here. */
+   only its place in the corner is styled here. */
 footer .proof-panel {
   flex: 1;
   min-width: 0;
@@ -327,6 +495,9 @@ footer .proof-panel__measure {
   overflow-wrap: anywhere;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
+  background: var(--surface-chrome);
+  backdrop-filter: var(--blur-chrome);
+  -webkit-backdrop-filter: var(--blur-chrome);
   font-family: var(--font-mono);
   font-size: var(--type-sm);
   line-height: 1.4;
@@ -379,9 +550,8 @@ footer .proof-panel__measure {
   padding: var(--space-6);
   background: var(--scrim);
   text-align: center;
-  /* The notice must also cover the loading gate when the GPU dies during the load; the same
-     z-layer leaves paint order to the DOM, and the notice is appended last. */
-  z-index: var(--z-gate);
+  /* The notice must also cover the loading gate and black veil when the GPU dies during the load or transition */
+  z-index: var(--z-loss-notice);
 }
 
 .loss-notice__title {
@@ -407,52 +577,53 @@ footer .proof-panel__measure {
   cursor: pointer;
 }
 
-/* Tablet, 768 to 1199: the rail turns into a horizontal strip under the header, the card keeps a
-   narrower column, the light row sits below the stage as on desktop. */
+/* Tablet, 768 to 1199, and desktop: the card becomes the floating overlay of the upper right and
+   the light control becomes the bottom-left launcher with its drawer, so neither claims a column
+   or a row and the canvas keeps the whole viewport. */
 @media (min-width: 768px) {
-  main,
-  #shell-stage {
-    display: contents;
-  }
-
-  body {
-    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
-    grid-template-columns: minmax(0, 1fr) min(var(--card-width), 40vw);
-    grid-template-areas:
-      'header header'
-      'rail rail'
-      'scene card'
-      'light light'
-      'footer footer';
-  }
-
-  #scene {
-    grid-area: scene;
+  body #looks {
+    max-width: calc(
+      100% - min(var(--card-width), 40vw) - var(--space-6) - var(--safe-area-left) -
+        var(--safe-area-right)
+    );
   }
 
   #shell-card {
-    grid-area: card;
-    position: static;
-    z-index: auto;
-    max-height: none;
+    top: calc(var(--header-height) + var(--safe-area-top) + var(--space-4));
+    left: auto;
+    right: calc(var(--space-4) + var(--safe-area-right));
+    bottom: auto;
+    z-index: var(--z-overlay);
+    width: min(var(--card-width), 40vw);
+    max-height: calc(
+      100dvh - var(--header-height) - var(--safe-area-top) - var(--control-height) -
+        var(--space-5)
+    );
     overflow-y: auto;
-    padding: 0;
-    background: none;
-    border-radius: 0;
-    box-shadow: none;
+    padding: var(--space-2);
+    background: var(--surface-overlay);
+    backdrop-filter: var(--blur-overlay);
+    -webkit-backdrop-filter: var(--blur-overlay);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    box-shadow: var(--shadow-overlay);
   }
 
+  /* The launcher pins the bottom-left corner; the drawer stacks above it, so opening the panel
+     never moves the button the visitor pressed. The row passes pointer events through so the
+     empty corner stays canvas. */
   #shell-light-row,
   #shell-light-row[data-open='true'] {
-    grid-area: light;
-    position: static;
-    z-index: auto;
+    left: calc(var(--space-4) + var(--safe-area-left));
+    right: auto;
+    bottom: calc(var(--space-4) + var(--safe-area-bottom));
+    z-index: var(--z-overlay);
     display: flex;
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: column-reverse;
+    align-items: flex-start;
     gap: var(--space-2);
-    pointer-events: auto;
-    padding: 0 var(--space-3);
+    pointer-events: none;
+    max-width: calc(100vw - var(--safe-area-left) - var(--safe-area-right) - 2 * var(--space-4));
     max-height: none;
     overflow: visible;
     background: none;
@@ -460,16 +631,34 @@ footer .proof-panel__measure {
     box-shadow: none;
   }
 
+  #shell-light-row > .shell-light-toggle,
+  #shell-light-row > #shell-light-panel {
+    pointer-events: auto;
+  }
+
+  /* The open drawer: a compact floating panel over the lower scene, scrolling inside itself. */
   #shell-light-row #shell-light-panel,
   #shell-light-row[data-open='true'] #shell-light-panel {
+    flex: none;
     max-height: var(--panel-height);
     overflow-y: auto;
-    padding: 0;
+    padding: var(--space-2);
+    background: var(--surface-overlay);
+    backdrop-filter: var(--blur-overlay);
+    -webkit-backdrop-filter: var(--blur-overlay);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-3);
+    box-shadow: var(--shadow-overlay);
+  }
+
+  /* No pill owns the bottom-right corner at this width, so the badge corner drops to the edge. */
+  footer {
+    bottom: calc(var(--space-1) + var(--safe-area-bottom));
   }
 
   #shell-proof {
-    flex-direction: row;
-    align-items: flex-start;
+    flex-direction: row-reverse;
+    align-items: flex-end;
   }
 
   footer .proof-panel {
@@ -477,101 +666,69 @@ footer .proof-panel__measure {
   }
 }
 
-/* Desktop, 1200 and up: the rail is the fixed-width vertical column of thumbnails, the card
-   column runs beside the stage down to the light row, the panel opens below the stage. */
 @media (min-width: 1200px) {
-  body {
-    grid-template-rows: auto minmax(0, 1fr) auto auto;
-    grid-template-columns: var(--rail-width) minmax(0, 1fr) var(--card-width);
-    grid-template-areas:
-      'header header header'
-      'rail scene card'
-      'light light card'
-      'footer footer footer';
+  body #looks {
+    top: calc(var(--header-height) + var(--safe-area-top) + var(--space-4));
+    left: calc(var(--space-4) + var(--safe-area-left));
+    right: auto;
+    max-width: none;
+    max-height: calc(
+      100dvh - var(--header-height) - var(--safe-area-top) - var(--space-4) -
+        var(--control-height) - var(--space-5) - var(--safe-area-bottom)
+    );
   }
 }
 
-/* A landscape tablet or a short browser window has the width for columns but not the height for
-   the stage, an open panel and the proof row. Reuse the phone's overlay sheets there, so the page
-   keeps a real canvas box and the panel never consumes the card row. The width breakpoint remains
-   tablet or desktop in script; this is only the short-viewport layout policy. */
+/* A landscape tablet or a short browser window has the width for the columns but not the height
+   for the card and the drawer beside them. Reuse the phone's overlay sheets there, so the page
+   keeps the full-height canvas box. The width breakpoint remains tablet or desktop in script;
+   this is only the short-viewport layout policy. */
 @media (min-width: 768px) and (max-height: 599px) {
-  body {
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      'header'
-      'rail'
-      'stage'
-      'footer';
-  }
-
-  main {
-    grid-area: stage;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    grid-template-areas:
-      'rail'
-      'stage';
-    min-width: 0;
-    min-height: 0;
-    position: relative;
-  }
-
-  #shell-stage {
-    grid-area: stage;
-    display: block;
-    position: relative;
-    min-width: 0;
-    min-height: 0;
-  }
-
-  #scene {
-    display: block;
-    width: 100%;
-    height: 100%;
-    min-width: 0;
-    min-height: 0;
-  }
-
   #shell-card {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    top: auto;
+    left: var(--safe-area-left);
+    right: var(--safe-area-right);
+    bottom: var(--safe-area-bottom);
     z-index: var(--z-sheet);
+    width: auto;
     max-height: 85%;
     overflow-y: auto;
     padding: calc(var(--control-height) + var(--space-1)) var(--space-3)
-      calc(var(--space-3) + env(safe-area-inset-bottom));
+      calc(var(--space-3) + var(--safe-area-bottom));
     background: var(--surface-raised);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: none;
     border-radius: var(--radius-3) var(--radius-3) 0 0;
     box-shadow: var(--shadow-overlay);
   }
 
   #shell-light-row,
   #shell-light-row[data-open='true'] {
-    position: absolute;
-    right: var(--space-3);
-    bottom: calc(var(--space-2) + env(safe-area-inset-bottom));
+    left: auto;
+    right: calc(var(--space-3) + var(--safe-area-right));
+    bottom: calc(var(--space-2) + var(--safe-area-bottom));
     z-index: var(--z-sheet);
     display: flex;
     flex-direction: column;
     align-items: stretch;
     gap: 0;
     pointer-events: none;
-    padding: 0;
-    max-height: none;
+    max-width: none;
     overflow: visible;
     background: none;
     border-radius: 0;
     box-shadow: none;
   }
 
+  #shell-light-row > .shell-light-toggle {
+    pointer-events: auto;
+  }
+
   #shell-light-row[data-open='true'] {
-    left: 0;
-    right: 0;
-    bottom: 0;
+    left: var(--safe-area-left);
+    right: var(--safe-area-right);
+    bottom: var(--safe-area-bottom);
     pointer-events: auto;
     max-height: 85%;
     overflow: hidden;
@@ -580,18 +737,27 @@ footer .proof-panel__measure {
     box-shadow: var(--shadow-overlay);
   }
 
+  #shell-light-row #shell-light-panel,
   #shell-light-row[data-open='true'] #shell-light-panel {
     flex: 1;
     min-height: 0;
     max-height: none;
     overflow-y: auto;
-    padding: 0 var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom));
+    padding: 0 var(--space-3) calc(var(--space-3) + var(--safe-area-bottom));
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
   }
 
   #shell-light-row[data-open='true'] .shell-light-toggle {
     align-self: stretch;
   }
 
+  /* Sheet mode returns at this width, so the Look pill and the sheet chrome come back over the
+     shell's wider-screen hiding. */
   #shell-stage .shell-pill--look {
     display: inline-flex;
   }
@@ -600,8 +766,51 @@ footer .proof-panel__measure {
     display: block;
   }
 
+  /* The Light Control pill owns the bottom-right corner again, so the badge corner rides above
+     it as on the phone. */
+  footer {
+    bottom: calc(
+      var(--safe-area-bottom) + var(--space-2) + var(--control-height) + var(--space-2)
+    );
+  }
+
   #shell-proof {
-    flex-direction: row;
-    align-items: flex-start;
+    flex-direction: column-reverse;
+    align-items: flex-end;
+  }
+
+  /* Landscape phones can have horizontal display cut-outs. Both closed launcher pills respect
+     those insets; open sheets have already been bounded to the same rectangle above. */
+  body #looks {
+    left: calc(var(--space-2) + var(--safe-area-left));
+    right: calc(var(--space-2) + var(--safe-area-right));
+    max-width: none;
+  }
+
+  #shell-stage .shell-pill--look {
+    left: calc(var(--space-3) + var(--safe-area-left));
+  }
+
+  #shell-light-row:not([data-open='true']) {
+    right: calc(var(--space-3) + var(--safe-area-right));
+  }
+
+  /* The short landscape breakpoint reuses phone sheets. Reserve the compact footer strip here
+     too, otherwise the sheet covers Measure and the backend badge at 844 by 390. */
+  body[data-shell-sheet-open] > footer {
+    bottom: calc(var(--space-2) + var(--safe-area-bottom));
+  }
+
+  body[data-shell-sheet-open] > footer .proof-panel__list {
+    display: none;
+  }
+
+  body[data-shell-sheet-open] #shell-card,
+  body[data-shell-sheet-open] #shell-light-row[data-open='true'] {
+    bottom: calc(var(--sheet-footer-reserve) + var(--safe-area-bottom));
+    max-height: calc(
+      100dvh - var(--header-height) - var(--safe-area-top) - var(--sheet-footer-reserve) -
+        var(--safe-area-bottom) - var(--space-2)
+    );
   }
 }

@@ -13,7 +13,7 @@
 // optimize.mjs imports assemble() rather than spawning this file, so one command runs both stages.
 
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { basename, isAbsolute, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { Document, NodeIO } from '@gltf-transform/core';
@@ -24,6 +24,27 @@ import { sourceDir, workDir } from '../config.mjs';
 
 /** Where stage one writes when the caller says nothing. Stage two reads from here. */
 export const assembledDir = resolve(workDir, 'assembled');
+
+const UNREAL_EXPORT_MARKER = '/assets-src/source/unreal/';
+
+/**
+ * Resolves a path recorded by Unreal beneath the current export root. Historical catalogues contain
+ * absolute paths to the checkout that produced them; the asset itself is still portable because the
+ * suffix below assets-src/source/unreal is stable. Paths outside that root fail closed.
+ */
+export function resolveExportFile(exportRoot, recordedPath) {
+  const value = String(recordedPath ?? '');
+  const normalized = value.replace(/\\/g, '/');
+  const marker = normalized.toLowerCase().lastIndexOf(UNREAL_EXPORT_MARKER);
+  const candidate = marker >= 0
+    ? resolve(exportRoot, normalized.slice(marker + UNREAL_EXPORT_MARKER.length))
+    : resolve(exportRoot, value);
+  const fromRoot = relative(resolve(exportRoot), candidate);
+  if (value === '' || fromRoot === '..' || fromRoot.startsWith(`..\\`) || isAbsolute(fromRoot)) {
+    throw new Error(`Export file must stay below ${exportRoot}: ${JSON.stringify(recordedPath)}`);
+  }
+  return candidate;
+}
 
 /** Unreal's text export sometimes keeps the NSLOCTEXT wrapper; the page wants the sentence only. */
 export function plainText(value) {
@@ -73,18 +94,18 @@ function nameNodes(group, prefix) {
   });
 }
 
-async function assembleLook(io, look, out) {
+async function assembleLook(io, look, out, exportRoot) {
   const document = new Document();
   document.createScene('look');
   const garmentNames = [];
   for (const [index, garment] of look.garments.entries()) {
-    const part = await io.read(garment.file);
+    const part = await io.read(resolveExportFile(exportRoot, garment.file));
     const label = index === 0 ? 'garment' : `garment-${index}`;
     const { group } = graft(document, part, label);
     nameNodes(group, `${label}-mesh`);
     garmentNames.push(label);
   }
-  const mannequinPart = await io.read(look.mannequin.file);
+  const mannequinPart = await io.read(resolveExportFile(exportRoot, look.mannequin.file));
   const mannequin = graft(document, mannequinPart, 'mannequin');
   const mannequinGroup = mannequin.group;
   const mannequinMaterials = mannequin.materials;
@@ -98,7 +119,7 @@ async function assembleLook(io, look, out) {
   for (const name of ['light', 'dark']) {
     const swatch = look.swatches[name];
     if (!swatch) continue;
-    const part = await io.read(swatch.file);
+    const part = await io.read(resolveExportFile(exportRoot, swatch.file));
     const { group, materials } = graft(document, part, `swatch-${name}`);
     variantMaterials.set(name, materials[0]);
     group.dispose();
@@ -126,14 +147,13 @@ async function assembleLook(io, look, out) {
   const file = `looks/${look.slug}.glb`;
   await io.write(resolve(out, file), document);
   const thumbnail = look.thumbnail ? `thumbs/${look.slug}.png` : null;
-  if (thumbnail) copyFileSync(look.thumbnail.file, resolve(out, thumbnail));
+  if (thumbnail) copyFileSync(resolveExportFile(exportRoot, look.thumbnail.file), resolve(out, thumbnail));
   return {
     id: look.slug,
     name: look.name,
     description: plainText(look.description),
     thumbnail,
     file,
-    audio: null,
     variants: variantNames,
     defaultVariant: 'base',
     mannequinNode: 'mannequin',
@@ -156,11 +176,11 @@ export async function assemble({ out = assembledDir, log = console.log } = {}) {
   mkdirSync(resolve(out, 'looks'), { recursive: true });
   mkdirSync(resolve(out, 'thumbs'), { recursive: true });
 
-  copyFileSync(source.rotunda.file, resolve(out, 'rotunda.glb'));
-  copyFileSync(source.plinth.file, resolve(out, 'plinth.glb'));
+  copyFileSync(resolveExportFile(src, source.rotunda.file), resolve(out, 'rotunda.glb'));
+  copyFileSync(resolveExportFile(src, source.plinth.file), resolve(out, 'plinth.glb'));
   const looks = [];
   for (const look of source.looks) {
-    looks.push(await assembleLook(io, look, out));
+    looks.push(await assembleLook(io, look, out, src));
     const last = looks.at(-1);
     log(
       `assembled ${look.slug}: ${last.garmentNodes.length} garment group(s), ` +

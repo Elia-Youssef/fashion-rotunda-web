@@ -5,7 +5,7 @@
 //
 // It runs stage one first (assemble.mjs, into assets-src/work/assembled) and then, per file, the
 // order PLAN.md appendix C fixes: dedup, instance (rotunda only), weld, the material repairs, the
-// KHR_materials_specular strip, resize, KTX2 encode, meshopt, prune. The half set branches off
+// default KHR_materials_specular stripping, resize, KTX2 encode, meshopt, prune. The half set branches off
 // before resize, strips clearcoat, decimates any garment over the phone budget, and caps its
 // textures lower.
 //
@@ -45,7 +45,10 @@ import { writeCollision } from './collision.mjs';
 import { budgetRows, formatBudgetTable, formatMb } from './lib/budget.mjs';
 import { buildManifest, fileEntry, textureEntry } from './lib/manifest.mjs';
 import { colorSpaceOfSlots, encodingOfSlots, isMannequinMaterial, ktx2Format } from './lib/naming.mjs';
+import { validateOutputContract } from './lib/output-contract.mjs';
 import { planFactorResets, planRepairs } from './lib/repairs.mjs';
+import { shouldPreserveSpecular } from './lib/specular.mjs';
+import { canonicalizeSourceTextures, getOrCreateSourceTexture } from './lib/texture-authority.mjs';
 
 import { FLOOR_MESH_NAME, needsResize, targetSize, textureCap } from './lib/sizing.mjs';
 
@@ -202,7 +205,7 @@ async function main() {
 }
 
 /**
- * Everything both sets share: dedup, instancing, weld, the repairs, the specular strip, and a
+ * Everything both sets share: dedup, instancing, weld, the repairs, default specular stripping, and a
  * texture-only prune so nothing orphaned by a repair is paid for twice in the encoder.
  */
 async function prepare(io, item) {
@@ -213,19 +216,41 @@ async function prepare(io, item) {
   await document.transform(dedup());
   if (item.instanced) await document.transform(instance({ min: INSTANCE_MIN }));
   await document.transform(weld());
-  const { repairs, resets } = applyRepairs(document, item);
-  // three upgrades a material carrying KHR_materials_specular to its heaviest shader, and none of
-  // these materials needs it: the values the exporter wrote are the glTF defaults.
-  document.disposeExtension('KHR_materials_specular');
+  const { repairs, resets, canonicalized } = applyRepairs(document, item);
+  stripDefaultSpecular(document);
   // Textures orphaned by a repair, and solid-colour textures, go now: both would otherwise cost an
   // encoder pass, and the solid-colour check has to read pixels, which it can only do while the
   // images are still PNG.
   await document.transform(prune({ propertyTypes: [PropertyType.TEXTURE] }));
   console.log(
     `prepared ${item.file}: ${countTriangles(document)} triangles, ${drawCalls(document)} draw calls, ` +
-      `${document.getRoot().listTextures().length} textures, ${repairs.length} repair(s)`,
+      `${document.getRoot().listTextures().length} textures, ${repairs.length} repair(s), ` +
+      `${canonicalized.length} canonical source texture(s)`,
   );
   return { document, repairs, resets };
+}
+
+/**
+ * Retains non-default authored specular data while dropping no-op extension properties.
+ *
+ * KHR_materials_specular defaults to factor 1 and white colour. Calling disposeExtension() here
+ * would erase non-default source values from every material, so each material is handled first.
+ */
+function stripDefaultSpecular(document) {
+  for (const material of document.getRoot().listMaterials()) {
+    const specular = material.getExtension('KHR_materials_specular');
+    if (!specular) continue;
+    if (
+      !shouldPreserveSpecular({
+        factor: specular.getSpecularFactor(),
+        color: specular.getSpecularColorFactor(),
+        hasSpecularTexture: specular.getSpecularTexture() !== null,
+        hasSpecularColorTexture: specular.getSpecularColorTexture() !== null,
+      })
+    ) {
+      material.setExtension('KHR_materials_specular', null);
+    }
+  }
 }
 
 /** Everything that differs per set: clearcoat, decimation, resize, encode, meshopt, prune, write. */
@@ -248,6 +273,9 @@ async function finish(io, document, item, set, out, errors) {
   const path = set === 'full' ? resolve(out, item.file) : resolve(out, 'half', item.file);
   mkdirSync(dirname(path), { recursive: true });
   await io.write(path, document);
+  // Re-read serialized bytes instead of trusting the in-memory graph. A missing KTX image or a
+  // pruned slot must stop this run before its manifest can claim the asset passed.
+  validateOutputContract(await io.read(path), { set, file: item.file });
   const bytes = statSync(path).size;
   const entry = fileEntry({
     bytes,
@@ -266,19 +294,20 @@ async function finish(io, document, item, set, out, errors) {
 }
 
 /**
- * Applies the name rule of lib/repairs.mjs. A texture already in the document is preferred over the
- * PNG on disk: the exporter put the same pixels there, and reusing it avoids a duplicate image that
- * dedup has already run past.
+ * Applies the name rule of lib/repairs.mjs. The PNGs exported beside each look are authoritative:
+ * the glTF exporter can embed a black or placeholder image under the correct Unreal texture name.
+ * Canonicalizing those matching names before slot repair also fixes maps in slots that need no repair.
  */
 function applyRepairs(document, item) {
-  if (!item.textures) return { repairs: [], resets: [] };
+  if (!item.textures) return { repairs: [], resets: [], canonicalized: [] };
   const dir = resolve(sourceDir, 'unreal', item.textures);
   const available = new Set(
     readdirSync(dir)
       .filter((name) => name.toLowerCase().endsWith('.png'))
       .map((name) => name.slice(0, -4)),
   );
-  const byName = new Map(document.getRoot().listTextures().map((texture) => [texture.getName(), texture]));
+  const loadSource = (name) => new Uint8Array(readFileSync(resolve(dir, `${name}.png`)));
+  const { byName, canonicalized } = canonicalizeSourceTextures(document, available, loadSource);
   const made = [];
   const resetsMade = [];
   for (const material of document.getRoot().listMaterials()) {
@@ -286,18 +315,9 @@ function applyRepairs(document, item) {
     const repairs = planRepairs(slots, available);
     if (repairs.length === 0) continue;
     for (const repair of repairs) {
-      let origin = 'document';
-      let texture = byName.get(repair.to);
-      if (!texture) {
-        texture = document
-          .createTexture(repair.to)
-          .setMimeType('image/png')
-          .setImage(new Uint8Array(readFileSync(resolve(dir, `${repair.to}.png`))));
-        byName.set(repair.to, texture);
-        origin = 'source PNG';
-      }
+      const { texture, created } = getOrCreateSourceTexture(document, byName, repair.to, loadSource);
       SLOT_SETTERS[repair.slot](material, texture);
-      made.push({ ...repair, file: item.file, material: slots.name, origin });
+      made.push({ ...repair, file: item.file, material: slots.name, origin: created ? 'source PNG' : 'canonical source PNG' });
     }
     // A slot the exporter left empty also carries a factor that would multiply the repaired texture
     // away: baseColorFactor [0,0,0,0] renders the garment black, metallic and roughness at 0 render
@@ -307,7 +327,7 @@ function applyRepairs(document, item) {
       resetsMade.push({ ...reset, file: item.file, material: slots.name });
     }
   }
-  return { repairs: made, resets: resetsMade };
+  return { repairs: made, resets: resetsMade, canonicalized };
 }
 
 const SLOT_SETTERS = {
@@ -376,6 +396,10 @@ async function resizeTextures(document, set, floorTextures, mannequinTextures, i
       floor: floorTextures.has(texture),
       mannequin: mannequinTextures.has(texture),
       staticNormal: isStaticFile(item.file) && slots.length > 0 && slots.every((slot) => /normal/i.test(slot)),
+      // A mannequin normal keeps its established cap. Only look-garment normals receive the
+      // tighter budget cap, and only when no material uses that map outside a normal slot.
+      garmentNormal: Boolean(item.look) && !mannequinTextures.has(texture) &&
+        slots.length > 0 && slots.every((slot) => /normal/i.test(slot)),
     });
     const target = targetSize(size, cap);
     if (!needsResize(size, target)) continue;

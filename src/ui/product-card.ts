@@ -1,5 +1,5 @@
-// The product card: the panel that names the look on the plinth, describes it, carries the four
-// actions (Rotate, Audio, Reset, Material) and offers the mannequin swatches. It is a dumb view:
+// The product card: the panel that names the look on the plinth, describes it, carries the three
+// actions (Rotate, Reset, Material) and offers the mannequin swatches. It is a dumb view:
 // every action leaves through ProductCardActions and every state change arrives through the
 // handle, so the chrome module stays the one place that talks to the showroom.
 
@@ -10,8 +10,6 @@ import type { CatalogLook } from '../catalog/catalog';
 export interface ProductCardActions {
   /** Toggles the turntable. */
   rotate(): void;
-  /** Stub until the audio files are wired: the card starts with the button disabled. */
-  audio(): void;
   reset(): void;
   /** A swatch was clicked, with the variant's name. */
   material(name: string): void;
@@ -31,7 +29,6 @@ export interface ProductCardHandle {
   setVariant(name: string | null): void;
   /** The Rotate button reads aria-pressed. */
   setRotating(on: boolean): void;
-  setAudioAvailable(on: boolean): void;
   dispose(): void;
 }
 
@@ -83,12 +80,9 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
 
   const rotateButton = action('Rotate', 'rotate');
   rotateButton.dataset.tooltip = 'Turn the look';
-  const audioButton = action('Audio', 'audio');
-  audioButton.dataset.tooltip = 'Play audio description';
   const resetButton = action('Reset', 'reset');
   resetButton.dataset.tooltip = 'Reset camera and mannequin';
-  // Material opens the swatch row when it is collapsed; the row starts open, matching the Unreal
-  // still, so the button is mostly the guarantee the row can always be reached.
+  // Material toggles the swatch row; the row starts open, matching the Unreal still and UI-1 contract.
   const materialButton = action('Material', 'material');
   materialButton.dataset.tooltip = 'Show mannequin swatches';
   materialButton.setAttribute('aria-controls', swatchesId);
@@ -116,13 +110,6 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
     },
     { signal },
   );
-  audioButton.addEventListener(
-    'click',
-    () => {
-      options.actions.audio();
-    },
-    { signal },
-  );
   resetButton.addEventListener(
     'click',
     () => {
@@ -133,16 +120,17 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
   materialButton.addEventListener(
     'click',
     () => {
-      // Open-only by design: the button is titled after a tray that opens, not a toggle.
-      setSwatchesCollapsed(false);
+      setSwatchesCollapsed(!swatchesCollapsed);
     },
     { signal },
   );
 
   /** The swatch buttons of the current look, by variant name. */
   let swatchButtons = new Map<string, HTMLButtonElement>();
+  let swatchesCollapsed = false;
 
   function setSwatchesCollapsed(collapsed: boolean): void {
+    swatchesCollapsed = collapsed;
     swatches.hidden = collapsed;
     materialButton.setAttribute('aria-expanded', String(!collapsed));
   }
@@ -282,9 +270,6 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
     },
     setRotating(on: boolean): void {
       rotateButton.setAttribute('aria-pressed', String(on));
-    },
-    setAudioAvailable(on: boolean): void {
-      audioButton.disabled = !on;
     },
     dispose(): void {
       listeners.abort();

@@ -14,13 +14,22 @@ export const root = resolve(here, '..');
 export const blenderExe = 'C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe';
 
 /** KTX-Software 4.4.2. toktx from @gltf-transform/cli shells out to `ktx`, so this is prepended to PATH. */
-export const ktxBin = 'C:\\Program Files\\KTX-Software\\bin';
+export const ktxBin = process.env.FR_KTX_BIN ?? 'C:\\Program Files\\KTX-Software\\bin';
 
-/** Unreal Engine 5.8, the version the FashionRotunda project is associated with. */
-export const unrealEditorCmd = 'C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor-Cmd.exe';
+/** Unreal Engine 5.8, overridable when its commandlet executable is installed elsewhere. */
+export const unrealEditorCmd = resolve(
+  process.env.FR_UNREAL_EDITOR_CMD ??
+    'C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor-Cmd.exe',
+);
 
-/** The user's Unreal project, read only: the export scripts run inside it and write outside it. */
-export const unrealProject = 'C:\\Users\\User\\Documents\\Unreal Projects\\FashionRotunda\\FashionRotunda.uproject';
+/**
+ * The authoritative Unreal project.  A developer may override this without editing a tracked file,
+ * and the default is the relocated source checked on this machine.
+ * The export launcher treats it as read-only.
+ */
+export const unrealProject = resolve(
+  process.env.FR_UNREAL_PROJECT ?? 'C:\\Users\\User\\Documents\\Unreal Projects\\FashionRotunda\\FashionRotunda.uproject',
+);
 
 /**
  * ffmpeg 8.1.1, the gyan.dev full build installed through winget, with libopus and the native aac

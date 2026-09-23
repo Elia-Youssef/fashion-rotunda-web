@@ -1,6 +1,7 @@
 /* Mode switch UI for Orbit and Walk cameras. */
 
 .archviz-mode-switch {
+  position: relative;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -11,6 +12,29 @@
   padding: var(--space-1, 0.25rem);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+}
+
+.archviz-walk-hint {
+  position: fixed;
+  top: calc(var(--header-height, 3.5rem) + var(--safe-area-top, 0px) + var(--space-2, 0.5rem));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-overlay, 30);
+  width: min(28rem, calc(100vw - 2 * var(--space-3, 0.75rem)));
+  margin: 0;
+  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+  color: var(--text, #ffffff);
+  background: var(--surface-raised, rgba(18, 22, 28, 0.88));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.15));
+  border-radius: var(--radius-2, 6px);
+  box-shadow: var(--shadow-card, 0 8px 24px rgba(0, 0, 0, 0.3));
+  font-size: var(--type-sm, 0.75rem);
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.archviz-walk-hint[hidden] {
+  display: none;
 }
 
 .archviz-mode-button {

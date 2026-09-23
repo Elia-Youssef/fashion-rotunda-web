@@ -1,23 +1,26 @@
 import { expect, test } from '@playwright/test';
 
 // The loss notice is the page's answer to a GPU that disappears mid-session. WEBGL_lose_context exists
-// on WebGL only, so this check runs in the webgl2 project; the WebGPU arm is covered by the unit test
-// that calls the installed handler directly (tests/unit/renderer-create.test.ts). The G0.3 audit found
-// the notice missing under exactly this check, so it stays in the gate.
-test('shows the loss notice with a reload button when the WebGL context is lost', async ({ page }) => {
+// on WebGL only, so this check runs in the webgl2 project. It deliberately loses the device while the
+// ENTRY-3 veil is frozen black: that is the hard case in which both the lobby retry and page-level
+// Reload recovery must remain operable without exposing an unready scene.
+test('fails closed and keeps reload recovery operable when WebGL is lost during black-hold', async ({ page }) => {
   test.skip(test.info().project.name !== 'webgl2', 'WEBGL_lose_context is a WebGL extension');
 
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
-  await page.goto('/?webgl=1');
-  await expect(page.locator('canvas#scene')).toHaveAttribute('data-backend', 'webgl2', {
-    timeout: 30_000,
-  });
+  await page.goto('/?webgl=1&e2e=1&gate=on&freeze=black-hold');
+  const lobby = page.locator('#entry-lobby');
+  const veil = page.locator('#scene-veil');
+  const canvas = page.locator('canvas#scene');
+  await lobby.locator('#lobby-load-btn').click();
+  await expect(canvas).toHaveAttribute('data-backend', 'webgl2', { timeout: 60_000 });
+  await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
 
   await page.evaluate(() => {
-    const canvas = document.querySelector('canvas#scene');
-    const context = canvas instanceof HTMLCanvasElement ? canvas.getContext('webgl2') : null;
+    const scene = document.querySelector('canvas#scene');
+    const context = scene instanceof HTMLCanvasElement ? scene.getContext('webgl2') : null;
     const extension = context?.getExtension('WEBGL_lose_context');
     if (!extension) {
       throw new Error('WEBGL_lose_context is not available on the page canvas');
@@ -27,6 +30,18 @@ test('shows the loss notice with a reload button when the WebGL context is lost'
 
   const notice = page.locator('[role="alert"]');
   await expect(notice).toHaveCount(1);
-  await expect(notice.getByRole('button', { name: 'Reload' })).toBeVisible();
+  const reload = notice.getByRole('button', { name: 'Reload' });
+  await expect(reload).toBeVisible();
+  await expect(lobby).toHaveAttribute('data-state', 'error');
+  await expect(veil).toBeHidden();
+  await expect(lobby.getByRole('button', { name: 'RETRY LOADING' })).toBeVisible();
+
+  // The page-level Reload is the supported device-loss recovery. Prove it is clickable even while
+  // the formerly-black transition surface has failed closed, then prove the fresh page returns to
+  // the entry lobby rather than exposing a dead scene.
+  const navigated = page.waitForEvent('framenavigated');
+  await reload.click();
+  await navigated;
+  await expect(page.locator('#entry-lobby')).toHaveAttribute('data-state', 'idle');
   expect(pageErrors, 'no uncaught page errors during the loss').toHaveLength(0);
 });

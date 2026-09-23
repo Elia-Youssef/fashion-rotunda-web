@@ -158,6 +158,9 @@ describe('snapshot', () => {
       gpu: { p50: 8.2, p95: 14.5, available: true },
       lookSwitchMs: 250,
       post: 'ao,traa',
+      governor: 'level=ssgi-half;activity=cooldown;eligible=1;cooldown=4200;patience=0/2;qualify=3200/10000;p95=12.7;budget=16.7;threshold=13.36',
+      governorLog:
+        '[{"direction":"down","from":"full","to":"ssgi-half","p95Ms":19.4,"budgetMs":16.7,"atMs":1042.1,"reason":"p95 19.4 ms > 16.7 ms"}]',
     });
     expect(snap).toEqual({
       loadMs: 50,
@@ -175,8 +178,37 @@ describe('snapshot', () => {
       lookSwitchMs: 250,
       gpu: { p50: 8.2, p95: 14.5, available: true },
       post: 'ao,traa',
+      governor: 'level=ssgi-half;activity=cooldown;eligible=1;cooldown=4200;patience=0/2;qualify=3200/10000;p95=12.7;budget=16.7;threshold=13.36',
+      governorLog:
+        '[{"direction":"down","from":"full","to":"ssgi-half","p95Ms":19.4,"budgetMs":16.7,"atMs":1042.1,"reason":"p95 19.4 ms > 16.7 ms"}]',
       cacheState: 'cold',
     });
+  });
+
+  it('matrix 27: the governor fields bridge the committed canvas attributes into the snapshot', async () => {
+    const marks = await loadMarks();
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([]);
+    marks.markFirstFrame(() => 50);
+    const snap = marks.snapshot({
+      info: { render: { drawCalls: 1, triangles: 2 } },
+      backend: 'webgpu',
+      tier: 'high',
+      pixelRatio: 1,
+      renderScale: 1,
+      gpuName: 'Test GPU',
+      frames: new FrameTimes(),
+      gpu: { p50: null, p95: null, available: true },
+      lookSwitchMs: null,
+      post: 'ao,traa,ssgi,ssr',
+      governor: 'level=no-ssgi;activity=recovery-qualifying;eligible=1;cooldown=0;patience=0/2;qualify=6800/10000;p95=10.2;budget=16.7;threshold=13.36',
+      governorLog: '[]',
+    });
+    // The snapshot carries exactly what the composition root read off the canvas, so the panel
+    // and the e2e suite see one committed source.
+    expect(snap.governor).toContain('level=no-ssgi');
+    expect(snap.governor).toContain('activity=recovery-qualifying');
+    expect(snap.governor).toContain('threshold=13.36');
+    expect(snap.governorLog).toBe('[]');
   });
 
   it('reads null loadMs before the mark and passes null lookSwitchMs and gpu', async () => {

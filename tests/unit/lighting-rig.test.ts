@@ -1,329 +1,544 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CANDELA_RANGE,
+  DAYLIGHT_RANGE,
   DEFAULT_RIG,
   EXPOSURE_RANGE,
-  INDIRECT_DISTANCE_M,
+  daylightParameters,
+  daylightSun,
+  hexToLinearRgb,
   intensityScale,
+  kelvinToHex,
+  kelvinTintToHex,
+  linearRgbToHex,
+  normalizeHexColor,
   parseRig,
   serializeRig,
   skyIntensity,
+  srgbToLinear,
   sunDirection,
+  updateDaylight,
   updateExposure,
   updateLight,
 } from '../../src/lighting/rig';
-import type { Rig, RigLight } from '../../src/lighting/rig';
-import { CANDELA_RANGE, KELVIN_RANGE, SUN_ANGLE_RANGE, SUN_LUX_RANGE } from '../../src/lighting/units';
+import { kelvinToRgb } from '../../src/lighting/units';
+import type { Rig, RigLight, RigStudioLightId } from '../../src/lighting/rig';
 
-function light(rig: Rig, id: RigLight['id']): RigLight {
+function studioLight(rig: Rig, id: RigStudioLightId): RigLight {
   const found = rig.lights.find((entry) => entry.id === id);
   if (!found) throw new Error(`no light ${id} in the rig`);
   return found;
 }
 
-// Every expected number below is the Unreal value from assets-src/source/unreal/lights.json converted by
-// hand: centimetres divided by 100, and the Unreal (x, y, z) read out as three's (x, z, y).
 describe('DEFAULT_RIG', () => {
-  it('carries the seven lights in panel order', () => {
-    expect(DEFAULT_RIG.lights.map((entry) => entry.id)).toEqual([
-      'top',
-      'key',
-      'fill',
-      'back',
-      'indirect',
-      'sun',
-      'sky',
-    ]);
-    expect(DEFAULT_RIG.lights.map((entry) => entry.label)).toEqual([
-      'TopLight',
-      'KeyLight',
-      'FillLight',
-      'BackLight',
-      'IndirectLight',
-      'Sun',
-      'Sky',
-    ]);
+  it('carries exactly three studio lights: Key, Fill, Back', () => {
+    expect(DEFAULT_RIG.lights.map((entry) => entry.id)).toEqual(['key', 'fill', 'back']);
+    expect(DEFAULT_RIG.lights.map((entry) => entry.label)).toEqual(['KeyLight', 'FillLight', 'BackLight']);
   });
 
-  it('starts at exposure 1, ready to be tuned', () => {
+  it('contains zero Top or Indirect lights in the active rig', () => {
+    const ids = DEFAULT_RIG.lights.map((entry) => entry.id);
+    expect(ids).not.toContain('top');
+    expect(ids).not.toContain('indirect');
+  });
+
+  it('starts at daylight 0.5 (neutral Day) and exposure 1', () => {
+    expect(DEFAULT_RIG.daylight).toBe(0.5);
     expect(DEFAULT_RIG.exposure).toBe(1);
   });
 
-  it('puts TopLight at 0, 6, 0 metres: 25 cd, 6500 K, a 4 m square facing straight down', () => {
-    const top = light(DEFAULT_RIG, 'top');
-    expect(top.kind).toBe('rect');
-    expect(top.on).toBe(true);
-    expect(top.intensity).toBe(25);
-    expect(top.kelvin).toBe(6500);
-    expect(top.position?.[0]).toBeCloseTo(0, 9);
-    expect(top.position?.[1]).toBeCloseTo(6, 9);
-    expect(top.position?.[2]).toBeCloseTo(0, 9);
-    expect(top.size).toEqual([4, 4]);
-    expect(top.direction?.[1]).toBeCloseTo(-1, 9);
-    expect(top.castShadow).toBe(false);
+  it('provides candela intensity scale for rect lights', () => {
+    expect(intensityScale('rect')).toEqual({ range: CANDELA_RANGE, step: 0.5, unit: 'cd' });
   });
 
-  it('puts KeyLight at 2, 2.8, -2 metres: 15 cd, 4500 K, 0.6 by 0.9, aimed down and inward', () => {
-    const key = light(DEFAULT_RIG, 'key');
+  it('puts KeyLight at [2, 2.8, -2] metres: 15 cd, #bcc8bd, aimed down and inward', () => {
+    const key = studioLight(DEFAULT_RIG, 'key');
+    expect(key.kind).toBe('rect');
     expect(key.on).toBe(true);
     expect(key.intensity).toBe(15);
-    expect(key.kelvin).toBe(4500);
-    expect(key.position?.[0]).toBeCloseTo(2, 9);
-    expect(key.position?.[1]).toBeCloseTo(2.8, 9);
-    expect(key.position?.[2]).toBeCloseTo(-2, 9);
-    expect(key.size?.[0]).toBeCloseTo(0.6, 9);
-    expect(key.size?.[1]).toBeCloseTo(0.9, 9);
-    // Unreal forward (-0.645974, 0.645974, -0.406737) read as three (x, z, y).
-    expect(key.direction?.[0]).toBeCloseTo(-0.645974, 6);
-    expect(key.direction?.[1]).toBeCloseTo(-0.406737, 6);
-    expect(key.direction?.[2]).toBeCloseTo(0.645974, 6);
+    expect(key.color).toBe('#bcc8bd');
+    expect(key.position?.[0]).toBeCloseTo(2, 6);
+    expect(key.position?.[1]).toBeCloseTo(2.8, 6);
+    expect(key.position?.[2]).toBeCloseTo(-2, 6);
+    expect(key.size?.[0]).toBeCloseTo(0.6, 6);
+    expect(key.size?.[1]).toBeCloseTo(0.9, 6);
+    expect(key.direction?.[0]).toBeCloseTo(-0.645974, 5);
+    expect(key.direction?.[1]).toBeCloseTo(-0.406737, 5);
+    expect(key.direction?.[2]).toBeCloseTo(0.645974, 5);
+    expect(key.castShadow).toBe(false);
   });
 
-  it('puts FillLight at -2.15, 2.8, -2.3 metres and starts it off, as the level does', () => {
-    const fill = light(DEFAULT_RIG, 'fill');
+  it('puts FillLight at [-2.15, 2.8, -2.3] metres: 7 cd, #b3dbff, starting off', () => {
+    const fill = studioLight(DEFAULT_RIG, 'fill');
+    expect(fill.kind).toBe('rect');
     expect(fill.on).toBe(false);
     expect(fill.intensity).toBe(7);
-    expect(fill.kelvin).toBe(7000);
-    expect(fill.position?.[0]).toBeCloseTo(-2.15, 9);
-    expect(fill.position?.[1]).toBeCloseTo(2.8, 9);
-    expect(fill.position?.[2]).toBeCloseTo(-2.3, 9);
+    expect(fill.color).toBe('#b3dbff');
+    expect(fill.position?.[0]).toBeCloseTo(-2.15, 6);
+    expect(fill.position?.[1]).toBeCloseTo(2.8, 6);
+    expect(fill.position?.[2]).toBeCloseTo(-2.3, 6);
     expect(fill.size).toEqual([1.5, 1.5]);
+    expect(fill.castShadow).toBe(false);
   });
 
-  it('puts BackLight at 0.05, 3, 3.3 metres and starts it off, as the level does', () => {
-    const back = light(DEFAULT_RIG, 'back');
+  it('puts BackLight at [0.05, 3, 3.3] metres: 7 cd, #bce1ff, starting off', () => {
+    const back = studioLight(DEFAULT_RIG, 'back');
+    expect(back.kind).toBe('rect');
     expect(back.on).toBe(false);
     expect(back.intensity).toBe(7);
-    expect(back.kelvin).toBe(6500);
-    expect(back.position?.[0]).toBeCloseTo(0.05, 9);
-    expect(back.position?.[1]).toBeCloseTo(3, 9);
-    expect(back.position?.[2]).toBeCloseTo(3.3, 9);
-    expect(back.direction?.[1]).toBeCloseTo(-0.406737, 6);
-    expect(back.direction?.[2]).toBeCloseTo(-0.913545, 6);
+    expect(back.color).toBe('#bce1ff');
+    expect(back.position?.[0]).toBeCloseTo(0.05, 6);
+    expect(back.position?.[1]).toBeCloseTo(3, 6);
+    expect(back.position?.[2]).toBeCloseTo(3.3, 6);
+    expect(back.size).toEqual([1.5, 1.5]);
+    expect(back.castShadow).toBe(false);
+  });
+});
+
+describe('Daylight and Atmosphere Coordination', () => {
+  it('reproduces authoritative Unreal reference values at the default reference anchor (d = 0.5)', () => {
+    const ref = daylightParameters(0.5);
+    expect(ref.angleDeg).toBeCloseTo(130.4829, 3);
+    expect(ref.intensity).toBe(7.0);
+    expect(ref.kelvin).toBe(7000);
+    expect(ref.color).toBe('#f3f8ff');
+    expect(ref.skyIntensity).toBe(2.0);
+    expect(ref.backgroundIntensity).toBe(0.25);
+    expect(ref.exposure).toBe(1.0);
+
+    // Direction matches the established web conversion of Unreal sun forward
+    expect(ref.direction[0]).toBeCloseTo(0.6387, 3);
+    expect(ref.direction[1]).toBeCloseTo(-0.7606, 3);
+    expect(ref.direction[2]).toBeCloseTo(-0.1162, 3);
   });
 
-  it('rings IndirectLight with eight point lights at 6.57 m, 5 cd, 5000 K', () => {
-    const indirect = light(DEFAULT_RIG, 'indirect');
-    expect(indirect.kind).toBe('point');
-    expect(indirect.on).toBe(true);
-    expect(indirect.intensity).toBe(5);
-    expect(indirect.kelvin).toBe(5000);
-    expect(indirect.members).toHaveLength(8);
-    expect(indirect.position?.[1]).toBeCloseTo(6.57, 9);
-    for (const member of indirect.members ?? []) {
-      expect(member[1]).toBeCloseTo(6.57, 9);
+  it('coordinates sun intensity, color, sky, and exposure across [0, 1]', () => {
+    const min = daylightParameters(0.0);
+    const ref = daylightParameters(0.5);
+    const max = daylightParameters(1.0);
+
+    // Sun intensity increases smoothly: 2.0 -> 7.0 -> 12.0 lux
+    expect(min.intensity).toBe(2.0);
+    expect(ref.intensity).toBe(7.0);
+    expect(max.intensity).toBe(12.0);
+
+    // Color temperature: warm 4000 K -> neutral 7000 K -> crisp 7500 K
+    expect(min.kelvin).toBe(4000);
+    expect(min.color).toBe('#ffd9a6');
+    expect(ref.kelvin).toBe(7000);
+    expect(ref.color).toBe('#f3f8ff');
+    expect(max.kelvin).toBe(7500);
+    expect(max.color).toBe('#eaf2ff');
+
+    // Sky ambient increases more gently than direct sun: 1.0 -> 2.0 -> 2.6
+    expect(min.skyIntensity).toBe(1.0);
+    expect(ref.skyIntensity).toBe(2.0);
+    expect(max.skyIntensity).toBe(2.6);
+
+    // Background intensity is visually related: 0.15 -> 0.25 -> 0.30
+    expect(min.backgroundIntensity).toBe(0.15);
+    expect(ref.backgroundIntensity).toBe(0.25);
+    expect(max.backgroundIntensity).toBe(0.30);
+
+    // Coordinated exposure prevents highlight clipping: 1.10 -> 1.00 -> 0.90
+    expect(min.exposure).toBe(1.10);
+    expect(ref.exposure).toBe(1.00);
+    expect(max.exposure).toBe(0.90);
+  });
+
+  it('maintains strict monotonicity and continuity across [0, 1]', () => {
+    let prevIntensity = -1;
+    let prevKelvin = -1;
+    let prevSky = -1;
+    let prevBg = -1;
+    let prevExposure = 999;
+
+    for (let step = 0; step <= 20; step += 1) {
+      const d = step / 20;
+      const params = daylightParameters(d);
+
+      expect(Number.isFinite(params.intensity)).toBe(true);
+      expect(Number.isFinite(params.kelvin)).toBe(true);
+      expect(Number.isFinite(params.skyIntensity)).toBe(true);
+      expect(Number.isFinite(params.backgroundIntensity)).toBe(true);
+      expect(Number.isFinite(params.exposure)).toBe(true);
+
+      expect(params.intensity).toBeGreaterThanOrEqual(prevIntensity);
+      expect(params.kelvin).toBeGreaterThanOrEqual(prevKelvin);
+      expect(params.skyIntensity).toBeGreaterThanOrEqual(prevSky);
+      expect(params.backgroundIntensity).toBeGreaterThanOrEqual(prevBg);
+      expect(params.exposure).toBeLessThanOrEqual(prevExposure);
+
+      expect(params.exposure).toBeGreaterThanOrEqual(0.90);
+      expect(params.exposure).toBeLessThanOrEqual(1.10);
+
+      prevIntensity = params.intensity;
+      prevKelvin = params.kelvin;
+      prevSky = params.skyIntensity;
+      prevBg = params.backgroundIntensity;
+      prevExposure = params.exposure;
     }
-    // Members 1, 3 and 6, the three the axis mapping was pinned against in lighting-units.test.ts.
-    expect(indirect.members?.[0][0]).toBeCloseTo(0, 9);
-    expect(indirect.members?.[0][2]).toBeCloseTo(7.11, 9);
-    expect(indirect.members?.[2][0]).toBeCloseTo(-7.128, 9);
-    expect(indirect.members?.[2][2]).toBeCloseTo(0, 9);
-    expect(indirect.members?.[5][0]).toBeCloseTo(5.03629166, 9);
-    expect(indirect.members?.[5][2]).toBeCloseTo(-5.0362887, 9);
-    // The ring is not a perfect circle in the level and is kept as authored.
-    const radii = (indirect.members ?? []).map((member) => Math.hypot(member[0], member[2]));
-    expect(Math.min(...radii)).toBeCloseTo(7.11, 6);
-    expect(Math.max(...radii)).toBeCloseTo(7.128, 6);
-    expect(INDIRECT_DISTANCE_M).toBe(10);
+
+    // No discontinuity around reference anchor
+    const justBefore = daylightParameters(0.499);
+    const justAfter = daylightParameters(0.501);
+    const anchor = daylightParameters(0.5);
+    expect(justBefore.intensity).toBeCloseTo(anchor.intensity, 1);
+    expect(justAfter.intensity).toBeCloseTo(anchor.intensity, 1);
+    expect(justBefore.exposure).toBeCloseTo(anchor.exposure, 2);
+    expect(justAfter.exposure).toBeCloseTo(anchor.exposure, 2);
   });
 
-  it('sets the sun to 7 lux, 7000 K, on the arc where the Unreal sun already stands', () => {
-    const sun = light(DEFAULT_RIG, 'sun');
-    expect(sun.kind).toBe('sun');
-    expect(sun.intensity).toBe(7);
-    expect(sun.kelvin).toBe(7000);
-    expect(sun.castShadow).toBe(true);
-    // Unreal pitch -49.517 degrees, so 49.517 above the horizon on the far side: 180 - 49.517.
-    expect(sun.sunAngleDeg).toBeCloseTo(130.483, 3);
-    // Unreal forward (0.638741, -0.116178, -0.7606) read as three (x, z, y). The angle is stored to three
-    // decimals so a URL round trips exactly, which costs 1e-5 against the raw export.
-    expect(sun.direction?.[0]).toBeCloseTo(0.638741, 4);
-    expect(sun.direction?.[1]).toBeCloseTo(-0.7606, 4);
-    expect(sun.direction?.[2]).toBeCloseTo(-0.116178, 4);
+  it('normalizes out-of-range, NaN, and Infinity inputs safely', () => {
+    const under = daylightParameters(-10);
+    expect(under).toEqual(daylightParameters(0.0));
+
+    const over = daylightParameters(10);
+    expect(over).toEqual(daylightParameters(1.0));
+
+    const nan = daylightParameters(Number.NaN);
+    expect(nan).toEqual(daylightParameters(0.5));
+
+    const posInf = daylightParameters(Number.POSITIVE_INFINITY);
+    expect(posInf).toEqual(daylightParameters(1.0));
+
+    const negInf = daylightParameters(Number.NEGATIVE_INFINITY);
+    expect(negInf).toEqual(daylightParameters(0.0));
   });
 
-  it('carries the sky as a scale with no position and no direction', () => {
-    const sky = light(DEFAULT_RIG, 'sky');
-    expect(sky.kind).toBe('sky');
-    expect(sky.on).toBe(true);
-    expect(sky.intensity).toBe(2);
-    expect(sky.position).toBeUndefined();
-    expect(sky.direction).toBeUndefined();
+  it('is completely deterministic and idempotent without state accumulation', () => {
+    const first = daylightParameters(0.35);
+    const second = daylightParameters(0.35);
+    expect(first).toEqual(second);
+
+    // Repeated updateDaylight preserves idempotence
+    let rig = DEFAULT_RIG;
+    rig = updateDaylight(rig, 0.2);
+    rig = updateDaylight(rig, 0.8);
+    rig = updateDaylight(rig, 0.5);
+    expect(rig.daylight).toBe(0.5);
+    expect(rig.exposure).toBe(1.0);
   });
 
-  it('is frozen, so nothing downstream can edit the default out from under the rest', () => {
-    expect(Object.isFrozen(DEFAULT_RIG)).toBe(true);
-    expect(Object.isFrozen(DEFAULT_RIG.lights)).toBe(true);
-    expect(Object.isFrozen(light(DEFAULT_RIG, 'top'))).toBe(true);
+  it('daylightSun returns consistent parameters matching daylightParameters', () => {
+    const sun = daylightSun(0.5);
+    expect(sun).toEqual(daylightParameters(0.5));
   });
 
-  it('holds only values its own controls could have produced', () => {
-    for (const entry of DEFAULT_RIG.lights) {
-      const scale = intensityScale(entry.kind);
-      expect(entry.intensity).toBeGreaterThanOrEqual(scale.range[0]);
-      expect(entry.intensity).toBeLessThanOrEqual(scale.range[1]);
-      expect(entry.kelvin).toBeGreaterThanOrEqual(KELVIN_RANGE[0]);
-      expect(entry.kelvin).toBeLessThanOrEqual(KELVIN_RANGE[1]);
+  it('skyIntensity reads the rig daylight property', () => {
+    expect(skyIntensity(DEFAULT_RIG)).toBe(2.0);
+    const minRig = updateDaylight(DEFAULT_RIG, 0.0);
+    expect(skyIntensity(minRig)).toBe(1.0);
+    const maxRig = updateDaylight(DEFAULT_RIG, 1.0);
+    expect(skyIntensity(maxRig)).toBe(2.6);
+  });
+
+  it('sunDirection produces unit vectors for any valid degree', () => {
+    for (const deg of [0, 15, 45, 90, 130.483, 135, 180]) {
+      const dir = sunDirection(deg);
+      const len = Math.hypot(dir[0], dir[1], dir[2]);
+      expect(len).toBeCloseTo(1, 6);
+    }
+  });
+
+  it('isolates the three-point studio rig: daylight sweeps never alter Key, Fill, or Rim', () => {
+    for (const d of [0.0, 0.1, 0.5, 0.9, 1.0]) {
+      const rig = updateDaylight(DEFAULT_RIG, d);
+      expect(studioLight(rig, 'key')).toEqual(studioLight(DEFAULT_RIG, 'key'));
+      expect(studioLight(rig, 'fill')).toEqual(studioLight(DEFAULT_RIG, 'fill'));
+      expect(studioLight(rig, 'back')).toEqual(studioLight(DEFAULT_RIG, 'back'));
+      expect(rig.lights.every((l) => l.castShadow === false)).toBe(true);
     }
   });
 });
 
-describe('sunDirection', () => {
-  it('shines straight down from the zenith at 90 degrees', () => {
-    const direction = sunDirection(90);
-    expect(direction[0]).toBeCloseTo(0, 9);
-    expect(direction[1]).toBeCloseTo(-1, 9);
-    expect(direction[2]).toBeCloseTo(0, 9);
+describe('Immutable Rig Operations', () => {
+  it('updateLight updates on, intensity, and color immutably', () => {
+    const updated = updateLight(DEFAULT_RIG, 'key', {
+      on: false,
+      intensity: 22.5,
+      color: '#ff00aa',
+    });
+
+    expect(updated).not.toBe(DEFAULT_RIG);
+    expect(updated.lights).not.toBe(DEFAULT_RIG.lights);
+    const key = studioLight(updated, 'key');
+    expect(key.on).toBe(false);
+    expect(key.intensity).toBe(22.5);
+    expect(key.color).toBe('#ff00aa');
+
+    // Untouched lights preserved
+    expect(studioLight(updated, 'fill')).toEqual(studioLight(DEFAULT_RIG, 'fill'));
+    expect(studioLight(updated, 'back')).toEqual(studioLight(DEFAULT_RIG, 'back'));
   });
 
-  it('shines horizontally at both ends of the arc, from opposite sides', () => {
-    const east = sunDirection(SUN_ANGLE_RANGE[0]);
-    const west = sunDirection(SUN_ANGLE_RANGE[1]);
-    expect(east[1]).toBeCloseTo(0, 9);
-    expect(west[1]).toBeCloseTo(0, 9);
-    expect(east[0]).toBeCloseTo(-west[0], 9);
-    expect(east[2]).toBeCloseTo(-west[2], 9);
-    // 0 is the east end, so the light travels west from it: its x is negative.
-    expect(east[0]).toBeLessThan(0);
+  it('clamps intensity to CANDELA_RANGE', () => {
+    const under = updateLight(DEFAULT_RIG, 'key', { intensity: -10 });
+    expect(studioLight(under, 'key').intensity).toBe(CANDELA_RANGE[0]);
+
+    const over = updateLight(DEFAULT_RIG, 'key', { intensity: 100 });
+    expect(studioLight(over, 'key').intensity).toBe(CANDELA_RANGE[1]);
   });
 
-  it('returns a unit vector at every angle and clamps outside the arc', () => {
-    for (let angle = -90; angle <= 270; angle += 5) {
-      const direction = sunDirection(angle);
-      expect(Math.hypot(direction[0], direction[1], direction[2])).toBeCloseTo(1, 9);
-      expect(direction[1]).toBeLessThanOrEqual(1e-12);
+  it('normalizes NaN and Infinity intensity to finite bounds, never negative', () => {
+    const nan = updateLight(DEFAULT_RIG, 'key', { intensity: Number.NaN });
+    expect(studioLight(nan, 'key').intensity).toBe(CANDELA_RANGE[0]);
+
+    const positiveInfinity = updateLight(DEFAULT_RIG, 'key', { intensity: Number.POSITIVE_INFINITY });
+    expect(studioLight(positiveInfinity, 'key').intensity).toBe(CANDELA_RANGE[1]);
+
+    const negativeInfinity = updateLight(DEFAULT_RIG, 'key', { intensity: Number.NEGATIVE_INFINITY });
+    expect(studioLight(negativeInfinity, 'key').intensity).toBe(CANDELA_RANGE[0]);
+
+    // Zero stays a valid control value, not a fallback
+    const zero = updateLight(DEFAULT_RIG, 'key', { intensity: 0 });
+    expect(studioLight(zero, 'key').intensity).toBe(0);
+  });
+
+  it('keeps disabled lights retaining their configured intensity and color', () => {
+    // Fill and Back default off but hold authored intensity and color in state
+    const fill = studioLight(DEFAULT_RIG, 'fill');
+    expect(fill.on).toBe(false);
+    expect(fill.intensity).toBe(7);
+    expect(fill.color).toBe('#b3dbff');
+    const back = studioLight(DEFAULT_RIG, 'back');
+    expect(back.on).toBe(false);
+    expect(back.intensity).toBe(7);
+    expect(back.color).toBe('#bce1ff');
+
+    // Toggling does not destructively reset anything: enabling restores retained values
+    const fillOn = updateLight(DEFAULT_RIG, 'fill', { on: true });
+    expect(studioLight(fillOn, 'fill').on).toBe(true);
+    expect(studioLight(fillOn, 'fill').intensity).toBe(7);
+    expect(studioLight(fillOn, 'fill').color).toBe('#b3dbff');
+
+    // Customized values survive an off/on round trip
+    let rig = updateLight(DEFAULT_RIG, 'back', { on: true, intensity: 12.5, color: '#123456' });
+    rig = updateLight(rig, 'back', { on: false });
+    rig = updateLight(rig, 'back', { on: true });
+    const restored = studioLight(rig, 'back');
+    expect(restored.on).toBe(true);
+    expect(restored.intensity).toBe(12.5);
+    expect(restored.color).toBe('#123456');
+  });
+
+  it('updateDaylight clamps to [0, 1]', () => {
+    const min = updateDaylight(DEFAULT_RIG, -0.5);
+    expect(min.daylight).toBe(DAYLIGHT_RANGE[0]);
+
+    const max = updateDaylight(DEFAULT_RIG, 2.5);
+    expect(max.daylight).toBe(DAYLIGHT_RANGE[1]);
+  });
+
+  it('updateExposure clamps to EXPOSURE_RANGE', () => {
+    const low = updateExposure(DEFAULT_RIG, 0.01);
+    expect(low.exposure).toBe(EXPOSURE_RANGE[0]);
+
+    const high = updateExposure(DEFAULT_RIG, 20);
+    expect(high.exposure).toBe(EXPOSURE_RANGE[1]);
+  });
+});
+
+describe('Color Helpers', () => {
+  it('normalizes hex strings correctly', () => {
+    expect(normalizeHexColor('#FFF')).toBe('#ffffff');
+    expect(normalizeHexColor('abc')).toBe('#aabbcc');
+    expect(normalizeHexColor('#FF1122')).toBe('#ff1122');
+    expect(normalizeHexColor('invalid', '#000000')).toBe('#000000');
+  });
+
+  it('converts kelvin to expected authored hex codes', () => {
+    expect(kelvinToHex(4500)).toBe('#ffe3bd');
+    expect(kelvinToHex(7000)).toBe('#f3f8ff');
+    expect(kelvinToHex(6500)).toBe('#ffffff');
+  });
+
+  it('round-trips hex and linear RGB', () => {
+    const linear = hexToLinearRgb('#ffe3bd');
+    expect(linear[0]).toBeCloseTo(1, 2);
+    expect(linearRgbToHex(linear)).toBe('#ffe3bd');
+  });
+});
+
+describe('Authored tint combination (Kelvin x RGB 188,225,255)', () => {
+  // The authored sRGB gel every studio rect light carries in the Unreal level.
+  const TINT = [188 / 255, 225 / 255, 255 / 255] as const;
+
+  it('stores kelvinToRgb(K) x srgbToLinear(tint) for each studio light, read back through hexToLinearRgb', () => {
+    for (const [id, kelvin] of [
+      ['key', 4500],
+      ['fill', 7000],
+      ['back', 6500],
+    ] as const) {
+      const stored = studioLight(DEFAULT_RIG, id).color;
+      const expectedLinear = [
+        kelvinToRgb(kelvin)[0] * srgbToLinear(TINT[0]),
+        kelvinToRgb(kelvin)[1] * srgbToLinear(TINT[1]),
+        kelvinToRgb(kelvin)[2] * srgbToLinear(TINT[2]),
+      ];
+      const readBack = hexToLinearRgb(stored);
+      expect(readBack[0]).toBeCloseTo(expectedLinear[0], 2);
+      expect(readBack[1]).toBeCloseTo(expectedLinear[1], 2);
+      expect(readBack[2]).toBeCloseTo(expectedLinear[2], 2);
+      for (const channel of readBack) {
+        expect(Number.isFinite(channel)).toBe(true);
+      }
     }
   });
-});
 
-describe('updateLight', () => {
-  it('returns a new rig and leaves the old one untouched', () => {
-    const next = updateLight(DEFAULT_RIG, 'key', { kelvin: 5000 });
-    expect(next).not.toBe(DEFAULT_RIG);
-    expect(light(next, 'key').kelvin).toBe(5000);
-    expect(light(DEFAULT_RIG, 'key').kelvin).toBe(4500);
+  it('pins all three combined default hex values', () => {
+    expect(studioLight(DEFAULT_RIG, 'key').color).toBe('#bcc8bd');
+    expect(studioLight(DEFAULT_RIG, 'fill').color).toBe('#b3dbff');
+    expect(studioLight(DEFAULT_RIG, 'back').color).toBe('#bce1ff');
   });
 
-  it('shares the lights it did not touch, so a change costs one object', () => {
-    const next = updateLight(DEFAULT_RIG, 'key', { on: false });
-    expect(light(next, 'top')).toBe(light(DEFAULT_RIG, 'top'));
-    expect(light(next, 'key')).not.toBe(light(DEFAULT_RIG, 'key'));
+  it('makes Back exactly the authored gel because 6500 K is the white balance', () => {
+    // kelvinToRgb(6500) is exactly (1, 1, 1), so the combined color is the tint itself.
+    expect(kelvinTintToHex(6500)).toBe('#bce1ff');
+    expect(kelvinTintToHex(6500, [255, 255, 255])).toBe('#ffffff');
   });
 
-  it('clamps intensity to the range for that kind of light', () => {
-    expect(light(updateLight(DEFAULT_RIG, 'top', { intensity: 999 }), 'top').intensity).toBe(
-      CANDELA_RANGE[1],
-    );
-    expect(light(updateLight(DEFAULT_RIG, 'top', { intensity: -5 }), 'top').intensity).toBe(
-      CANDELA_RANGE[0],
-    );
-    expect(light(updateLight(DEFAULT_RIG, 'sun', { intensity: 999 }), 'sun').intensity).toBe(
-      SUN_LUX_RANGE[1],
-    );
+  it('differs from kelvin-only colors: the tint is applied, and only once', () => {
+    for (const [id, kelvin] of [
+      ['key', 4500],
+      ['fill', 7000],
+    ] as const) {
+      const combined = studioLight(DEFAULT_RIG, id).color;
+      expect(combined).not.toBe(kelvinToHex(kelvin));
+      expect(combined).toBe(kelvinTintToHex(kelvin));
+      // Applying the tint a second time on top of the stored color must be a different
+      // color, so a compounded double application would be detectable.
+      const twice = linearRgbToHex([
+        hexToLinearRgb(combined)[0] * srgbToLinear(TINT[0]),
+        hexToLinearRgb(combined)[1] * srgbToLinear(TINT[1]),
+        hexToLinearRgb(combined)[2] * srgbToLinear(TINT[2]),
+      ]);
+      expect(twice).not.toBe(combined);
+    }
   });
 
-  it('clamps temperature to the panel range', () => {
-    expect(light(updateLight(DEFAULT_RIG, 'key', { kelvin: 100 }), 'key').kelvin).toBe(KELVIN_RANGE[0]);
-    expect(light(updateLight(DEFAULT_RIG, 'key', { kelvin: 99000 }), 'key').kelvin).toBe(KELVIN_RANGE[1]);
+  it('is deterministic: repeated derivation and serialization round-trips do not drift', () => {
+    expect(kelvinTintToHex(4500)).toBe(kelvinTintToHex(4500));
+    const roundTripped = parseRig(serializeRig(DEFAULT_RIG), DEFAULT_RIG);
+    expect(studioLight(roundTripped, 'key').color).toBe(studioLight(DEFAULT_RIG, 'key').color);
+    expect(studioLight(roundTripped, 'fill').color).toBe(studioLight(DEFAULT_RIG, 'fill').color);
+    expect(studioLight(roundTripped, 'back').color).toBe(studioLight(DEFAULT_RIG, 'back').color);
   });
 
-  it('recomputes the sun direction whenever the angle moves', () => {
-    const next = updateLight(DEFAULT_RIG, 'sun', { sunAngleDeg: 90 });
-    const sun = light(next, 'sun');
-    expect(sun.sunAngleDeg).toBe(90);
-    expect(sun.direction?.[1]).toBeCloseTo(-1, 9);
-  });
+  it('rejects non-finite tint channels and clamps each channel to [0, 1]', () => {
+    // At the 6500 K white balance, the Kelvin contribution is exactly white, so these pins expose
+    // the per-channel tint normalization directly. Non-finite channels collapse to zero.
+    expect(kelvinTintToHex(6500, [Number.NaN, 225, 255])).toBe('#00e1ff');
+    expect(kelvinTintToHex(6500, [188, Number.POSITIVE_INFINITY, 255])).toBe('#bc00ff');
+    expect(kelvinTintToHex(6500, [188, 225, Number.NEGATIVE_INFINITY])).toBe('#bce100');
 
-  it('ignores a direction written straight onto the sun: the angle is the one source of truth', () => {
-    const next = updateLight(DEFAULT_RIG, 'sun', { direction: [1, 0, 0] });
-    expect(light(next, 'sun').direction).toEqual(light(DEFAULT_RIG, 'sun').direction);
-  });
-
-  it('changes nothing when the patch is empty', () => {
-    const next = updateLight(DEFAULT_RIG, 'top', {});
-    expect(next.lights).toEqual(DEFAULT_RIG.lights);
-  });
-});
-
-describe('updateExposure', () => {
-  it('replaces the exposure and clamps it', () => {
-    expect(updateExposure(DEFAULT_RIG, 1.8).exposure).toBe(1.8);
-    expect(updateExposure(DEFAULT_RIG, 500).exposure).toBe(EXPOSURE_RANGE[1]);
-    expect(updateExposure(DEFAULT_RIG, 0).exposure).toBe(EXPOSURE_RANGE[0]);
-    expect(updateExposure(DEFAULT_RIG, 1.8).lights).toBe(DEFAULT_RIG.lights);
+    // Out-of-range channels clamp: 300 -> 1 and -20 -> 0
+    expect(kelvinTintToHex(6500, [300, -20, 255])).toBe('#ff00ff');
+    // Non-finite kelvin is normalized by kelvinToRgb's own clamp, output stays valid.
+    expect(kelvinTintToHex(Number.NaN)).toMatch(/^#[0-9a-f]{6}$/);
   });
 });
 
-describe('skyIntensity', () => {
-  it('is the sky entry when it is on', () => {
-    expect(skyIntensity(DEFAULT_RIG)).toBe(2);
-  });
-
-  it('is zero when the sky is off, so switching it off removes the environment light', () => {
-    expect(skyIntensity(updateLight(DEFAULT_RIG, 'sky', { on: false }))).toBe(0);
-  });
-});
-
-describe('intensityScale', () => {
-  it('states candela for the rect and point lights, lux for the sun, a scale for the sky', () => {
-    expect(intensityScale('rect')).toEqual({ range: CANDELA_RANGE, step: 0.5, unit: 'cd' });
-    expect(intensityScale('point')).toEqual({ range: CANDELA_RANGE, step: 0.5, unit: 'cd' });
-    expect(intensityScale('sun')).toEqual({ range: SUN_LUX_RANGE, step: 0.5, unit: 'lx' });
-    expect(intensityScale('sky')).toEqual({ range: [0, 4], step: 0.1, unit: 'scale' });
-  });
-});
-
-describe('serializeRig and parseRig', () => {
-  it('writes the default rig as one URL safe line', () => {
-    expect(serializeRig(DEFAULT_RIG)).toBe(
-      'v1;top,1,25,6500;key,1,15,4500;fill,0,7,7000;back,0,7,6500;indirect,1,5,5000;' +
-        'sun,1,7,7000,130.483;sky,1,2,6500;e,1',
-    );
-  });
-
-  it('uses only characters a query string carries unescaped', () => {
+describe('Serialization and Backward Compatibility Migration', () => {
+  it('serializes to v2 format with hex without #', () => {
     const text = serializeRig(DEFAULT_RIG);
-    expect(encodeURIComponent(text).replace(/%2C/g, ',').replace(/%3B/g, ';')).toBe(text);
+    expect(text.startsWith('v2;')).toBe(true);
+    expect(text).toContain('key,1,15,bcc8bd');
+    expect(text).toContain('fill,0,7,b3dbff');
+    expect(text).toContain('back,0,7,bce1ff');
+    expect(text).toContain('day,0.5');
+    // Exposure is omitted when equal to default
+    expect(text).not.toContain(';e,');
+    // Ensure no '#' in serialized rig for safe query string usage
+    expect(text).not.toContain('#');
   });
 
-  it('round trips a rig that every control has been moved on', () => {
-    let rig = updateLight(DEFAULT_RIG, 'top', { on: false, intensity: 12.5, kelvin: 3000 });
-    rig = updateLight(rig, 'fill', { on: true, intensity: 0.5 });
-    rig = updateLight(rig, 'sun', { sunAngleDeg: 42.125, intensity: 19.5 });
-    rig = updateLight(rig, 'sky', { intensity: 3.7 });
-    rig = updateExposure(rig, 1.25);
-    expect(parseRig(serializeRig(rig), DEFAULT_RIG)).toEqual(rig);
+  it('omits exposure e on DEFAULT_RIG but includes e when exposure differs from default', () => {
+    const defaultText = serializeRig(DEFAULT_RIG);
+    expect(defaultText).not.toContain(';e,');
+
+    // Daylight change coordinates exposure to 0.93 (at d = 0.85)
+    const daylightChanged = updateDaylight(DEFAULT_RIG, 0.85);
+    const daylightText = serializeRig(daylightChanged);
+    expect(daylightText).toContain('day,0.85;e,0.93');
+
+    // Manual exposure change
+    const manualExposure = updateExposure(DEFAULT_RIG, 1.25);
+    const manualText = serializeRig(manualExposure);
+    expect(manualText).toContain('day,0.5;e,1.25');
+
+    // Both round-trip cleanly through parseRig
+    const parsedDaylight = parseRig(daylightText, DEFAULT_RIG);
+    expect(parsedDaylight.daylight).toBe(0.85);
+    expect(parsedDaylight.exposure).toBe(0.93);
+
+    const parsedManual = parseRig(manualText, DEFAULT_RIG);
+    expect(parsedManual.daylight).toBe(0.5);
+    expect(parsedManual.exposure).toBe(1.25);
   });
 
-  it('keeps the positions, sizes and ring from the base rig rather than the text', () => {
-    const parsed = parseRig(serializeRig(DEFAULT_RIG), DEFAULT_RIG);
-    expect(light(parsed, 'indirect').members).toEqual(light(DEFAULT_RIG, 'indirect').members);
-    expect(light(parsed, 'key').size).toEqual(light(DEFAULT_RIG, 'key').size);
+  it('round-trips customized rigs cleanly in v2 format', () => {
+    let rig = updateLight(DEFAULT_RIG, 'key', { on: false, intensity: 30, color: '#112233' });
+    rig = updateLight(rig, 'fill', { on: true, intensity: 12.5, color: '#445566' });
+    rig = updateDaylight(rig, 0.85);
+
+    const serialized = serializeRig(rig);
+    const parsed = parseRig(serialized, DEFAULT_RIG);
+
+    expect(studioLight(parsed, 'key').on).toBe(false);
+    expect(studioLight(parsed, 'key').intensity).toBe(30);
+    expect(studioLight(parsed, 'key').color).toBe('#112233');
+
+    expect(studioLight(parsed, 'fill').on).toBe(true);
+    expect(studioLight(parsed, 'fill').intensity).toBe(12.5);
+    expect(studioLight(parsed, 'fill').color).toBe('#445566');
+
+    expect(parsed.daylight).toBe(0.85);
+    expect(parsed.exposure).toBe(0.93);
   });
 
-  it('returns the base rig untouched for anything it cannot read', () => {
-    for (const text of ['', 'v2;top,1,25,6500', 'nonsense', '{"lights":[]}']) {
-      expect(parseRig(text, DEFAULT_RIG)).toBe(DEFAULT_RIG);
-    }
+  it('explicitly migrates legacy v1 rigs without error', () => {
+    const v1Text =
+      'v1;top,1,25,6500;key,1,18,4500;fill,1,10,7000;back,0,7,6500;indirect,1,5,5000;sun,1,7,7000,130.483;sky,1,2,6500;e,1';
+
+    const migrated = parseRig(v1Text, DEFAULT_RIG);
+
+    // Key, Fill, Back migrated
+    expect(studioLight(migrated, 'key').intensity).toBe(18);
+    expect(studioLight(migrated, 'key').color).toBe('#ffe3bd');
+
+    expect(studioLight(migrated, 'fill').on).toBe(true);
+    expect(studioLight(migrated, 'fill').intensity).toBe(10);
+    expect(studioLight(migrated, 'fill').color).toBe('#f3f8ff');
+
+    // Sun angle (130.483) mapped to daylight
+    expect(migrated.daylight).toBeCloseTo((130.483 - 15) / 150, 2);
+
+    // Rig has exactly 3 studio lights
+    expect(migrated.lights).toHaveLength(3);
+    expect(migrated.lights.map((l) => l.id)).toEqual(['key', 'fill', 'back']);
   });
 
-  it('takes what it can from a damaged line and leaves the rest at the base value', () => {
-    const parsed = parseRig('v1;top,0,40;ghost,1,9,9;key,x,banana,5500;e,', DEFAULT_RIG);
-    expect(light(parsed, 'top').on).toBe(false);
-    expect(light(parsed, 'top').intensity).toBe(40);
-    // The temperature field is missing, so the base value stands.
-    expect(light(parsed, 'top').kelvin).toBe(6500);
-    // A flag that is neither 0 nor 1 and an intensity that is not a number both fall back.
-    expect(light(parsed, 'key').on).toBe(true);
-    expect(light(parsed, 'key').intensity).toBe(15);
-    expect(light(parsed, 'key').kelvin).toBe(5500);
-    expect(parsed.exposure).toBe(1);
+  it('never reinterprets removed Top or Indirect lights from v1 as other lights', () => {
+    // A v1 rig with modified top and indirect lights
+    const v1Text =
+      'v1;top,0,0,2700;key,1,15,4500;fill,0,7,7000;back,0,7,6500;indirect,0,0,2700;sun,1,7,7000,90;sky,1,2,6500;e,1';
+
+    const migrated = parseRig(v1Text, DEFAULT_RIG);
+
+    // Key, Fill, Back must NOT have inherited top or indirect values
+    expect(studioLight(migrated, 'key').intensity).toBe(15);
+    expect(studioLight(migrated, 'key').on).toBe(true);
+    expect(studioLight(migrated, 'fill').intensity).toBe(7);
+    expect(studioLight(migrated, 'back').intensity).toBe(7);
+
+    // No top or indirect exists in the resulting rig
+    expect(migrated.lights.some((l) => (l.id as string) === 'top')).toBe(false);
+    expect(migrated.lights.some((l) => (l.id as string) === 'indirect')).toBe(false);
   });
 
-  it('clamps a hand edited URL instead of trusting it', () => {
-    const parsed = parseRig('v1;top,1,900,90000;sun,1,7,7000,900;e,99', DEFAULT_RIG);
-    expect(light(parsed, 'top').intensity).toBe(CANDELA_RANGE[1]);
-    expect(light(parsed, 'top').kelvin).toBe(KELVIN_RANGE[1]);
-    expect(light(parsed, 'sun').sunAngleDeg).toBe(SUN_ANGLE_RANGE[1]);
-    expect(parsed.exposure).toBe(EXPOSURE_RANGE[1]);
+  it('returns base rig on malformed or empty inputs', () => {
+    expect(parseRig('', DEFAULT_RIG)).toBe(DEFAULT_RIG);
+    expect(parseRig('unknown-format;abc', DEFAULT_RIG)).toBe(DEFAULT_RIG);
   });
 });

@@ -6,7 +6,8 @@
 // The optimize pass writes meshopt-compressed geometry, so the reader registers the meshopt decoder:
 // without it every optimized file reads as an error. The summary line ends with the four checks the
 // output has to pass, so the answer is readable without scrolling: KTX2 on every texture, meshopt
-// present, instancing on the rotunda, KHR_materials_specular gone, variants on every look.
+// present, instancing on the rotunda, authored KHR_materials_specular values retained, variants on
+// every look.
 
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
@@ -91,17 +92,28 @@ async function inspect(file) {
     light: node.getExtension('KHR_lights_punctual') ? node.getExtension('KHR_lights_punctual').getType() : null,
     camera: node.getCamera() ? true : false,
   }));
-  const materials = root.listMaterials().map((material) => ({
-    name: material.getName(),
-    baseColor: material.getBaseColorTexture()?.getName() ?? null,
-    metallicRoughness: material.getMetallicRoughnessTexture()?.getName() ?? null,
-    normal: material.getNormalTexture()?.getName() ?? null,
-    occlusion: material.getOcclusionTexture()?.getName() ?? null,
-    emissive: material.getEmissiveTexture()?.getName() ?? null,
-    alphaMode: material.getAlphaMode(),
-    doubleSided: material.getDoubleSided(),
-    extensions: material.listExtensions().map((extension) => extension.extensionName),
-  }));
+  const materials = root.listMaterials().map((material) => {
+    const specular = material.getExtension('KHR_materials_specular');
+    return {
+      name: material.getName(),
+      baseColor: material.getBaseColorTexture()?.getName() ?? null,
+      metallicRoughness: material.getMetallicRoughnessTexture()?.getName() ?? null,
+      normal: material.getNormalTexture()?.getName() ?? null,
+      occlusion: material.getOcclusionTexture()?.getName() ?? null,
+      emissive: material.getEmissiveTexture()?.getName() ?? null,
+      alphaMode: material.getAlphaMode(),
+      doubleSided: material.getDoubleSided(),
+      specular: specular
+        ? {
+            factor: specular.getSpecularFactor(),
+            color: specular.getSpecularColorFactor(),
+            texture: specular.getSpecularTexture()?.getName() ?? null,
+            colorTexture: specular.getSpecularColorTexture()?.getName() ?? null,
+          }
+        : null,
+      extensions: material.listExtensions().map((extension) => extension.extensionName),
+    };
+  });
   const textures = root.listTextures().map((texture) => ({
     name: texture.getName(),
     mime: texture.getMimeType(),
@@ -149,7 +161,9 @@ async function inspect(file) {
       ktx2: `${textures.filter((texture) => texture.mime === 'image/ktx2').length}/${textures.length}`,
       meshopt: extensionsUsed.includes('EXT_meshopt_compression'),
       instancing: instanced,
-      specular: extensionsUsed.includes('KHR_materials_specular'),
+      specular: materials
+        .filter((material) => material.specular !== null)
+        .map((material) => ({ name: material.name, ...material.specular })),
       variants,
     },
     detail: { nodes, meshes, materials, textures, instanced },
@@ -186,7 +200,9 @@ if (asJson) {
     const instancing = result.checks.instancing.length
       ? result.checks.instancing.map((batch) => `${batch.mesh} x${batch.count}`).join(', ')
       : 'none';
-    const specular = result.checks.specular ? 'PRESENT' : 'absent';
+    const specular = result.checks.specular.length
+      ? result.checks.specular.map((material) => `${material.name || '(unnamed)'}=${material.factor}`).join(', ')
+      : 'absent';
     console.log(
       `    checks: ktx2 ${result.checks.ktx2}, meshopt ${result.checks.meshopt ? 'yes' : 'no'}, ` +
         `instancing ${instancing}, KHR_materials_specular ${specular}, ` +
@@ -200,6 +216,7 @@ if (asJson) {
       console.log(
         `    material ${material.name || '(unnamed)'} base=${material.baseColor ?? '-'} mr=${material.metallicRoughness ?? '-'} ` +
           `n=${material.normal ?? '-'} ao=${material.occlusion ?? '-'} ${material.alphaMode}${material.doubleSided ? ' 2s' : ''}` +
+          `${material.specular ? ` specular=${material.specular.factor}` : ''}` +
           `${material.extensions.length ? ' ' + material.extensions.join(',') : ''}`,
       );
     }

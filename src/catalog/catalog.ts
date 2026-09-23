@@ -10,7 +10,6 @@ export interface CatalogLook {
   description: string;
   thumbnail: string | null;
   file: string;
-  audio: string | null;
   variants: string[];
   defaultVariant: string;
   mannequinNode: string;
@@ -112,7 +111,6 @@ function readLook(value: unknown, path: string): CatalogLook {
     description: readString(look.get('description'), `${path}.description`),
     thumbnail: readNullableString(look.get('thumbnail'), `${path}.thumbnail`),
     file: readString(look.get('file'), `${path}.file`),
-    audio: readNullableString(look.get('audio'), `${path}.audio`),
     variants,
     defaultVariant,
     mannequinNode: readString(look.get('mannequinNode'), `${path}.mannequinNode`),

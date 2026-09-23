@@ -1,5 +1,5 @@
 {
-  "generated": "2026-09-20T20:18:10Z",
+  "generated": "2026-09-23T07:35:21Z",
   "sets": {
     "full": {
       "files": {
@@ -16,7 +16,7 @@
           "largestNonFloorTexture": 0
         },
         "looks/blue-silk-dress.glb": {
-          "bytes": 2109612,
+          "bytes": 2210352,
           "triangles": 116099,
           "meshes": 3,
           "nodes": 6,
@@ -45,12 +45,12 @@
             },
             {
               "name": "T_BlueSilk_Dress_NM",
-              "width": 2048,
-              "height": 2048,
+              "width": 1024,
+              "height": 1024,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 1238,
-              "gpuBytes": 5591007,
+              "bytes": 101672,
+              "gpuBytes": 1397752,
               "floor": false
             },
             {
@@ -134,12 +134,12 @@
               "floor": false
             }
           ],
-          "gpuBytes": 14501676,
+          "gpuBytes": 10308421,
           "largestTexture": 2048,
           "largestNonFloorTexture": 2048
         },
         "looks/geoffrey-beene.glb": {
-          "bytes": 3890596,
+          "bytes": 4105772,
           "triangles": 336973,
           "meshes": 2,
           "nodes": 4,
@@ -168,12 +168,12 @@
             },
             {
               "name": "T_GeoffryBeene_Dress_NM",
-              "width": 2048,
-              "height": 2048,
+              "width": 1024,
+              "height": 1024,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 1313,
-              "gpuBytes": 5591007,
+              "bytes": 216255,
+              "gpuBytes": 1397752,
               "floor": false
             },
             {
@@ -247,12 +247,12 @@
               "floor": false
             }
           ],
-          "gpuBytes": 16773023,
+          "gpuBytes": 12579768,
           "largestTexture": 2048,
           "largestNonFloorTexture": 2048
         },
         "looks/jumpsuit-dress.glb": {
-          "bytes": 2307652,
+          "bytes": 2361860,
           "triangles": 126906,
           "meshes": 2,
           "nodes": 4,
@@ -261,12 +261,12 @@
           "textures": [
             {
               "name": "T_JumpSuit_Dress_NM",
-              "width": 2048,
-              "height": 2048,
+              "width": 1024,
+              "height": 1024,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 1313,
-              "gpuBytes": 5591007,
+              "bytes": 55213,
+              "gpuBytes": 1397752,
               "floor": false
             },
             {
@@ -340,12 +340,12 @@
               "floor": false
             }
           ],
-          "gpuBytes": 13278643,
+          "gpuBytes": 9085388,
           "largestTexture": 2048,
           "largestNonFloorTexture": 2048
         },
         "looks/mondrian-dress.glb": {
-          "bytes": 2246764,
+          "bytes": 2840536,
           "triangles": 71469,
           "meshes": 2,
           "nodes": 4,
@@ -358,18 +358,18 @@
               "height": 2048,
               "format": "ktx2-etc1s",
               "colorSpace": "linear",
-              "bytes": 1844,
+              "bytes": 202166,
               "gpuBytes": 2795504,
               "floor": false
             },
             {
               "name": "T_Mondrian_Dress_NM",
-              "width": 2048,
-              "height": 2048,
+              "width": 1024,
+              "height": 1024,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 1313,
-              "gpuBytes": 5591007,
+              "bytes": 394391,
+              "gpuBytes": 1397752,
               "floor": false
             },
             {
@@ -443,12 +443,12 @@
               "floor": false
             }
           ],
-          "gpuBytes": 16074147,
+          "gpuBytes": 11880892,
           "largestTexture": 2048,
           "largestNonFloorTexture": 2048
         },
         "looks/new-look-dress.glb": {
-          "bytes": 3170780,
+          "bytes": 3462204,
           "triangles": 320111,
           "meshes": 2,
           "nodes": 4,
@@ -467,12 +467,12 @@
             },
             {
               "name": "T_NewLook_Dress_NM",
-              "width": 2048,
-              "height": 2048,
+              "width": 1024,
+              "height": 1024,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 1313,
-              "gpuBytes": 5591007,
+              "bytes": 292426,
+              "gpuBytes": 1397752,
               "floor": false
             },
             {
@@ -536,12 +536,12 @@
               "floor": false
             }
           ],
-          "gpuBytes": 13278643,
+          "gpuBytes": 9085388,
           "largestTexture": 2048,
           "largestNonFloorTexture": 2048
         },
         "looks/wallis-dress.glb": {
-          "bytes": 3250932,
+          "bytes": 3696288,
           "triangles": 322001,
           "meshes": 2,
           "nodes": 4,
@@ -560,12 +560,12 @@
             },
             {
               "name": "T_Wallis_Dress_NM",
-              "width": 2048,
-              "height": 2048,
+              "width": 1024,
+              "height": 1024,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 1313,
-              "gpuBytes": 5591007,
+              "bytes": 446354,
+              "gpuBytes": 1397752,
               "floor": false
             },
             {
@@ -639,12 +639,12 @@
               "floor": false
             }
           ],
-          "gpuBytes": 14676395,
+          "gpuBytes": 10483140,
           "largestTexture": 2048,
           "largestNonFloorTexture": 2048
         },
         "looks/zoot-suit.glb": {
-          "bytes": 4922068,
+          "bytes": 4608196,
           "triangles": 155453,
           "meshes": 3,
           "nodes": 6,
@@ -667,18 +667,18 @@
               "height": 2048,
               "format": "ktx2-etc1s",
               "colorSpace": "linear",
-              "bytes": 1844,
+              "bytes": 278875,
               "gpuBytes": 2795504,
               "floor": false
             },
             {
               "name": "T_ZootSuit_Hat_ORM",
-              "width": 1024,
-              "height": 1024,
+              "width": 2048,
+              "height": 2048,
               "format": "ktx2-etc1s",
               "colorSpace": "linear",
-              "bytes": 1284,
-              "gpuBytes": 698876,
+              "bytes": 10141,
+              "gpuBytes": 2795504,
               "floor": false
             },
             {
@@ -687,7 +687,7 @@
               "height": 1024,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 912,
+              "bytes": 902961,
               "gpuBytes": 1397752,
               "floor": false
             },
@@ -753,12 +753,12 @@
             },
             {
               "name": "T_ZootSuit_NM",
-              "width": 2048,
-              "height": 2048,
+              "width": 1024,
+              "height": 1024,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 1981570,
-              "gpuBytes": 5591007,
+              "bytes": 479444,
+              "gpuBytes": 1397752,
               "floor": false
             },
             {
@@ -772,12 +772,12 @@
               "floor": false
             }
           ],
-          "gpuBytes": 20966279,
+          "gpuBytes": 18869652,
           "largestTexture": 2048,
           "largestNonFloorTexture": 2048
         },
         "plinth.glb": {
-          "bytes": 1126464,
+          "bytes": 1126560,
           "triangles": 422,
           "meshes": 1,
           "nodes": 1,
@@ -830,7 +830,7 @@
           "largestNonFloorTexture": 2048
         },
         "rotunda.glb": {
-          "bytes": 7095496,
+          "bytes": 7095696,
           "triangles": 69124,
           "meshes": 10,
           "nodes": 28,
@@ -1094,8 +1094,8 @@
         }
       },
       "totals": {
-        "bytes": 31798687,
-        "gpuBytes": 180834158,
+        "bytes": 33185787,
+        "gpuBytes": 153578001,
         "triangles": 1518558
       }
     },
@@ -1114,7 +1114,7 @@
           "largestNonFloorTexture": 0
         },
         "looks/blue-silk-dress.glb": {
-          "bytes": 1263888,
+          "bytes": 1303840,
           "triangles": 116099,
           "meshes": 3,
           "nodes": 6,
@@ -1143,12 +1143,12 @@
             },
             {
               "name": "T_BlueSilk_Dress_NM",
-              "width": 1024,
-              "height": 1024,
+              "width": 512,
+              "height": 512,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 845,
-              "gpuBytes": 1397752,
+              "bytes": 40483,
+              "gpuBytes": 349438,
               "floor": false
             },
             {
@@ -1232,12 +1232,12 @@
               "floor": false
             }
           ],
-          "gpuBytes": 4542694,
+          "gpuBytes": 3494380,
           "largestTexture": 1024,
           "largestNonFloorTexture": 1024
         },
         "looks/geoffrey-beene.glb": {
-          "bytes": 1269432,
+          "bytes": 1340216,
           "triangles": 119999,
           "meshes": 2,
           "nodes": 4,
@@ -1266,12 +1266,12 @@
             },
             {
               "name": "T_GeoffryBeene_Dress_NM",
-              "width": 1024,
-              "height": 1024,
+              "width": 512,
+              "height": 512,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 912,
-              "gpuBytes": 1397752,
+              "bytes": 71451,
+              "gpuBytes": 349438,
               "floor": false
             },
             {
@@ -1345,12 +1345,12 @@
               "floor": false
             }
           ],
-          "gpuBytes": 4717413,
+          "gpuBytes": 3669099,
           "largestTexture": 1024,
           "largestNonFloorTexture": 1024
         },
         "looks/jumpsuit-dress.glb": {
-          "bytes": 1224896,
+          "bytes": 1246196,
           "triangles": 119999,
           "meshes": 2,
           "nodes": 4,
@@ -1359,12 +1359,12 @@
           "textures": [
             {
               "name": "T_JumpSuit_Dress_NM",
-              "width": 1024,
-              "height": 1024,
+              "width": 512,
+              "height": 512,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 912,
-              "gpuBytes": 1397752,
+              "bytes": 21892,
+              "gpuBytes": 349438,
               "floor": false
             },
             {
@@ -1438,12 +1438,12 @@
               "floor": false
             }
           ],
-          "gpuBytes": 3319661,
+          "gpuBytes": 2271347,
           "largestTexture": 1024,
           "largestNonFloorTexture": 1024
         },
         "looks/mondrian-dress.glb": {
-          "bytes": 1120896,
+          "bytes": 1300452,
           "triangles": 71469,
           "meshes": 2,
           "nodes": 4,
@@ -1456,18 +1456,18 @@
               "height": 1024,
               "format": "ktx2-etc1s",
               "colorSpace": "linear",
-              "bytes": 1284,
+              "bytes": 70325,
               "gpuBytes": 698876,
               "floor": false
             },
             {
               "name": "T_Mondrian_Dress_NM",
-              "width": 1024,
-              "height": 1024,
+              "width": 512,
+              "height": 512,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 912,
-              "gpuBytes": 1397752,
+              "bytes": 111044,
+              "gpuBytes": 349438,
               "floor": false
             },
             {
@@ -1541,12 +1541,12 @@
               "floor": false
             }
           ],
-          "gpuBytes": 4018537,
+          "gpuBytes": 2970223,
           "largestTexture": 1024,
           "largestNonFloorTexture": 1024
         },
         "looks/new-look-dress.glb": {
-          "bytes": 1191428,
+          "bytes": 1248588,
           "triangles": 119998,
           "meshes": 2,
           "nodes": 4,
@@ -1565,12 +1565,12 @@
             },
             {
               "name": "T_NewLook_Dress_NM",
-              "width": 1024,
-              "height": 1024,
+              "width": 512,
+              "height": 512,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 912,
-              "gpuBytes": 1397752,
+              "bytes": 57760,
+              "gpuBytes": 349438,
               "floor": false
             },
             {
@@ -1634,12 +1634,12 @@
               "floor": false
             }
           ],
-          "gpuBytes": 3319661,
+          "gpuBytes": 2271347,
           "largestTexture": 1024,
           "largestNonFloorTexture": 1024
         },
         "looks/wallis-dress.glb": {
-          "bytes": 1245288,
+          "bytes": 1357080,
           "triangles": 119990,
           "meshes": 2,
           "nodes": 4,
@@ -1658,12 +1658,12 @@
             },
             {
               "name": "T_Wallis_Dress_NM",
-              "width": 1024,
-              "height": 1024,
+              "width": 512,
+              "height": 512,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 912,
-              "gpuBytes": 1397752,
+              "bytes": 112389,
+              "gpuBytes": 349438,
               "floor": false
             },
             {
@@ -1737,12 +1737,12 @@
               "floor": false
             }
           ],
-          "gpuBytes": 3669099,
+          "gpuBytes": 2620785,
           "largestTexture": 1024,
           "largestNonFloorTexture": 1024
         },
         "looks/zoot-suit.glb": {
-          "bytes": 1884100,
+          "bytes": 1805596,
           "triangles": 119993,
           "meshes": 3,
           "nodes": 6,
@@ -1765,7 +1765,7 @@
               "height": 1024,
               "format": "ktx2-etc1s",
               "colorSpace": "linear",
-              "bytes": 1284,
+              "bytes": 77004,
               "gpuBytes": 698876,
               "floor": false
             },
@@ -1775,18 +1775,18 @@
               "height": 1024,
               "format": "ktx2-etc1s",
               "colorSpace": "linear",
-              "bytes": 1284,
+              "bytes": 44798,
               "gpuBytes": 698876,
               "floor": false
             },
             {
               "name": "T_ZootSuit_Hat_NM",
-              "width": 1024,
-              "height": 1024,
+              "width": 512,
+              "height": 512,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 912,
-              "gpuBytes": 1397752,
+              "bytes": 196507,
+              "gpuBytes": 349438,
               "floor": false
             },
             {
@@ -1851,12 +1851,12 @@
             },
             {
               "name": "T_ZootSuit_NM",
-              "width": 1024,
-              "height": 1024,
+              "width": 512,
+              "height": 512,
               "format": "ktx2-uastc",
               "colorSpace": "linear",
-              "bytes": 479444,
-              "gpuBytes": 1397752,
+              "bytes": 85804,
+              "gpuBytes": 349438,
               "floor": false
             },
             {
@@ -1870,12 +1870,12 @@
               "floor": false
             }
           ],
-          "gpuBytes": 6814041,
+          "gpuBytes": 4717413,
           "largestTexture": 1024,
           "largestNonFloorTexture": 1024
         },
         "plinth.glb": {
-          "bytes": 361768,
+          "bytes": 361864,
           "triangles": 422,
           "meshes": 1,
           "nodes": 1,
@@ -1928,7 +1928,7 @@
           "largestNonFloorTexture": 1024
         },
         "rotunda.glb": {
-          "bytes": 2784480,
+          "bytes": 2784712,
           "triangles": 69124,
           "meshes": 10,
           "nodes": 28,
@@ -2192,8 +2192,8 @@
         }
       },
       "totals": {
-        "bytes": 14024499,
-        "gpuBytes": 48921320,
+        "bytes": 14426867,
+        "gpuBytes": 40534808,
         "triangles": 857093
       }
     }

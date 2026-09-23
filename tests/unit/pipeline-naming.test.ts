@@ -17,7 +17,7 @@ import {
 /** SRGB_PATTERN as @gltf-transform/functions defines it (dist/index.js:2481). */
 const LIBRARY_SRGB_PATTERN = /color|emissive|diffuse/i;
 
-/** Every slot name that can appear in the shipped files, after the specular strip. */
+/** Every slot name that can appear in the shipped files after material optimization. */
 const SHIPPED_SLOTS = [
   'baseColorTexture',
   'emissiveTexture',

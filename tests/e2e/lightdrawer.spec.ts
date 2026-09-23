@@ -1,0 +1,762 @@
+import { expect, test } from '@playwright/test';
+import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
+
+const SCENE_READY_TIMEOUT = 60_000;
+const SAFE_AREA = { top: 19, right: 23, bottom: 29, left: 17 } as const;
+const STUDIO_LIGHTS = ['key', 'fill', 'back'] as const;
+const VIEWPORTS = [
+  { name: 'desktop', width: 1440, height: 900, sheet: false },
+  { name: 'tablet', width: 820, height: 1180, sheet: false },
+  { name: 'phone', width: 390, height: 844, sheet: true },
+  { name: 'short-landscape', width: 844, height: 390, sheet: true },
+] as const;
+
+interface ErrorLog {
+  console: string[];
+  page: string[];
+}
+
+interface CanvasReading {
+  box: { x: number; y: number; width: number; height: number };
+  backing: { width: number; height: number };
+  backend: string | null;
+  tier: string | null;
+  scale: string | null;
+  look: string | null;
+  variant: string | null;
+  camera: string | null;
+  post: string | null;
+}
+
+function skipUnlessWebgl2(): void {
+  test.skip(test.info().project.name !== 'webgl2', 'DOM behavior is covered once on WebGL2');
+}
+
+function watchErrors(page: Page): ErrorLog {
+  const errors: ErrorLog = { console: [], page: [] };
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.console.push(message.text());
+  });
+  page.on('pageerror', (error) => errors.page.push(error.message));
+  return errors;
+}
+
+function expectNoErrors(errors: ErrorLog): void {
+  expect(errors.console, 'no console errors').toEqual([]);
+  expect(errors.page, 'no uncaught page errors').toEqual([]);
+}
+
+async function openScene(
+  page: Page,
+  path = '/?webgl=1&gate=off&e2e=1&proof=1&music=off',
+): Promise<Locator> {
+  await page.goto(path);
+  const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+  return canvas;
+}
+
+async function installSafeArea(page: Page): Promise<void> {
+  await page.evaluate((insets) => {
+    const root = document.documentElement;
+    root.style.setProperty('--safe-area-top', `${insets.top}px`);
+    root.style.setProperty('--safe-area-right', `${insets.right}px`);
+    root.style.setProperty('--safe-area-bottom', `${insets.bottom}px`);
+    root.style.setProperty('--safe-area-left', `${insets.left}px`);
+  }, SAFE_AREA);
+}
+
+async function canvasReading(canvas: Locator): Promise<CanvasReading> {
+  return canvas.evaluate((node) => {
+    const element = node as HTMLCanvasElement;
+    const rect = element.getBoundingClientRect();
+    return {
+      box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      backing: { width: element.width, height: element.height },
+      backend: element.dataset.backend ?? null,
+      tier: element.dataset.tier ?? null,
+      scale: element.dataset.scale ?? null,
+      look: element.dataset.look ?? null,
+      variant: element.dataset.variant ?? null,
+      camera: element.dataset.camera ?? null,
+      post: element.dataset.post ?? null,
+    };
+  });
+}
+
+async function assertHitAndSafe(
+  locator: Locator,
+  viewport: { width: number; height: number },
+  label: string,
+): Promise<void> {
+  await locator.scrollIntoViewIfNeeded();
+  const reading = await locator.evaluate((node) => {
+    const element = node as HTMLElement;
+    const rect = element.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    return {
+      rect: {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height,
+      },
+      hit: hit === element || element.contains(hit),
+      hitName: `${hit?.tagName ?? 'null'}#${(hit as HTMLElement | null)?.id ?? ''}.${String((hit as HTMLElement | null)?.className ?? '')}`,
+    };
+  });
+
+  expect(reading.rect.left, `${label}: clears left safe inset`).toBeGreaterThanOrEqual(
+    SAFE_AREA.left,
+  );
+  expect(reading.rect.top, `${label}: clears top safe inset`).toBeGreaterThanOrEqual(SAFE_AREA.top);
+  expect(reading.rect.right, `${label}: clears right safe inset`).toBeLessThanOrEqual(
+    viewport.width - SAFE_AREA.right,
+  );
+  expect(reading.rect.bottom, `${label}: clears bottom safe inset`).toBeLessThanOrEqual(
+    viewport.height - SAFE_AREA.bottom,
+  );
+  expect(reading.rect.width, `${label}: has a 44px pointer width`).toBeGreaterThanOrEqual(44);
+  expect(reading.rect.height, `${label}: has a 44px pointer height`).toBeGreaterThanOrEqual(44);
+  expect(reading.hit, `${label}: center belongs to the control; hit ${reading.hitName}`).toBe(true);
+}
+
+async function setNativeInput(locator: Locator, value: string): Promise<void> {
+  await locator.evaluate((node, next) => {
+    const input = node as HTMLInputElement;
+    input.value = next;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, value);
+}
+
+async function expectRigAndUrl(page: Page, expected: string): Promise<void> {
+  await expect
+    .poll(() => page.evaluate(() => window.archvizE2E?.rigState() ?? null), { timeout: 30_000 })
+    .toBe(expected);
+  await expect.poll(() => new URL(page.url()).searchParams.get('rig'), { timeout: 30_000 }).toBe(expected);
+}
+
+async function expectDefaultRigWithoutUrl(page: Page, expected: string): Promise<void> {
+  await expect
+    .poll(() => page.evaluate(() => window.archvizE2E?.rigState() ?? null), { timeout: 30_000 })
+    .toBe(expected);
+  await expect.poll(() => new URL(page.url()).searchParams.get('rig'), { timeout: 30_000 }).toBeNull();
+}
+
+async function proofDrawCalls(page: Page): Promise<number | null> {
+  return await page.evaluate(() => {
+    const term = [...document.querySelectorAll<HTMLElement>('.proof-panel__term')].find(
+      (node) => node.textContent === 'draw calls',
+    );
+    const match = term?.nextElementSibling?.textContent?.match(/^(\d+) calls$/);
+    return match === undefined || match === null ? null : Number(match[1]);
+  });
+}
+
+async function waitForIdle(page: Page, canvas: Locator): Promise<{ frames: number; attempts: number }> {
+  let previous = Number(await canvas.getAttribute('data-frames'));
+  for (let attempt = 1; attempt <= 15; attempt += 1) {
+    await page.waitForTimeout(1000);
+    const current = Number(await canvas.getAttribute('data-frames'));
+    if (current > 0 && current === previous) return { frames: current, attempts: attempt };
+    previous = current;
+  }
+  throw new Error(`render loop did not return to idle; last frame count ${previous}`);
+}
+
+async function newTouchPage(browser: Browser): Promise<{ context: BrowserContext; page: Page }> {
+  const context = await browser.newContext({
+    baseURL: 'http://localhost:4173',
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 1,
+    hasTouch: true,
+    isMobile: true,
+  });
+  return { context, page: await context.newPage() };
+}
+
+test.describe('UI-5: simplified Light Control drawer and rig', () => {
+  for (const viewport of VIEWPORTS) {
+    test(`closed/open contract and preservation at ${viewport.name} ${viewport.width}x${viewport.height}`, async ({
+      page,
+    }) => {
+      skipUnlessWebgl2();
+      const errors = watchErrors(page);
+      await page.setViewportSize(viewport);
+      const canvas = await openScene(page);
+      const toggle = page.locator('#shell-light-toggle');
+      const panel = page.locator('#shell-light-panel');
+      const before = await canvasReading(canvas);
+
+      await expect(toggle).toBeVisible();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      await expect(panel).toBeHidden();
+      expect(
+        await panel.locator('input').evaluateAll((inputs) =>
+          inputs.every((input) => !input.matches(':focus')),
+        ),
+      ).toBe(true);
+
+      await toggle.click();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(panel).toBeVisible();
+      await expect(panel.locator('[data-light]')).toHaveCount(4);
+      const after = await canvasReading(canvas);
+      expect(after, 'opening changes no canvas/runtime identity field').toEqual(before);
+
+      if (viewport.sheet) await page.locator('#shell-light-row .shell-sheet__close').click();
+      else await toggle.click();
+      await expect(panel).toBeHidden();
+      await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expectNoErrors(errors);
+    });
+  }
+
+  test('exact control census, labels, and removed-control absence', async ({ page }) => {
+    skipUnlessWebgl2();
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openScene(page);
+    await page.locator('#shell-light-toggle').click();
+    const panel = page.locator('#shell-light-panel');
+    await expect(panel.locator('.lightpanel__row')).toHaveCount(4);
+
+    for (const id of STUDIO_LIGHTS) {
+      const row = panel.locator(`[data-light="${id}"]`);
+      await expect(row).toBeVisible();
+      await expect(row.locator('.lightpanel__switch')).toHaveAttribute('type', 'checkbox');
+      await expect(row.locator('.lightpanel__range')).toHaveAttribute('min', '0');
+      await expect(row.locator('.lightpanel__range')).toHaveAttribute('max', '50');
+      await expect(row.locator('.lightpanel__value--intensity')).toContainText('cd');
+      await expect(row.locator('.lightpanel__color')).toHaveAttribute('type', 'color');
+      await expect(row.locator('.lightpanel__value--color')).toHaveText(/^#[0-9a-f]{6}$/);
+      for (const input of await row.locator('input').all()) {
+        const inputId = await input.getAttribute('id');
+        expect(inputId, `${id} input has an id`).toBeTruthy();
+        await expect(page.locator(`label[for="${inputId}"]`)).toHaveCount(1);
+      }
+    }
+
+    const daylight = panel.locator('[data-light="daylight"]');
+    await expect(daylight.locator('.lightpanel__range--daylight')).toHaveAttribute('min', '0');
+    await expect(daylight.locator('.lightpanel__range--daylight')).toHaveAttribute('max', '1');
+    await expect(daylight.locator('.lightpanel__range--daylight')).toHaveAttribute('step', '0.01');
+    for (const phase of ['Dawn', 'Day', 'Dusk']) {
+      await expect(daylight.locator('.lightpanel__guidance')).toContainText(phase);
+    }
+    for (const selector of [
+      '[data-light="top"]',
+      '[data-light="indirect"]',
+      '[data-light="sun"]',
+      '[data-light="sky"]',
+      '.lightpanel__select',
+      '[id*="kelvin"]',
+      '[id*="exposure"]',
+    ]) {
+      await expect(panel.locator(selector), `${selector} is absent`).toHaveCount(0);
+    }
+    expectNoErrors(errors);
+  });
+
+  for (const viewport of VIEWPORTS.filter((entry) => entry.sheet)) {
+    test(`safe-area, 44px and hit ownership for every control at ${viewport.width}x${viewport.height}`, async ({
+      page,
+    }) => {
+      skipUnlessWebgl2();
+      test.setTimeout(120_000);
+      const errors = watchErrors(page);
+      await page.setViewportSize(viewport);
+      await openScene(page);
+      await installSafeArea(page);
+      const toggle = page.locator('#shell-light-toggle');
+      await assertHitAndSafe(toggle, viewport, 'closed launcher');
+      await toggle.click();
+      const panel = page.locator('#shell-light-panel');
+      await expect(panel).toBeVisible();
+
+      const controls: Array<[string, Locator]> = [
+        ['close', page.locator('#shell-light-row .shell-sheet__close')],
+      ];
+      for (const id of STUDIO_LIGHTS) {
+        const row = panel.locator(`[data-light="${id}"]`);
+        controls.push(
+          [`${id} checkbox`, row.locator('.lightpanel__switch')],
+          [`${id} range`, row.locator('.lightpanel__range')],
+          [`${id} color`, row.locator('.lightpanel__color')],
+        );
+      }
+      controls.push(['daylight range', panel.locator('.lightpanel__range--daylight')]);
+      for (const [label, control] of controls) await assertHitAndSafe(control, viewport, label);
+
+      const scrollProof = await panel.evaluate((node) => {
+        const element = node as HTMLElement;
+        element.scrollTop = 0;
+        const first = element.scrollTop;
+        element.scrollTop = element.scrollHeight;
+        return {
+          first,
+          last: element.scrollTop,
+          maximum: element.scrollHeight - element.clientHeight,
+          internallyScrollable: element.scrollHeight > element.clientHeight,
+        };
+      });
+      if (scrollProof.internallyScrollable) {
+        expect(scrollProof.first, 'first internal scroll position').toBe(0);
+        expect(scrollProof.last, 'last internal scroll position').toBe(scrollProof.maximum);
+      }
+      await assertHitAndSafe(
+        panel.locator('[data-light="key"] .lightpanel__switch'),
+        viewport,
+        'first scrollable control',
+      );
+      await assertHitAndSafe(
+        panel.locator('.lightpanel__range--daylight'),
+        viewport,
+        'last scrollable control',
+      );
+      expectNoErrors(errors);
+    });
+  }
+
+  for (const viewport of VIEWPORTS.filter((entry) => entry.sheet)) {
+    test(`sheet modal semantics preserve rail, Look, and proof hit ownership at ${viewport.width}x${viewport.height}`, async ({
+      page,
+    }) => {
+      skipUnlessWebgl2();
+      test.setTimeout(120_000);
+      const errors = watchErrors(page);
+      await page.setViewportSize(viewport);
+      const canvas = await openScene(page);
+      await installSafeArea(page);
+
+      const rail = page.locator('#looks');
+      const firstRailControl = rail.locator('button').first();
+      const measure = page.locator('.proof-panel__measure');
+      const lightToggle = page.locator('#shell-light-toggle');
+      const lookToggle = page.locator('.shell-pill--look');
+      const lightPanel = page.locator('#shell-light-panel');
+      const card = page.locator('#shell-card');
+
+      // Closed mode is the only state where the rail coexists with both launchers and Measure.
+      await assertHitAndSafe(firstRailControl, viewport, 'closed rail first item');
+      await assertHitAndSafe(lightToggle, viewport, 'closed Lights launcher');
+      await assertHitAndSafe(lookToggle, viewport, 'closed Look launcher');
+      await assertHitAndSafe(measure, viewport, 'closed Measure');
+
+      await lightToggle.click();
+      await expect(lightPanel).toBeVisible();
+      await expect(rail).toBeHidden();
+      const lightRailState = await rail.evaluate((node) => ({
+        hidden: (node as HTMLElement).hidden,
+        inert: (node as HTMLElement).inert,
+        ariaHidden: node.getAttribute('aria-hidden'),
+      }));
+      expect(lightRailState).toEqual({ hidden: true, inert: true, ariaHidden: 'true' });
+      await assertHitAndSafe(measure, viewport, 'open Lights Measure');
+
+      await page.locator('#shell-light-row .shell-sheet__close').click();
+      await expect(lightPanel).toBeHidden();
+      await expect(rail).toBeVisible();
+      await assertHitAndSafe(firstRailControl, viewport, 'restored rail first item');
+
+      await lookToggle.focus();
+      await page.keyboard.press('Enter');
+      await expect(card).toBeVisible();
+      await expect(card.locator('.shell-sheet__close')).toBeFocused();
+      await expect(rail).toBeHidden();
+      const lookRailState = await rail.evaluate((node) => ({
+        hidden: (node as HTMLElement).hidden,
+        inert: (node as HTMLElement).inert,
+        ariaHidden: node.getAttribute('aria-hidden'),
+      }));
+      expect(lookRailState).toEqual({ hidden: true, inert: true, ariaHidden: 'true' });
+      await assertHitAndSafe(measure, viewport, 'open Look Measure');
+
+      await page.keyboard.press('Escape');
+      await expect(card).toBeHidden();
+      await expect(lookToggle).toBeFocused();
+      await expect(rail).toBeVisible();
+      await assertHitAndSafe(firstRailControl, viewport, 'post-Escape rail first item');
+      await waitForIdle(page, canvas);
+      expectNoErrors(errors);
+    });
+  }
+
+  test('keyboard, pointer, native inputs, persistence, share state, and idle', async ({ page }) => {
+    skipUnlessWebgl2();
+    test.setTimeout(120_000);
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const canvas = await openScene(page);
+    const toggle = page.locator('#shell-light-toggle');
+    const panel = page.locator('#shell-light-panel');
+
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    await expect(panel).toBeVisible();
+    const keySwitch = panel.locator('[data-light="key"] .lightpanel__switch');
+    await expect(keySwitch).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(toggle).toBeFocused();
+    await page.keyboard.press('Space');
+    await expect(panel).toBeHidden();
+    await page.keyboard.press('Space');
+    await expect(panel).toBeVisible();
+    await expect(keySwitch).toBeFocused();
+
+    const initialRig = await page.evaluate(() => window.archvizE2E?.rigState() ?? null);
+    expect(initialRig).toMatch(/^v2;/);
+    await page.keyboard.press('Space');
+    await expect(keySwitch).not.toBeChecked();
+
+    const keyRange = panel.locator('[data-light="key"] .lightpanel__range');
+    await keyRange.focus();
+    const rangeBefore = Number(await keyRange.inputValue());
+    await page.keyboard.press('ArrowRight');
+    expect(Number(await keyRange.inputValue())).toBeGreaterThan(rangeBefore);
+
+    const fillColor = panel.locator('[data-light="fill"] .lightpanel__color');
+    await setNativeInput(fillColor, '#123456');
+    await expect(fillColor).toHaveValue('#123456');
+    await expect(panel.locator('[data-light="fill"] .lightpanel__value--color')).toHaveText(
+      '#123456',
+    );
+    const daylight = panel.locator('.lightpanel__range--daylight');
+    await setNativeInput(daylight, '0.2');
+    await expect(daylight).toHaveValue('0.2');
+
+    const changedRig = await page.evaluate(() => window.archvizE2E?.rigState() ?? null);
+    expect(changedRig).not.toBe(initialRig);
+    expect(changedRig).toContain('key,0,15.5,bcc8bd');
+    expect(changedRig).toContain('fill,0,7,123456');
+    expect(changedRig).toContain('day,0.2');
+    await expect.poll(() => new URL(page.url()).searchParams.get('rig')).toBe(changedRig);
+
+    await toggle.click();
+    await expect(panel).toBeHidden();
+    expect(
+      await panel.locator('input').evaluateAll((inputs) =>
+        inputs.every((input) => !input.matches(':focus')),
+      ),
+    ).toBe(true);
+    await toggle.click();
+    await expect(keySwitch).not.toBeChecked();
+    await expect(keyRange).toHaveValue('15.5');
+    await expect(fillColor).toHaveValue('#123456');
+    await expect(daylight).toHaveValue('0.2');
+
+    await page.keyboard.press('Escape');
+    await expect(panel).toBeHidden();
+    await expect(toggle).toBeFocused();
+    await waitForIdle(page, canvas);
+    expectNoErrors(errors);
+  });
+
+  test('warm and cool colors round-trip exactly for every studio light on each backend', async ({ page }) => {
+    test.setTimeout(120_000);
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const backend = test.info().project.name;
+    const scenePath =
+      backend === 'webgl2'
+        ? '/?webgl=1&gate=off&e2e=1&proof=1&music=off'
+        : '/?gate=off&e2e=1&proof=1&music=off';
+    let canvas = await openScene(page, scenePath);
+    await expect(canvas).toHaveAttribute('data-backend', backend);
+
+    const defaults = { key: '#bcc8bd', fill: '#b3dbff', back: '#bce1ff' };
+    const colors = { ...defaults };
+    const expectedRig = () =>
+      `v2;key,1,15,${colors.key.slice(1)};fill,0,7,${colors.fill.slice(1)};back,0,7,${colors.back.slice(1)};day,0.5`;
+    const panel = page.locator('#shell-light-panel');
+    const toggle = page.locator('#shell-light-toggle');
+    await toggle.click();
+    await expect(panel).toBeVisible();
+    await expectDefaultRigWithoutUrl(page, expectedRig());
+
+    const assertPanelColors = async () => {
+      for (const id of STUDIO_LIGHTS) {
+        await expect(panel.locator(`[data-light="${id}"] .lightpanel__color`)).toHaveValue(colors[id]);
+        await expect(panel.locator(`[data-light="${id}"] .lightpanel__value--color`)).toHaveText(
+          colors[id],
+        );
+      }
+    };
+    const applyColor = async (id: (typeof STUDIO_LIGHTS)[number], color: string, label: string) => {
+      const input = panel.locator(`[data-light="${id}"] .lightpanel__color`);
+      const readout = panel.locator(`[data-light="${id}"] .lightpanel__value--color`);
+      await setNativeInput(input, color);
+      colors[id] = color;
+      await expect(input, `${id} ${label} color input`).toHaveValue(color);
+      await expect(readout, `${id} ${label} color readout`).toHaveText(color);
+      await expectRigAndUrl(page, expectedRig());
+    };
+
+    for (const id of STUDIO_LIGHTS) await applyColor(id, '#ff9a3c', 'warm');
+    const warmRig = expectedRig();
+    canvas = await openScene(page, `${scenePath}&rig=${encodeURIComponent(warmRig)}`);
+    await expect(canvas).toHaveAttribute('data-backend', backend);
+    await expectRigAndUrl(page, warmRig);
+    await page.locator('#shell-light-toggle').click();
+    await expect(panel).toBeVisible();
+    await assertPanelColors();
+
+    for (const id of STUDIO_LIGHTS) await applyColor(id, '#3c9aff', 'cool');
+    const coolRig = expectedRig();
+    canvas = await openScene(page, `${scenePath}&rig=${encodeURIComponent(coolRig)}`);
+    await expect(canvas).toHaveAttribute('data-backend', backend);
+    await expectRigAndUrl(page, coolRig);
+    await page.locator('#shell-light-toggle').click();
+    await expect(panel).toBeVisible();
+    await assertPanelColors();
+    await expectRigAndUrl(page, expectedRig());
+    await waitForIdle(page, canvas);
+    expectNoErrors(errors);
+  });
+
+  test('daylight drag serializes coordinated exposure exactly on each backend', async ({ page }) => {
+    test.setTimeout(120_000);
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const backend = test.info().project.name;
+    const canvas = await openScene(
+      page,
+      backend === 'webgl2'
+        ? '/?webgl=1&gate=off&e2e=1&proof=1&music=off'
+        : '/?gate=off&e2e=1&proof=1&music=off',
+    );
+    await expect(canvas).toHaveAttribute('data-backend', backend);
+
+    const panel = page.locator('#shell-light-panel');
+    await page.locator('#shell-light-toggle').click();
+    await expect(panel).toBeVisible();
+    const daylight = panel.locator('.lightpanel__range--daylight');
+    const readout = panel.locator('[data-light="daylight"] .lightpanel__value--daylight');
+
+    await setNativeInput(daylight, '0.2');
+    await expect(daylight).toHaveValue('0.2');
+    await expect(readout).toHaveText('Dawn');
+    await expectRigAndUrl(
+      page,
+      'v2;key,1,15,bcc8bd;fill,0,7,b3dbff;back,0,7,bce1ff;day,0.2;e,1.06',
+    );
+
+    await setNativeInput(daylight, '0.85');
+    await expect(daylight).toHaveValue('0.85');
+    await expect(readout).toHaveText('Dusk');
+    await expectRigAndUrl(
+      page,
+      'v2;key,1,15,bcc8bd;fill,0,7,b3dbff;back,0,7,bce1ff;day,0.85;e,0.93',
+    );
+    await waitForIdle(page, canvas);
+    expectNoErrors(errors);
+  });
+
+  test('three-point states and intensity endpoints retain one draw-call census on each backend', async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const backend = test.info().project.name;
+    const scenePath =
+      backend === 'webgl2'
+        ? '/?webgl=1&gate=off&e2e=1&proof=1&music=off'
+        : '/?gate=off&e2e=1&proof=1&music=off';
+    const canvas = await openScene(page, scenePath);
+    await expect(canvas).toHaveAttribute('data-backend', backend);
+
+    const enabled = { key: true, fill: false, back: false };
+    const intensities = { key: 15, fill: 7, back: 7 };
+    const expectedRig = () =>
+      `v2;key,${enabled.key ? 1 : 0},${intensities.key},bcc8bd;fill,${enabled.fill ? 1 : 0},${intensities.fill},b3dbff;back,${enabled.back ? 1 : 0},${intensities.back},bce1ff;day,0.5`;
+
+    await expectDefaultRigWithoutUrl(page, expectedRig());
+    await expect.poll(() => proofDrawCalls(page), { timeout: 30_000 }).toBeGreaterThan(0);
+    const baselineDrawCalls = await proofDrawCalls(page);
+    expect(baselineDrawCalls, 'proof panel publishes the Key-only draw-call baseline').not.toBeNull();
+    if (baselineDrawCalls === null) throw new Error('missing Key-only draw-call baseline');
+
+    const panel = page.locator('#shell-light-panel');
+    await page.locator('#shell-light-toggle').click();
+    await expect(panel).toBeVisible();
+    const toggle = (id: (typeof STUDIO_LIGHTS)[number]) =>
+      panel.locator(`[data-light="${id}"] .lightpanel__switch`);
+
+    await toggle('fill').click();
+    enabled.fill = true;
+    await expectRigAndUrl(page, expectedRig());
+
+    await toggle('fill').click();
+    enabled.fill = false;
+    await toggle('back').click();
+    enabled.back = true;
+    await expectRigAndUrl(page, expectedRig());
+
+    await toggle('fill').click();
+    enabled.fill = true;
+    await expectRigAndUrl(page, expectedRig());
+    await expect.poll(() => proofDrawCalls(page), { timeout: 30_000 }).toBe(baselineDrawCalls);
+
+    for (const id of STUDIO_LIGHTS) {
+      const range = panel.locator(`[data-light="${id}"] .lightpanel__range`);
+      const readout = panel.locator(`[data-light="${id}"] .lightpanel__value--intensity`);
+      await setNativeInput(range, '0');
+      intensities[id] = 0;
+      await expect(range, `${id} minimum intensity input`).toHaveValue('0');
+      await expect(readout, `${id} minimum intensity readout`).toHaveText('0.0 cd');
+      await expectRigAndUrl(page, expectedRig());
+      await expect(canvas).toHaveAttribute('data-scene', 'ready');
+      await expect.poll(() => proofDrawCalls(page), { timeout: 30_000 }).toBeGreaterThan(0);
+
+      await setNativeInput(range, '50');
+      intensities[id] = 50;
+      await expect(range, `${id} maximum intensity input`).toHaveValue('50');
+      await expect(readout, `${id} maximum intensity readout`).toHaveText('50.0 cd');
+      await expectRigAndUrl(page, expectedRig());
+      await expect(canvas).toHaveAttribute('data-scene', 'ready');
+      await expect.poll(() => proofDrawCalls(page), { timeout: 30_000 }).toBeGreaterThan(0);
+    }
+
+    for (const id of STUDIO_LIGHTS) {
+      await setNativeInput(panel.locator(`[data-light="${id}"] .lightpanel__range`), String(id === 'key' ? 15 : 7));
+      intensities[id] = id === 'key' ? 15 : 7;
+    }
+    await toggle('fill').click();
+    enabled.fill = false;
+    await toggle('back').click();
+    enabled.back = false;
+    await expectDefaultRigWithoutUrl(page, expectedRig());
+    await waitForIdle(page, canvas);
+    expectNoErrors(errors);
+  });
+
+  test('closed drawer preserves card, rail, Measure, music, and responsive focus continuity', async ({
+    page,
+  }) => {
+    skipUnlessWebgl2();
+    test.setTimeout(120_000);
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openScene(page);
+    const toggle = page.locator('#shell-light-toggle');
+    const panel = page.locator('#shell-light-panel');
+    await expect(panel).toBeHidden();
+
+    for (const [label, locator] of [
+      ['rail first item', page.locator('#looks button').first()],
+      ['card Rotate', page.locator('.product-card__action[data-action="rotate"]')],
+      ['Measure', page.locator('.proof-panel__measure')],
+      ['music', page.locator('header button.music-switch')],
+    ] as const) {
+      await expect(locator, `${label} is visible`).toBeVisible();
+      const hit = await locator.evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        const owner = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return owner === node || node.contains(owner);
+      });
+      expect(hit, `${label} owns its center while drawer is closed`).toBe(true);
+    }
+
+    await toggle.click();
+    await expect(panel).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(panel).toBeHidden();
+    await expect(toggle).toBeFocused();
+    await page.setViewportSize({ width: 820, height: 1180 });
+    await expect(panel).toBeHidden();
+    expectNoErrors(errors);
+  });
+
+  test('touchscreen tap opens and closes the phone drawer', async ({ browser }) => {
+    skipUnlessWebgl2();
+    const touch = await newTouchPage(browser);
+    const errors = watchErrors(touch.page);
+    try {
+      await openScene(touch.page);
+      const toggle = touch.page.locator('#shell-light-toggle');
+      const box = await toggle.boundingBox();
+      expect(box).not.toBeNull();
+      if (box === null) return;
+      await touch.page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+      await expect(touch.page.locator('#shell-light-panel')).toBeVisible();
+      const close = touch.page.locator('#shell-light-row .shell-sheet__close');
+      const closeBox = await close.boundingBox();
+      expect(closeBox).not.toBeNull();
+      if (closeBox === null) return;
+      await touch.page.touchscreen.tap(
+        closeBox.x + closeBox.width / 2,
+        closeBox.y + closeBox.height / 2,
+      );
+      await expect(touch.page.locator('#shell-light-panel')).toBeHidden();
+      expectNoErrors(errors);
+    } finally {
+      await touch.context.close();
+    }
+  });
+
+  test('phone reduced motion removes sheet movement from the rendered drawer', async ({ page }) => {
+    skipUnlessWebgl2();
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await openScene(page);
+    await page.locator('#shell-light-toggle').click();
+    await expect(page.locator('#shell-light-panel')).toBeVisible();
+
+    const motion = await page.evaluate(() => {
+      const root = getComputedStyle(document.documentElement);
+      const row = document.querySelector<HTMLElement>('#shell-light-row');
+      const panel = document.querySelector<HTMLElement>('#shell-light-panel');
+      if (row === null || panel === null) throw new Error('light sheet is unavailable');
+      const rowStyle = getComputedStyle(row);
+      const panelStyle = getComputedStyle(panel);
+      return {
+        tokens: [
+          root.getPropertyValue('--dur-fast').trim(),
+          root.getPropertyValue('--dur-base').trim(),
+          root.getPropertyValue('--dur-slow').trim(),
+        ],
+        row: { transition: rowStyle.transitionDuration, animation: rowStyle.animationDuration },
+        panel: { transition: panelStyle.transitionDuration, animation: panelStyle.animationDuration },
+      };
+    });
+    // Browsers canonicalize a zero CSS custom-property duration inconsistently (the authored
+    // reduced-motion override is `0ms`, while Chromium serializes it here as `0s`). Either
+    // spelling proves the value is zero; a non-zero value would animate the phone sheet.
+    expect(motion.tokens).toEqual(['0s', '0s', '0s']);
+    for (const duration of [
+      motion.row.transition,
+      motion.row.animation,
+      motion.panel.transition,
+      motion.panel.animation,
+    ]) {
+      expect(['0s', '0ms', '0s, 0s']).toContain(duration);
+    }
+  });
+
+  test('WebGPU smoke opens the drawer and updates serialized rig when available', async ({ page }) => {
+    test.skip(test.info().project.name !== 'webgpu', 'WebGPU smoke belongs to the WebGPU project');
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const canvas = await openScene(page, '/?gate=off&e2e=1&proof=1&music=off');
+    await expect(canvas).toHaveAttribute('data-backend', 'webgpu');
+    await page.locator('#shell-light-toggle').click();
+    const key = page.locator('[data-light="key"] .lightpanel__switch');
+    // `data-scene=ready` is published by the first drawn content frame. On the actual WebGPU
+    // path, shader compilation and final test-handle mounting can still follow it, so wait for
+    // the handle rather than treating that transient null as the pre-toggle rig state.
+    await expect
+      .poll(() => page.evaluate(() => window.archvizE2E?.rigState() ?? null), { timeout: 30_000 })
+      .toMatch(/^v2;/);
+    const before = await page.evaluate(() => window.archvizE2E?.rigState() ?? null);
+    await key.click();
+    await expect.poll(() => page.evaluate(() => window.archvizE2E?.rigState() ?? null)).not.toBe(before);
+    expectNoErrors(errors);
+  });
+});

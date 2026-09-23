@@ -2,6 +2,7 @@
 
 import './panel.css';
 import type { ProofSnapshot } from './marks';
+import type { GovernorEvent } from '../post/governor';
 import { TIERS } from '../tiers/table';
 import type { TierName } from '../tiers/table';
 
@@ -63,6 +64,36 @@ function formatOrbit(orbit: OrbitMeasurement): string {
     `${gpuText} | ` +
     `budget: ${orbit.budgetMs.toFixed(1)} ms (${orbit.status})`
   );
+}
+
+/** The log arrives as the canvas's capped data-governor-log JSON; entries stay oldest-first. */
+function formatGovernorLog(raw: string | undefined): string {
+  if (raw === undefined || raw === '' || raw === 'off') {
+    return 'no changes yet';
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return 'unreadable governor log';
+  }
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    return 'no changes yet';
+  }
+  const lines: string[] = [];
+  for (const entry of parsed) {
+    const event = entry as Partial<GovernorEvent>;
+    if (
+      (event.direction !== 'down' && event.direction !== 'up') ||
+      typeof event.from !== 'string' ||
+      typeof event.to !== 'string' ||
+      typeof event.reason !== 'string'
+    ) {
+      return 'unreadable governor log';
+    }
+    lines.push(`${event.direction} ${event.from} → ${event.to}; ${event.reason}`);
+  }
+  return lines.join(' | ');
 }
 
 export function mountProofPanel(root: HTMLElement, options: PanelOptions): PanelHandle {
@@ -130,6 +161,8 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
     }
 
     renderRow('data-post', snap.post);
+    renderRow('governor', snap.governor ?? 'off');
+    renderRow('governor log', formatGovernorLog(snap.governorLog));
     renderRow('cache', snap.cacheState);
     renderRow('look switch', formatMs(snap.lookSwitchMs));
 

@@ -30,8 +30,10 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   {
     id: 'lights',
     title: 'Adjust lighting',
-    text: 'Fine-tune studio lights and sun angle in the side panel.',
-    anchor: '.lightpanel',
+    text: 'Open Light Control, then fine-tune the studio lights and daylight atmosphere.',
+    // UI-2 starts the panel closed. The disclosure remains visible at every breakpoint, unlike
+    // the panel itself, so the guide always points to an actionable target.
+    anchor: '#shell-light-toggle',
   },
 ];
 
@@ -53,6 +55,36 @@ export interface OnboardingHandle {
 export const ONBOARDING_STORAGE_KEY = 'fashion-rotunda.onboarded';
 
 const MARGIN_PX = 16;
+
+interface SafeAreaInsets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/**
+ * Resolves the safe-area tokens as CSS lengths. Reading a custom property's text would leave an
+ * `env()` expression intact on some browsers, so a short-lived fixed probe asks the layout engine
+ * for the used value instead.
+ */
+function readSafeAreaInsets(): SafeAreaInsets {
+  const read = (side: keyof SafeAreaInsets): number => {
+    const probe = document.createElement('div');
+    probe.style.cssText = `position: fixed; visibility: hidden; ${side}: var(--safe-area-${side});`;
+    document.body.appendChild(probe);
+    const value = Number.parseFloat(getComputedStyle(probe)[side]);
+    probe.remove();
+    return Number.isFinite(value) ? value : 0;
+  };
+
+  return {
+    top: read('top'),
+    right: read('right'),
+    bottom: read('bottom'),
+    left: read('left'),
+  };
+}
 
 export function mountOnboarding(options: OnboardingOptions): OnboardingHandle {
   let activeStepIndex = -1;
@@ -144,6 +176,7 @@ export function mountOnboarding(options: OnboardingOptions): OnboardingHandle {
     const rect = anchor.getBoundingClientRect();
     const cardWidth = card.offsetWidth || 280;
     const cardHeight = card.offsetHeight || 120;
+    const safeArea = readSafeAreaInsets();
 
     let x = MARGIN_PX;
     let y = MARGIN_PX;
@@ -155,14 +188,18 @@ export function mountOnboarding(options: OnboardingOptions): OnboardingHandle {
       x = rect.right + 12;
       y = Math.max(MARGIN_PX, rect.top);
     } else if (stepId === 'lights') {
-      x = Math.max(MARGIN_PX, rect.left - cardWidth - 12);
-      y = Math.max(MARGIN_PX, rect.top);
+      // The launcher lives at a bottom corner. Place the guide above it: placing it to the left
+      // clamps back over a left-hand desktop launcher and can make the control impossible to use.
+      x = rect.left;
+      y = rect.top - cardHeight - 12;
     }
 
-    const maxX = window.innerWidth - cardWidth - MARGIN_PX;
-    const maxY = window.innerHeight - cardHeight - MARGIN_PX;
-    x = Math.max(MARGIN_PX, Math.min(x, maxX));
-    y = Math.max(MARGIN_PX, Math.min(y, maxY));
+    const minX = safeArea.left + MARGIN_PX;
+    const maxX = Math.max(minX, window.innerWidth - safeArea.right - cardWidth - MARGIN_PX);
+    const minY = safeArea.top + MARGIN_PX;
+    const maxY = Math.max(minY, window.innerHeight - safeArea.bottom - cardHeight - MARGIN_PX);
+    x = Math.max(minX, Math.min(x, maxX));
+    y = Math.max(minY, Math.min(y, maxY));
 
     card.style.setProperty('--onboarding-x', `${Math.round(x)}px`);
     card.style.setProperty('--onboarding-y', `${Math.round(y)}px`);

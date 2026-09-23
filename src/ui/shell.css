@@ -49,7 +49,7 @@
 .shell-pill--look {
   position: absolute;
   left: var(--space-3);
-  bottom: calc(var(--space-2) + env(safe-area-inset-bottom));
+  bottom: calc(var(--space-2) + var(--safe-area-bottom));
   z-index: var(--z-chrome);
 }
 
@@ -59,6 +59,12 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
+}
+
+/* Short-landscape sheet rules in styles.css set this wrapper's display value. Preserve the DOM
+   hidden contract above that layout rule so a closed sheet cannot paint or intercept its pill. */
+.shell-sheet__chrome[hidden] {
+  display: none !important;
 }
 
 .shell-sheet__handle {
@@ -74,8 +80,8 @@
 
 .shell-sheet__close {
   position: absolute;
-  top: 0;
-  right: 0;
+  top: var(--space-1);
+  right: var(--space-1);
   width: var(--control-height);
   height: var(--control-height);
   border: none;
@@ -97,5 +103,16 @@
 
   .shell-light-toggle {
     align-self: flex-start;
+  }
+
+  /* Open at this width, with the height for the columns, the launcher stays the pill it was when
+     closed; the sheet header rules above belong to the phone sheet only. A short landscape
+     viewport keeps the sheet rules instead. */
+  @media (min-height: 600px) {
+    #shell-light-row[data-open='true'] .shell-light-toggle {
+      margin-right: 0;
+      border-radius: var(--radius-pill);
+      justify-content: center;
+    }
   }
 }

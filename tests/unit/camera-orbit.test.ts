@@ -107,6 +107,13 @@ describe('createOrbit', () => {
     expect(state.phi).toBeCloseTo(PROOF_POLAR, 9);
   });
 
+  it('reports the live vertical FOV after a pose change', () => {
+    const { orbit } = make();
+    expect(orbit.fov).toBe(40);
+    orbit.setPose(PROOF_POSITION, TARGET, 55);
+    expect(orbit.fov).toBe(55);
+  });
+
   it('rotates yaw by 0.005 radians per pixel of horizontal drag', () => {
     const target = make();
     pointer(target, 'pointerdown', 100, 100);

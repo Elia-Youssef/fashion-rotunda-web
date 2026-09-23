@@ -9,13 +9,36 @@ import type { ConsoleMessage, Page } from '@playwright/test';
 
 const SCENE_READY_TIMEOUT = 60_000;
 const SWITCH_TIMEOUT = 30_000;
+const SAFE_AREA = { top: 19, right: 23, bottom: 29, left: 17 } as const;
 
 // The longest run in the documented order is the thumbnail strip, seven looks plus the controls
 // around it. Twelve presses cover it; an unbounded loop would hang instead of failing.
 const MAX_TAB_PRESSES = 12;
 
+function boxesIntersect(
+  a: { x: number; y: number; width: number; height: number },
+  b: { x: number; y: number; width: number; height: number },
+): boolean {
+  return (
+    a.x < b.x + b.width &&
+    b.x < a.x + a.width &&
+    a.y < b.y + b.height &&
+    b.y < a.y + a.height
+  );
+}
+
 function skipUnlessWebgl2(): void {
   test.skip(test.info().project.name !== 'webgl2', 'the a11y checks are backend independent');
+}
+
+async function installSafeArea(page: Page): Promise<void> {
+  await page.evaluate((insets) => {
+    const root = document.documentElement;
+    root.style.setProperty('--safe-area-top', `${insets.top}px`);
+    root.style.setProperty('--safe-area-right', `${insets.right}px`);
+    root.style.setProperty('--safe-area-bottom', `${insets.bottom}px`);
+    root.style.setProperty('--safe-area-left', `${insets.left}px`);
+  }, SAFE_AREA);
 }
 
 async function focusMatches(page: Page, selector: string): Promise<boolean> {
@@ -44,7 +67,7 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
     }
   });
 
-  await page.goto('/?webgl=1&e2e=1&onboarding=1');
+  await page.goto('/?webgl=1&gate=off&onboarding=reset');
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
   await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
@@ -128,8 +151,11 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
   );
   expect(
     await page.locator('#shell-light-toggle').getAttribute('aria-expanded'),
-    'the disclosure is open at the desktop width',
-  ).toBe('true');
+    'the disclosure starts closed at the desktop width',
+  ).toBe('false');
+  // The drawer opens through the same disclosure, then its controls are one Tab away.
+  await page.locator('#shell-light-toggle').click();
+  await expect(page.locator('#shell-light-toggle')).toHaveAttribute('aria-expanded', 'true');
   for (let i = 0; i < 4 && !(await focusMatches(page, '.lightpanel input, .lightpanel select')); i += 1) {
     await page.keyboard.press('Tab');
   }
@@ -137,6 +163,14 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
     await focusMatches(page, '.lightpanel input, .lightpanel select'),
     'activeElement is a light panel control',
   ).toBe(true);
+
+  // Escape dismisses the shell disclosure as well as transient tooltips, and returns the tab
+  // sequence to the button that opened it rather than leaving focus in hidden panel content.
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#shell-light-panel')).toBeHidden();
+  expect(await focusMatches(page, '#shell-light-toggle'), 'Escape returns to Light Control').toBe(
+    true,
+  );
 
   // 5. ArrowRight on the checked swatch checks the next one and data-variant follows
   const activeSwatch = page.locator('.product-card__swatch[aria-checked="true"]');
@@ -184,4 +218,168 @@ test('the onboarding card stays away under e2e without the flag', async ({ page 
 
   // Other specs run under e2e=1 and must never meet the card.
   await expect(page.locator('.onboarding-card')).toHaveCount(0);
+});
+
+test('the long GPU tooltip stays inside short landscape and dismisses without stale ARIA', async ({
+  page,
+}) => {
+  skipUnlessWebgl2();
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 844, height: 390 });
+  await page.goto('/?webgl=1&e2e=1&gate=off');
+  await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'ready', {
+    timeout: SCENE_READY_TIMEOUT,
+  });
+
+  const badge = page.locator('.badge');
+  const tooltip = page.locator('#a11y-tooltip[role="tooltip"]');
+  await badge.hover();
+  await expect(tooltip).toBeVisible();
+  const box = await tooltip.boundingBox();
+  expect(box, 'GPU tooltip has a viewport box').not.toBeNull();
+  if (box !== null) {
+    expect(box.x, 'GPU tooltip clears the left viewport edge').toBeGreaterThanOrEqual(0);
+    expect(box.y, 'GPU tooltip clears the top viewport edge').toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width, 'GPU tooltip clears the right viewport edge').toBeLessThanOrEqual(844);
+    expect(box.y + box.height, 'GPU tooltip clears the bottom viewport edge').toBeLessThanOrEqual(390);
+  }
+
+  await page.mouse.move(0, 0);
+  await expect(tooltip).toBeHidden();
+  expect(await badge.getAttribute('aria-describedby')).toBeNull();
+});
+
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 820, height: 1180 },
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+]) {
+  test(`the onboarding Lights step leaves its launcher usable at ${viewport.width}x${viewport.height}`, async ({
+    page,
+  }) => {
+    skipUnlessWebgl2();
+    test.setTimeout(120_000);
+    await page.setViewportSize(viewport);
+    await page.goto('/?webgl=1&gate=off&onboarding=reset');
+    await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'ready', {
+      timeout: SCENE_READY_TIMEOUT,
+    });
+    await installSafeArea(page);
+
+    const card = page.locator('.onboarding-card');
+    await expect(card).toBeVisible();
+    await card.getByRole('button', { name: 'Next' }).click();
+    await card.getByRole('button', { name: 'Next' }).click();
+    await expect(card.locator('.onboarding-card__title')).toHaveText('Adjust lighting');
+
+    const launcher = page.locator('#shell-light-toggle');
+    await expect(launcher).toBeVisible();
+    const cardBox = await card.boundingBox();
+    const launcherBox = await launcher.boundingBox();
+    expect(cardBox, 'the Lights guide has a box').not.toBeNull();
+    expect(launcherBox, 'the Light Control launcher has a box').not.toBeNull();
+    if (cardBox !== null && launcherBox !== null) {
+      expect(
+        boxesIntersect(cardBox, launcherBox),
+        'the guide does not cover its Light Control target',
+      ).toBe(false);
+      expect(launcherBox.x, 'the launcher clears the left safe inset').toBeGreaterThanOrEqual(
+        SAFE_AREA.left,
+      );
+      expect(launcherBox.y, 'the launcher clears the top safe inset').toBeGreaterThanOrEqual(
+        SAFE_AREA.top,
+      );
+      expect(
+        launcherBox.x + launcherBox.width,
+        'the launcher clears the right safe inset',
+      ).toBeLessThanOrEqual(viewport.width - SAFE_AREA.right);
+      expect(
+        launcherBox.y + launcherBox.height,
+        'the launcher clears the bottom safe inset',
+      ).toBeLessThanOrEqual(viewport.height - SAFE_AREA.bottom);
+      expect(launcherBox.width, 'the launcher is a 44px target').toBeGreaterThanOrEqual(44);
+      expect(launcherBox.height, 'the launcher is a 44px target').toBeGreaterThanOrEqual(44);
+    }
+
+    const launcherHit = await launcher.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return hit === node || node.contains(hit);
+    });
+    expect(launcherHit, 'the onboarding Lights anchor owns its actionable point').toBe(true);
+
+    await launcher.click();
+    await expect(launcher).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('#shell-light-panel')).toBeVisible();
+  });
+}
+
+test('transition manages inert state, focus transfer, and live announcements during reveal', async ({
+  page,
+}) => {
+  skipUnlessWebgl2();
+  test.setTimeout(120_000);
+
+  await page.goto('/?webgl=1');
+  const lobby = page.locator('#entry-lobby');
+  const header = page.locator('#shell-header');
+  const main = page.locator('main');
+  const footer = page.locator('footer');
+
+  // Before load: shell roots are inert and hidden from assistive technology
+  await expect(lobby).toHaveAttribute('data-state', 'idle');
+  await expect(header).toHaveAttribute('inert', '');
+  await expect(header).toHaveAttribute('aria-hidden', 'true');
+  await expect(main).toHaveAttribute('inert', '');
+  await expect(main).toHaveAttribute('aria-hidden', 'true');
+  await expect(footer).toHaveAttribute('inert', '');
+  await expect(footer).toHaveAttribute('aria-hidden', 'true');
+
+  // Trigger load
+  await lobby.locator('#lobby-load-btn').click();
+
+  // Wait for revealed state
+  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  await expect(lobby).toBeHidden();
+
+  // After reveal: inert attributes removed
+  await expect(header).not.toHaveAttribute('inert');
+  await expect(header).not.toHaveAttribute('aria-hidden');
+  await expect(main).not.toHaveAttribute('inert');
+  await expect(main).not.toHaveAttribute('aria-hidden');
+  await expect(footer).not.toHaveAttribute('inert');
+  await expect(footer).not.toHaveAttribute('aria-hidden');
+
+  // Safe semantic focus target: main received focus, or onboarding card if onboarding is active
+  const activeTarget = await page.evaluate(() => {
+    const el = document.activeElement;
+    if (el === document.querySelector('main')) return 'main';
+    if (el?.classList.contains('onboarding-card')) return 'onboarding-card';
+    return el?.tagName.toLowerCase() ?? '';
+  });
+  expect(['main', 'onboarding-card'], 'safe focus target after reveal').toContain(activeTarget);
+
+  // Announcer announced readiness
+  const announcer = page.locator('.a11y-live-region');
+  await expect(announcer).toContainText('Experience ready');
+});
+
+test('prefers-reduced-motion bypasses decorative fading during transition', async ({ page }) => {
+  skipUnlessWebgl2();
+  test.setTimeout(120_000);
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/?webgl=1');
+
+  const lobby = page.locator('#entry-lobby');
+  await expect(lobby).toHaveAttribute('data-state', 'idle');
+
+  await lobby.locator('#lobby-load-btn').click();
+
+  // Reaches revealed state successfully
+  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  await expect(lobby).toBeHidden();
+  await expect(page.locator('#scene-veil')).toBeHidden();
+  await expect(page.locator('#shell-header')).not.toHaveAttribute('inert');
 });

@@ -1,81 +1,124 @@
-/* The product card component. Compact on purpose: the card column and the phone sheet both
-   scroll inside themselves, so the light panel below and the close button stay reachable. */
+/* The product card component: compact floating panel displaying the look thumbnail (3:4 aspect),
+   title, description, 3 reflowed actions (Rotate, Reset, Material), and mannequin swatches.
+   Matches the Unreal prototype hierarchy and compactness. */
 
 .product-card {
   display: grid;
-  gap: var(--space-2);
+  gap: var(--space-3);
   max-width: var(--card-width);
-  margin: var(--space-2) var(--space-3);
-  padding: var(--space-2);
+  margin: var(--space-2) var(--space-2);
+  padding: var(--space-3) var(--space-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-1);
+  border-radius: var(--radius-2);
+  background: var(--surface-chrome);
 }
 
 .product-card__head {
-  display: grid;
-  grid-template-columns: auto 1fr;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
   gap: var(--space-2);
-  align-items: start;
+  width: 100%;
 }
 
 .product-card__thumb,
 .product-card__thumb-empty {
-  grid-row: 1;
-  grid-column: 1;
-  width: var(--size-media);
-  height: var(--size-media);
+  width: 120px;
+  height: 160px;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
   border-radius: var(--radius-1);
+  display: block;
+  margin: 0 auto;
 }
 
-/* The roomier thumbnail belongs to the wide columns; the phone sheet stays compact. */
 @media (min-width: 768px) {
   .product-card__thumb,
   .product-card__thumb-empty {
-    width: calc(var(--size-media) + var(--space-4));
-    height: calc(var(--size-media) + var(--space-4));
+    width: 135px;
+    height: 180px;
+  }
+}
+
+@media (max-height: 599px) {
+  .product-card__thumb,
+  .product-card__thumb-empty {
+    width: 90px;
+    height: 120px;
   }
 }
 
 .product-card__thumb {
-  display: block;
-  object-fit: cover;
   background: var(--surface-raised);
 }
 
 .product-card__thumb-empty {
   background: var(--surface-raised);
+  border: 1px dashed var(--border-strong);
+}
+
+.product-card__thumb[hidden],
+.product-card__thumb-empty[hidden] {
+  display: none;
+}
+
+.product-card__heading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
 }
 
 .product-card__name {
   margin: 0;
   font-size: var(--type-md);
   font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  letter-spacing: 0.02em;
 }
 
 .product-card__description {
-  margin: var(--space-1) 0 0;
+  margin: 0;
   font-size: var(--type-sm);
-  line-height: 1.35;
+  line-height: 1.4;
   color: var(--text-muted);
+  text-align: center;
   overflow-wrap: anywhere;
+  max-width: 100%;
 }
 
 .product-card__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+  width: 100%;
 }
 
 .product-card__action {
   min-height: var(--control-height);
-  padding: var(--space-1) var(--space-3);
+  min-width: 44px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-1);
   background: var(--surface);
   color: var(--text);
   font: inherit;
   font-size: var(--type-sm);
+  font-weight: 500;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  transition: background var(--dur-fast), border-color var(--dur-fast), color var(--dur-fast);
+}
+
+.product-card__action:hover {
+  background: var(--surface-raised);
+  border-color: var(--text-muted);
 }
 
 .product-card__action:disabled {
@@ -83,34 +126,53 @@
   cursor: default;
 }
 
-/* The turntable is on: the pressed Rotate button carries the same border as the active thumbnail. */
+/* The turntable is on: Rotate button active state */
 .product-card__action[aria-pressed='true'] {
   border-color: var(--accent);
+  background: var(--surface-raised);
+  color: var(--accent);
+}
+
+/* Material disclosure is open */
+.product-card__action[aria-expanded='true'] {
+  border-color: var(--accent);
+}
+
+.product-card__action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .product-card__swatches {
   display: flex;
-  gap: var(--space-2);
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-3);
   padding: var(--space-1) 0;
+  width: 100%;
 }
 
-/* The card re-renders this row per look and hides it through the hidden attribute, so hidden
-   must beat the display value above rather than lose to it. */
+/* hidden must win over flex display */
 .product-card__swatches[hidden] {
-  display: none;
+  display: none !important;
 }
 
-/* One class per variant name, in the tone the Unreal original gives each swatch. The bare rule is
-   the fallback for a name the CSS does not carry a tone for. The border reads 5.9:1 against the
-   panel surface, so the dark swatch keeps a visible edge. */
 .product-card__swatch {
   width: var(--control-height);
   height: var(--control-height);
+  min-width: 44px;
+  min-height: 44px;
   padding: 0;
-  border: 1px solid var(--text-disabled);
+  border: 2px solid var(--border-strong);
   border-radius: 50%;
   background: var(--swatch-base);
   cursor: pointer;
+  transition: transform var(--dur-fast), box-shadow var(--dur-fast), border-color var(--dur-fast);
+}
+
+.product-card__swatch:hover {
+  transform: scale(1.08);
+  border-color: var(--text);
 }
 
 .product-card__swatch--light {
@@ -125,11 +187,26 @@
   background: var(--swatch-dark);
 }
 
-/* The swatch on the plinth: the ring that says which mannequin is standing there. A box-shadow,
-   not an outline, so it reads as a different ring from the shared focus outline; sharing the
-   outline property made tabbing onto an unchecked swatch look exactly like the checked one. */
+/* Active swatch halo matching Unreal Engine reference: double ring / halo */
 .product-card__swatch[aria-checked='true'] {
+  border-color: #ffffff;
   box-shadow:
-    0 0 0 var(--space-1) var(--surface),
-    0 0 0 calc(var(--space-1) * 2) var(--accent);
+    0 0 0 2px var(--surface),
+    0 0 0 4px var(--accent),
+    0 0 10px rgba(230, 190, 120, 0.4);
+}
+
+.product-card__swatch:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-card__action,
+  .product-card__swatch {
+    transition: none;
+  }
+  .product-card__swatch:hover {
+    transform: none;
+  }
 }

@@ -1,8 +1,11 @@
 """Exports the Fashion Rotunda assets out of the Unreal project as glTF, PNG, JSON and audio files.
 
-Runs inside the Unreal Editor commandlet, launched by pipeline/unreal/run.mjs (npm run pipeline:unreal).
-Everything is read from the project and written under the folder named by the FR_EXPORT_OUT environment
-variable; nothing in the project is modified. Re-running overwrites the previous export.
+This is the intended Unreal Editor commandlet payload. `pipeline/unreal/run.mjs` presently performs a
+read-only, fail-closed provenance audit and does not launch this script; a launcher may be enabled only
+after UE 5.8 is available and every Unreal project-generated write is proven external to the read-only
+authoritative project. Everything this script emits is written under the folder named by the
+FR_EXPORT_OUT environment variable. FR_EXPORT_OUT must be a new directory under
+FR_EXPORT_EVIDENCE_ROOT; the script never falls back to a machine-specific or known-good asset path.
 
 Output layout (all paths relative to FR_EXPORT_OUT):
   rotunda.glb                 Lvl_Construction without the pedestal, baked materials, metres
@@ -28,9 +31,20 @@ import time
 
 import unreal
 
-OUT = os.environ.get("FR_EXPORT_OUT") or os.path.join(
-    r"C:\Users\User\Desktop\web-archviz-demo-planning", "assets-src", "source", "unreal"
-)
+OUT = os.path.abspath(os.environ.get("FR_EXPORT_OUT", ""))
+EVIDENCE_ROOT = os.path.abspath(os.environ.get("FR_EXPORT_EVIDENCE_ROOT", ""))
+if not OUT:
+    raise RuntimeError("FR_EXPORT_OUT is required; refusing to export into a fallback path")
+if not EVIDENCE_ROOT:
+    raise RuntimeError("FR_EXPORT_EVIDENCE_ROOT is required; refusing an unbounded export destination")
+try:
+    is_isolated = os.path.commonpath([OUT, EVIDENCE_ROOT]) == EVIDENCE_ROOT
+except ValueError:
+    is_isolated = False
+if not is_isolated or OUT == EVIDENCE_ROOT:
+    raise RuntimeError("FR_EXPORT_OUT must be a child of FR_EXPORT_EVIDENCE_ROOT")
+if os.path.exists(OUT):
+    raise RuntimeError(f"FR_EXPORT_OUT already exists; refusing to overwrite {OUT}")
 LEVEL_MAIN = "/Game/Levels/Lvl_Main"
 LEVEL_CONSTRUCTION = "/Game/Levels/Lvl_Construction"
 GARMENTS = "/Game/Assets/Garments"
@@ -300,7 +314,7 @@ def main():
         look = {
             "slug": slug, "name": name, "key": key, "description": row.get("Description"),
             "garments": [], "mannequin": None, "swatches": {}, "thumbnail": None,
-            "audio": row.get("Audio"), "row": row.get("Name"),
+            "row": row.get("Name"),
         }
         for mesh_path in meshes:
             mesh = EAL.load_asset(mesh_path)

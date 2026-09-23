@@ -24,7 +24,6 @@ function makeLook(id: string, thumbnail: string | null): CatalogLook {
     description: `${name} description`,
     thumbnail,
     file: `looks/${id}.glb`,
-    audio: null,
     variants: ['base', 'light', 'dark'],
     defaultVariant: 'base',
     mannequinNode: 'mannequin',

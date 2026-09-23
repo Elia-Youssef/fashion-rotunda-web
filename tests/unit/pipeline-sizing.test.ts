@@ -11,12 +11,16 @@ import {
 // what stops a re-export at 4096 from shipping a 4096 wall.
 
 describe('TEXTURE_CAPS', () => {
-  it('pins the desktop caps: 2048, and 4096 for the floor only', () => {
-    expect(TEXTURE_CAPS.full).toEqual({ default: 2048, floor: 4096, mannequin: 2048, staticNormal: 1024 });
+  it('pins the desktop caps: 2048, 4096 for the floor, and 1024 for normals with bounded detail', () => {
+    expect(TEXTURE_CAPS.full).toEqual({
+      default: 2048, floor: 4096, mannequin: 2048, staticNormal: 1024, garmentNormal: 1024,
+    });
   });
 
-  it('pins the phone caps: 1024, and 512 for the mannequin, with no floor exception', () => {
-    expect(TEXTURE_CAPS.half).toEqual({ default: 1024, floor: 1024, mannequin: 512, staticNormal: 512 });
+  it('pins the phone caps: 1024, and 512 for mannequin and garment-normal maps', () => {
+    expect(TEXTURE_CAPS.half).toEqual({
+      default: 1024, floor: 1024, mannequin: 512, staticNormal: 512, garmentNormal: 512,
+    });
   });
 
   it('names the one mesh the wider cap belongs to', () => {
@@ -89,5 +93,14 @@ describe('staticNormal cap', () => {
     expect(textureCap('full', { staticNormal: true, floor: true })).toBe(1024);
     expect(textureCap('half', { staticNormal: true })).toBe(512);
     expect(textureCap('half', { staticNormal: true, mannequin: true })).toBe(512);
+  });
+});
+
+describe('garmentNormal cap', () => {
+  it('bounds garment-only normal maps without changing mannequin precedence', () => {
+    expect(textureCap('full', { garmentNormal: true })).toBe(1024);
+    expect(textureCap('half', { garmentNormal: true })).toBe(512);
+    expect(textureCap('full', { garmentNormal: true, mannequin: true })).toBe(2048);
+    expect(textureCap('half', { garmentNormal: true, mannequin: true })).toBe(512);
   });
 });

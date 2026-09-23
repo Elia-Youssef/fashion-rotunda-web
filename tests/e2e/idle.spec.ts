@@ -7,7 +7,7 @@ import { expect, test } from '@playwright/test';
 test('stops drawing when idle and wakes on input', async ({ page }) => {
   test.skip(test.info().project.name !== 'webgl2', 'runs headless, where no pointer can wake the page');
 
-  await page.goto('/?webgl=1');
+  await page.goto('/?webgl=1&gate=off');
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-backend', 'webgl2', { timeout: 30_000 });
 

@@ -2,7 +2,8 @@
 //
 // GLTFLoader maps extensions to material classes: standard materials are upgraded to physical
 // materials when physical properties (transmission, clearcoat, anisotropy, sheen) are assigned.
-// Every tuning is matched to reference stills from Unreal and glTF extension capabilities.
+// Source-backed values and appearance approximations share this table; the latter still require
+// material-family visual review against Unreal references before G2.7 closes.
 
 import { Mesh, MeshPhysicalMaterial, MeshStandardMaterial } from 'three/webgpu';
 import type { Material, Object3D } from 'three/webgpu';
@@ -43,12 +44,11 @@ const TUNING_TABLE: Readonly<Record<string, MaterialTuning>> = {
     ior: 1.0,
     roughness: 0.05,
   },
-  // Stills show glossy polished white quartzite floor tiles; KHR_materials_clearcoat
-  MI_Quartzite_White_Base: {
+  // Unreal Nero Base and Vert use clearcoat; restore its scalar lobe when the half GLB strips it.
+  MI_Marble_Nero_Base: {
     clearcoat: 1.0,
     clearcoatRoughness: 0.1,
   },
-  // Stills show polished black marble floor borders; KHR_materials_clearcoat
   MI_Marble_Nero_Vert: {
     clearcoat: 1.0,
     clearcoatRoughness: 0.1,

@@ -6,7 +6,16 @@
   left: var(--onboarding-x, var(--space-4));
   top: var(--onboarding-y, var(--space-4));
   z-index: var(--z-overlay);
-  max-width: var(--card-width);
+  /* Leave the same breathing room on the usable display rectangle as the positioning code.
+     This keeps a narrow guide from escaping a right or bottom cut-out before it can be clamped. */
+  max-width: min(
+    var(--card-width),
+    calc(100vw - var(--safe-area-left) - var(--safe-area-right) - 2 * var(--space-4))
+  );
+  max-height: calc(
+    100dvh - var(--safe-area-top) - var(--safe-area-bottom) - 2 * var(--space-4)
+  );
+  overflow-y: auto;
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-2);

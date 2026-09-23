@@ -99,7 +99,7 @@ export function mountShell(doc: Document): ShellHandle {
   lightToggle.addEventListener(
     'click',
     () => {
-      setLightPanelOpen(!lightOpen);
+      setLightPanelOpen(!lightOpen, lightToggle);
     },
     { signal },
   );
@@ -115,13 +115,13 @@ export function mountShell(doc: Document): ShellHandle {
   lookPill.addEventListener(
     'click',
     () => {
-      setCardOpen(true);
+      setCardOpen(true, lookPill);
     },
     { signal },
   );
   roots.stage.appendChild(lookPill);
 
-  /** The handle bar and close button of one sheet, wrapped so a single CSS rule hides both. */
+  /** The handle bar and close button of one sheet, wrapped so the shell can hide both together. */
   function sheetChrome(sheet: HTMLElement, close: () => void): HTMLElement {
     const chrome = doc.createElement('div');
     chrome.className = 'shell-sheet__chrome';
@@ -140,10 +140,10 @@ export function mountShell(doc: Document): ShellHandle {
   }
 
   const cardChrome = sheetChrome(roots.card, () => {
-    setCardOpen(false);
+    dismissCard();
   });
   const lightChrome = sheetChrome(row, () => {
-    setLightPanelOpen(false);
+    dismissLightPanel();
   });
 
   const view = doc.defaultView;
@@ -155,16 +155,78 @@ export function mountShell(doc: Document): ShellHandle {
   function sheetMode(): boolean {
     return breakpoint === 'phone' || shortViewport;
   }
-  // The defaults, never persisted: the panel open beside the stage from the tablet up, closed
-  // into its pill when the viewport uses sheets; the card sheet starts closed there too.
-  let lightOpen = !sheetMode();
+  // The defaults, never persisted: the Light Control drawer starts closed on every breakpoint —
+  // the hero reference ships it shut — and the card sheet starts closed where sheets exist at
+  // all. Opening is always the visitor's explicit act, through the toggle or setLightPanelOpen.
+  let lightOpen = false;
   let cardSheetOpen = false;
+
+  // A hidden close button must not survive as a transparent hit target or a tab stop. `hidden`
+  // supplies the browser's visual and accessibility semantics; inert and the -1 tab index make
+  // the contract explicit even if a future sheet style changes the element's display property.
+  function setSheetChromeVisible(chrome: HTMLElement, visible: boolean): void {
+    const close = chrome.querySelector<HTMLButtonElement>('.shell-sheet__close');
+    chrome.hidden = !visible;
+    chrome.inert = !visible;
+    chrome.setAttribute('aria-hidden', String(!visible));
+    if (close !== null) {
+      close.tabIndex = visible ? 0 : -1;
+    }
+  }
+
+  let lightInvoker: HTMLElement | null = null;
+  let cardInvoker: HTMLElement | null = null;
+
+  function focusInvoker(invoker: HTMLElement | null, fallback: HTMLElement): void {
+    const target =
+      invoker !== null && invoker.isConnected && invoker.closest('[hidden]') === null
+        ? invoker
+        : fallback;
+    target.focus();
+  }
+
+  function focusVisibleCardControl(): void {
+    const control = roots.card.querySelector<HTMLElement>(
+      'button:not([disabled]):not(.shell-sheet__close), [href], input:not([disabled]), select:not([disabled]), [tabindex="0"]',
+    );
+    if (control !== null && control.closest('[hidden]') === null) {
+      control.focus();
+    } else {
+      lightToggle.focus();
+    }
+  }
+
+  function focusCardSheetClose(): void {
+    const close = cardChrome.querySelector<HTMLButtonElement>('.shell-sheet__close');
+    if (close !== null && !close.hidden && !close.inert) {
+      close.focus();
+      return;
+    }
+    focusVisibleCardControl();
+  }
+
+  function focusVisibleLightControl(): void {
+    const control = roots.lightPanel.querySelector<HTMLElement>(
+      'button:not([disabled]):not(.shell-sheet__close), [href], input:not([disabled]), select:not([disabled]), [tabindex="0"]',
+    );
+    if (control !== null && control.closest('[hidden]') === null) {
+      control.focus();
+    }
+  }
 
   function apply(): void {
     roots.lightPanel.hidden = !lightOpen;
     lightToggle.setAttribute('aria-expanded', String(lightOpen));
     row.dataset.open = String(lightOpen);
     const sheetUp = sheetMode() && (lightOpen || cardSheetOpen);
+    // A phone sheet is modal relative to the thumbnail rail. Leaving the rail merely painted
+    // behind the sheet made it look available while the sheet launcher intercepted its hit
+    // points. Hide it semantically as well as visually, then restore the exact same rail when
+    // the sheet closes or the layout returns to columns.
+    roots.rail.hidden = sheetUp;
+    roots.rail.inert = sheetUp;
+    roots.rail.setAttribute('aria-hidden', String(sheetUp));
+    doc.body.toggleAttribute('data-shell-sheet-open', sheetUp);
     if (sheetUp) {
       roots.stage.dataset.sheet = 'true';
     } else {
@@ -173,18 +235,27 @@ export function mountShell(doc: Document): ShellHandle {
     roots.card.hidden = sheetMode() && !cardSheetOpen;
     lookPill.hidden = !sheetMode();
     lookPill.setAttribute('aria-expanded', String(sheetMode() && cardSheetOpen));
+    setSheetChromeVisible(cardChrome, sheetMode() && cardSheetOpen);
+    setSheetChromeVisible(lightChrome, sheetMode() && lightOpen);
   }
 
-  function setLightPanelOpen(open: boolean): void {
+  function setLightPanelOpen(open: boolean, invoker: HTMLElement | null = null): void {
+    const wasClosed = !lightOpen;
     // One sheet at a time on the phone: opening the lights closes the card.
     if (open && sheetMode() && cardSheetOpen) {
       cardSheetOpen = false;
     }
+    if (open && wasClosed) {
+      lightInvoker = invoker ?? lightToggle;
+    }
     lightOpen = open;
     apply();
+    if (open && wasClosed) {
+      focusVisibleLightControl();
+    }
   }
 
-  function setCardOpen(open: boolean): void {
+  function setCardOpen(open: boolean, invoker: HTMLElement | null = null): void {
     // Above the phone width the card is a column, so there is no sheet to open or close.
     if (!sheetMode()) {
       return;
@@ -192,9 +263,53 @@ export function mountShell(doc: Document): ShellHandle {
     if (open && lightOpen) {
       lightOpen = false;
     }
+    const wasClosed = !cardSheetOpen;
+    if (open && wasClosed) {
+      cardInvoker = invoker ?? lookPill;
+    }
     cardSheetOpen = open;
     apply();
+    if (open && wasClosed) {
+      // The close button is the sheet's first, always-visible control. Focusing a product action
+      // can scroll a short card underneath its absolute close affordance, which strands Escape's
+      // pointer equivalent outside the safe rectangle. Keeping the cursor at Close preserves a
+      // modal starting point without moving the card's internal scroll position.
+      focusCardSheetClose();
+    }
   }
+
+  function dismissLightPanel(): void {
+    if (!lightOpen) {
+      return;
+    }
+    setLightPanelOpen(false);
+    focusInvoker(lightInvoker, lightToggle);
+  }
+
+  function dismissCard(): void {
+    if (!cardSheetOpen) {
+      return;
+    }
+    setCardOpen(false);
+    focusInvoker(cardInvoker, lookPill);
+  }
+
+  doc.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+      if (lightOpen) {
+        event.preventDefault();
+        dismissLightPanel();
+      } else if (cardSheetOpen) {
+        event.preventDefault();
+        dismissCard();
+      }
+    },
+    { signal },
+  );
 
   apply();
 
@@ -213,13 +328,37 @@ export function mountShell(doc: Document): ShellHandle {
       }
       const breakpointChanged = next !== breakpoint;
       const wasSheetMode = sheetMode();
+      const active = doc.activeElement instanceof HTMLElement ? doc.activeElement : null;
+      const activeInLightPanel = active !== null && roots.lightPanel.contains(active);
+      const activeInLightChrome = active !== null && lightChrome.contains(active);
+      const activeInCardChrome = active !== null && cardChrome.contains(active);
+      const activeInCardContent =
+        active !== null && roots.card.contains(active) && !activeInCardChrome;
+      const activeLookPill = active === lookPill;
       breakpoint = next;
       shortViewport = nextShort;
       if (sheetMode() !== wasSheetMode) {
-        lightOpen = !sheetMode();
+        // Crossing into or out of sheet country resets both disclosures to closed rather than
+        // translating one mode's open state into the other's geometry.
+        lightOpen = false;
         cardSheetOpen = false;
       }
       apply();
+      // A responsive transition may hide the disclosure that currently owns focus. Move focus to
+      // its now-visible launcher instead of leaving the keyboard cursor inside hidden content.
+      if (
+        (activeInLightPanel && roots.lightPanel.hidden) ||
+        (activeInLightChrome && lightChrome.hidden)
+      ) {
+        focusInvoker(lightInvoker, lightToggle);
+      } else if (activeInCardContent && roots.card.hidden) {
+        focusInvoker(cardInvoker, lookPill);
+      } else if (
+        (activeInCardChrome && cardChrome.hidden) ||
+        (activeLookPill && lookPill.hidden)
+      ) {
+        focusVisibleCardControl();
+      }
       if (breakpointChanged) {
         for (const listener of bpListeners) {
           listener(next);
@@ -270,6 +409,10 @@ export function mountShell(doc: Document): ShellHandle {
       lightChrome.remove();
       delete row.dataset.open;
       delete roots.stage.dataset.sheet;
+      doc.body.removeAttribute('data-shell-sheet-open');
+      roots.rail.hidden = false;
+      roots.rail.inert = false;
+      roots.rail.removeAttribute('aria-hidden');
       roots.card.hidden = false;
       roots.lightPanel.hidden = false;
     },

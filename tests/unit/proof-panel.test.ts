@@ -20,6 +20,10 @@ function sampleSnapshot(): ProofSnapshot {
     lookSwitchMs: 250.0,
     gpu: { p50: 6.1, p95: 11.4, available: true },
     post: 'ao,traa',
+    governor: 'level=ssgi-half;activity=cooldown;eligible=1;cooldown=4200;patience=0/2;qualify=3200/10000;p95=12.7;budget=16.7;threshold=13.36',
+    governorLog:
+      '[{"direction":"down","from":"full","to":"ssgi-half","p95Ms":19.4,"budgetMs":16.7,"atMs":1042.1,"reason":"p95 19.4 ms > 16.7 ms"},' +
+      '{"direction":"up","from":"no-ssgi","to":"ssgi-half","p95Ms":12.7,"budgetMs":16.7,"atMs":22104.3,"reason":"p95 12.7 ms <= 13.36 ms after 10.0 s"}]',
     cacheState: 'cold',
   };
 }
@@ -73,12 +77,58 @@ describe('mountProofPanel', () => {
     expect(text).toContain('11.4 ms');
     expect(text).toContain('data-post');
     expect(text).toContain('ao,traa');
+    expect(text).toContain('governor');
+    expect(text).toContain('level=ssgi-half');
+    expect(text).toContain('activity=cooldown');
+    expect(text).toContain('cooldown=4200');
+    expect(text).toContain('p95=12.7');
+    expect(text).toContain('budget=16.7');
+    expect(text).toContain('threshold=13.36');
+    expect(text).toContain('governor log');
+    expect(text.indexOf('down full → ssgi-half')).toBeGreaterThan(-1);
+    expect(text.indexOf('up no-ssgi → ssgi-half')).toBeGreaterThan(-1);
+    expect(text).toContain('p95 19.4 ms > 16.7 ms');
+    expect(text).toContain('p95 12.7 ms <= 13.36 ms after 10.0 s');
     expect(text).toContain('cache');
     expect(text).toContain('cold');
     expect(text).toContain('look switch');
     expect(text).toContain('250.0 ms');
     expect(text).toContain('orbit');
     expect(text).toContain('not measured');
+
+    handle.dispose();
+    root.remove();
+  });
+
+  // Matrix 27: the panel rows and the snapshot fields display the same committed governor
+  // record, bridged through the canvas attributes the composition root publishes.
+  it('renders the disabled governor and an empty log honestly', () => {
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    const read = vi.fn((): ProofSnapshot => ({
+      ...sampleSnapshot(),
+      governor: 'off',
+      governorLog: '',
+    }));
+    const handle = mountProofPanel(root, { read, measure: async () => {} });
+    const text = root.querySelector('section.proof-panel')?.textContent ?? '';
+    expect(text).toContain('off');
+    expect(text).toContain('no changes yet');
+
+    handle.dispose();
+    root.remove();
+  });
+
+  it('renders an unreadable log as unreadable rather than inventing entries', () => {
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    const read = vi.fn((): ProofSnapshot => ({
+      ...sampleSnapshot(),
+      governorLog: 'not json',
+    }));
+    const handle = mountProofPanel(root, { read, measure: async () => {} });
+    const text = root.querySelector('section.proof-panel')?.textContent ?? '';
+    expect(text).toContain('unreadable governor log');
 
     handle.dispose();
     root.remove();

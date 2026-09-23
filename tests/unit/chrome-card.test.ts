@@ -12,7 +12,6 @@ function makeLook(id: string, name: string, variants: string[]): CatalogLook {
     description: `${name} description`,
     thumbnail: `thumbs/${id}.jpg`,
     file: `looks/${id}.glb`,
-    audio: null,
     variants,
     defaultVariant: variants[0],
     mannequinNode: 'mannequin',
@@ -39,7 +38,6 @@ afterEach(() => {
 function actions(): ProductCardActions {
   return {
     rotate: vi.fn(),
-    audio: vi.fn(),
     reset: vi.fn(),
     material: vi.fn(),
   };
@@ -103,14 +101,14 @@ describe('mountProductCard', () => {
     expect(root.lastElementChild).toBe(existing);
   });
 
-  it('renders the four actions as buttons in one row', () => {
+  it('renders the three actions as buttons in one row', () => {
     mount();
     const row = root.querySelector('.product-card__actions');
     expect(row?.getAttribute('role')).toBe('group');
     const labels = [...(row?.querySelectorAll('button') ?? [])].map(
       (element) => element.textContent,
     );
-    expect(labels).toEqual(['Rotate', 'Audio', 'Reset', 'Material']);
+    expect(labels).toEqual(['Rotate', 'Reset', 'Material']);
   });
 
   it('renders one radio per variant, in the look order, the given one checked', () => {
@@ -131,7 +129,6 @@ describe('mountProductCard', () => {
   it('sets data-tooltip on actions and swatches, omitting title on swatches', () => {
     mount();
     expect(button('Rotate').dataset.tooltip).toBe('Turn the look');
-    expect(button('Audio').dataset.tooltip).toBe('Play audio description');
     expect(button('Reset').dataset.tooltip).toBe('Reset camera and mannequin');
     expect(button('Material').dataset.tooltip).toBe('Show mannequin swatches');
 
@@ -184,16 +181,6 @@ describe('ProductCardHandle.setRotating', () => {
   });
 });
 
-describe('ProductCardHandle.setAudioAvailable', () => {
-  it('disables the Audio button and lets it come back', () => {
-    const handle = mount();
-    handle.setAudioAvailable(false);
-    expect(button('Audio').disabled).toBe(true);
-    handle.setAudioAvailable(true);
-    expect(button('Audio').disabled).toBe(false);
-  });
-});
-
 describe('ProductCardHandle.setLook', () => {
   it('re-renders the name, the text, the thumbnail and the swatches', () => {
     const handle = mount();
@@ -205,16 +192,27 @@ describe('ProductCardHandle.setLook', () => {
     );
     expect(swatch('dark').getAttribute('aria-checked')).toBe('true');
   });
+
+  it('resets the Material disclosure to open when look changes', () => {
+    const handle = mount();
+    const swatches = root.querySelector<HTMLElement>('.product-card__swatches');
+    const material = button('Material');
+    material.click();
+    expect(swatches?.hidden).toBe(true);
+    expect(material.getAttribute('aria-expanded')).toBe('false');
+
+    handle.setLook(OTHER, 'base');
+    expect(swatches?.hidden).toBe(false);
+    expect(material.getAttribute('aria-expanded')).toBe('true');
+  });
 });
 
 describe('the card reporting actions', () => {
-  it('reports Rotate, Audio and Reset through their own buttons', () => {
+  it('reports Rotate and Reset through their own buttons', () => {
     const handlers = actions();
     mount({ handlers });
     button('Rotate').click();
     expect(handlers.rotate).toHaveBeenCalledTimes(1);
-    button('Audio').click();
-    expect(handlers.audio).toHaveBeenCalledTimes(1);
     button('Reset').click();
     expect(handlers.reset).toHaveBeenCalledTimes(1);
     expect(handlers.material).not.toHaveBeenCalled();
@@ -228,15 +226,24 @@ describe('the card reporting actions', () => {
     expect(handlers.material).toHaveBeenCalledWith('dark');
   });
 
-  it('keeps the Material button to the card: it opens the row, it reports nothing', () => {
+  it('keeps the Material button to the card: it toggles the row, it reports nothing', () => {
     const handlers = actions();
     mount({ handlers });
-    button('Material').click();
+    const swatches = root.querySelector<HTMLElement>('.product-card__swatches');
+    const material = button('Material');
+    expect(swatches?.hidden).toBe(false);
+    expect(material.getAttribute('aria-expanded')).toBe('true');
+
+    material.click();
     expect(handlers.rotate).not.toHaveBeenCalled();
-    expect(handlers.audio).not.toHaveBeenCalled();
     expect(handlers.reset).not.toHaveBeenCalled();
     expect(handlers.material).not.toHaveBeenCalled();
-    expect(root.querySelector<HTMLElement>('.product-card__swatches')?.hidden).toBe(false);
+    expect(swatches?.hidden).toBe(true);
+    expect(material.getAttribute('aria-expanded')).toBe('false');
+
+    material.click();
+    expect(swatches?.hidden).toBe(false);
+    expect(material.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('navigates swatches with arrow keys, Home and End in the radio group', () => {

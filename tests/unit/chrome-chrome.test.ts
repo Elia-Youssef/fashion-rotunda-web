@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Catalog, CatalogLook } from '../../src/catalog/catalog';
-import { AUDIO_STUB_MESSAGE, mountChrome } from '../../src/ui/chrome';
+import { mountChrome } from '../../src/ui/chrome';
 import type { ChromeHandle } from '../../src/ui/chrome';
 
 function makeLook(id: string, name: string): CatalogLook {
@@ -12,7 +12,6 @@ function makeLook(id: string, name: string): CatalogLook {
     description: `${name} description`,
     thumbnail: `thumbs/${id}.jpg`,
     file: `looks/${id}.glb`,
-    audio: null,
     variants: ['base', 'light', 'dark'],
     defaultVariant: 'base',
     mannequinNode: 'mannequin',
@@ -196,13 +195,12 @@ describe('mountChrome', () => {
     expect(cardRoot.firstElementChild?.classList.contains('product-card')).toBe(true);
   });
 
-  it('carries the Audio action as a disabled button with the stub sentence ready', () => {
+  it('renders actions without an audio button or empty slot', () => {
     mount();
-    const audio = [...cardRoot.querySelectorAll<HTMLButtonElement>('.product-card__action')].find(
-      (candidate) => candidate.textContent === 'Audio',
-    );
-    expect(audio?.disabled).toBe(true);
-    expect(AUDIO_STUB_MESSAGE).toBe("audio arrives with G5.1's audio step");
+    const actions = [...cardRoot.querySelectorAll<HTMLButtonElement>('.product-card__action')];
+    const labels = actions.map((candidate) => candidate.textContent);
+    expect(labels).toEqual(['Rotate', 'Reset', 'Material']);
+    expect(labels).not.toContain('Audio');
   });
 });
 
@@ -263,8 +261,8 @@ describe('the swatches', () => {
   it('send the click to the showroom and mark what it took', async () => {
     const { showroom } = mount();
     swatch('dark').click();
-    expect(showroom.setVariant).toHaveBeenCalledWith('dark');
     await vi.waitFor(() => {
+      expect(showroom.setVariant).toHaveBeenCalledWith('dark');
       expect(swatch('dark').getAttribute('aria-checked')).toBe('true');
     });
     expect(swatch('base').getAttribute('aria-checked')).toBe('false');
@@ -314,6 +312,53 @@ describe('Reset', () => {
       expect(showroom.calls).toContain('resetCamera');
     });
     expect(actionButton('Rotate').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('wins deterministically when pressed before an earlier swatch mutation settles', async () => {
+    const delayed = fakeShowroom('wallis-dress');
+    const pending: Array<{ name: string; resolve: () => void }> = [];
+    let acceptedVariant = 'base';
+    delayed.setVariant.mockImplementation((name: string): Promise<void> => {
+      delayed.calls.push(`setVariant:${name}`);
+      return new Promise<void>((resolve) => {
+        pending.push({
+          name,
+          resolve: (): void => {
+            acceptedVariant = name;
+            delayed.setExternally('wallis-dress', acceptedVariant);
+            resolve();
+          },
+        });
+      });
+    });
+
+    const { showroom } = mount({ showroom: delayed });
+    swatch('dark').click();
+    actionButton('Reset').click();
+
+    await vi.waitFor(() => {
+      expect(showroom.setVariant).toHaveBeenCalledTimes(1);
+    });
+    expect(pending.map(({ name }) => name)).toEqual(['dark']);
+
+    pending[0].resolve();
+    await vi.waitFor(() => {
+      expect(showroom.setVariant).toHaveBeenCalledTimes(2);
+    });
+    expect(pending.map(({ name }) => name)).toEqual(['dark', 'base']);
+
+    pending[1].resolve();
+    await vi.waitFor(() => {
+      expect(showroom.calls).toContain('resetCamera');
+      expect(swatch('base').getAttribute('aria-checked')).toBe('true');
+    });
+    expect(acceptedVariant).toBe('base');
+    expect(showroom.calls.slice(-4)).toEqual([
+      'setLookYaw:0',
+      'setVariant:dark',
+      'setVariant:base',
+      'resetCamera',
+    ]);
   });
 });
 

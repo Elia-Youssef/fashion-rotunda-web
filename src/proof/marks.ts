@@ -124,6 +124,13 @@ export interface ProofSnapshot {
   lookSwitchMs: number | null;
   gpu: { p50: number | null; p95: number | null; available: boolean };
   post: string;
+  /**
+   * The canvas's committed data-governor status tokens ('off' when no governor runs this page).
+   * Optional so older snapshot builders keep compiling; the composition root always passes it.
+   */
+  governor?: string;
+  /** The canvas's committed, capped data-governor-log JSON; '' when no governor runs. */
+  governorLog?: string;
   cacheState: 'cold' | 'warm';
 }
 
@@ -148,6 +155,10 @@ export interface SnapshotInput {
    * already holds, which is how the panel and the e2e suite drift apart.
    */
   post: string;
+  /** The canvas's committed data-governor tokens, the same bridge the panel and e2e read. */
+  governor?: string;
+  /** The canvas's committed, capped data-governor-log JSON. */
+  governorLog?: string;
   cacheState?: 'cold' | 'warm';
 }
 
@@ -174,6 +185,8 @@ export function snapshot(input: SnapshotInput): ProofSnapshot {
     lookSwitchMs: input.lookSwitchMs,
     gpu: input.gpu,
     post: input.post,
+    governor: input.governor ?? 'off',
+    governorLog: input.governorLog ?? '',
     cacheState: input.cacheState ?? cacheState(),
   };
 }

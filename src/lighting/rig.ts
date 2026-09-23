@@ -1,200 +1,201 @@
-// The studio rig as data: seven entries carrying the Unreal level's own values, converted to three.js
-// metres and physical units. No three.js import and no DOM, so the whole rig is testable in node and the
-// panel can drive it without a renderer.
+// The studio rig as data: three studio lights (Key, Fill, Back) carrying the Unreal level's
+// own positions and sizes, plus a single coordinated Daylight/Atmosphere control.
+// Pure TypeScript, no three.js import and no DOM, so the whole rig is testable in node.
 //
-// Source of every number: assets-src/source/unreal/lights.json, written by the level export. That file is
-// not in the repository (.gitignore line 11 ignores assets-src/source/unreal/), so the values it carries
-// are copied into UNREAL below and the tests state the converted results. Read the file when a value looks
-// wrong; do not guess one.
-//
-// What is deliberately dropped:
-// - light_color, 188/225/255 on the rect lights and 255/215/179 on the point lights. Unreal multiplies that
-//   fixed tint by the temperature colour; keeping both would tint every light twice, once from a slider the
-//   panel shows and once from a constant it does not. The temperature is the control the product needs, so
-//   the tint goes and the panel's kelvin is the only colour source.
-// - barn doors, source_length, specular_scale, indirect_lighting_intensity and
-//   volumetric_scattering_intensity: Unreal features with no three.js equivalent in this goal.
-// - cast_shadows on the rect and point lights. three's RectAreaLight has no shadow support at all
-//   (src/lights/RectAreaLight.js line 10), and eight shadow casting point lights would be 48 cube faces a
-//   frame. One room gets one shadow map, from the sun.
+// Source of positions and sizes: assets-src/source/unreal/lights.json.
+// What is deliberately removed for UI-5:
+// - TopLight and the 8-point IndirectLight ring are removed from the active rig.
+// - Separate sun angle, elevation, kelvin, exposure, and sky controls are replaced by
+//   the single continuous Daylight/Atmosphere control.
+// - RectAreaLights use native color inputs (#RRGGBB) derived from authored defaults. Unreal combines
+//   each light's Kelvin temperature with the authored sRGB tint (188, 225, 255) by multiplication;
+//   kelvinTintToHex carries both into the defaults: Key at #bcc8bd (4500 K), Fill at #b3dbff
+//   (7000 K), Back at #bce1ff (6500 K, exactly the authored gel because 6500 K is the white balance).
+// - Only the Daylight sun casts shadows; Key, Fill, and Back remain shadowless.
 
 import {
   CANDELA_RANGE,
-  KELVIN_RANGE,
-  SKY_SCALE_RANGE,
-  SUN_ANGLE_RANGE,
-  SUN_LUX_RANGE,
   clamp,
+  kelvinToRgb,
   unrealToThreeDirection,
   unrealToThreePosition,
 } from './units';
 
-export type RigLightKind = 'rect' | 'point' | 'sun' | 'sky';
+export type RigStudioLightId = 'key' | 'fill' | 'back';
+export type RigLightId = RigStudioLightId;
 
 export interface RigLight {
-  id: 'top' | 'key' | 'fill' | 'back' | 'indirect' | 'sun' | 'sky';
-  /** The name the Unreal panel prints, so a screenshot of one reads against the other. */
+  id: RigStudioLightId;
   label: string;
-  kind: RigLightKind;
+  kind: 'rect';
   on: boolean;
-  /** Candela for rect and point, lux for the sun, a unitless scale for the sky. */
+  /** Candela for rect lights in [0, 50]. */
   intensity: number;
-  kelvin: number;
-  /** Metres, three axes. Absent for the sun and the sky. For the point ring this is the ring centre. */
+  /** Normalized lowercase 6-digit hex color string, e.g. '#bce1ff'. */
+  color: string;
+  /** Metres, three axes [x, y, z]. */
   position?: [number, number, number];
-  /** Unit vector the light points along. Rect and sun only. On the sun it derives from sunAngleDeg. */
+  /** Unit vector the light points along [x, y, z]. */
   direction?: [number, number, number];
-  /** Metres, rect only. Full width and height, not half extents: Unreal states source_width that way too. */
+  /** Metres [width, height]. */
   size?: [number, number];
-  /** One position per member of the point ring. createThreeRig places the lights from this, not position. */
-  members?: [number, number, number][];
-  /** Sun only: 0 east, 90 zenith, 180 west, along the arc the Unreal sun already sits on. */
-  sunAngleDeg?: number;
-  castShadow: boolean;
+  castShadow: false;
 }
 
 export interface Rig {
   lights: RigLight[];
-  /** The renderer's toneMappingExposure. 1 until it is tuned against the stills. */
+  /** Continuous daylight/atmosphere control from 0.0 (Dawn) to 0.5 (Day) to 1.0 (Dusk). */
+  daylight: number;
+  /** Preserved tone mapping exposure (default 1.0). */
   exposure: number;
 }
 
-/** What a panel control for one kind of light spans, and the unit its readout prints. */
 export interface IntensityScale {
   range: readonly [number, number];
   step: number;
   unit: string;
 }
 
-/** Metres at which a ring point light stops contributing. Unreal attenuation_radius, 1000 cm. */
-export const INDIRECT_DISTANCE_M = 10;
-
-/** A tolerance band for parseRig only, so a hand edited URL cannot black out or blow out the page. */
+export { CANDELA_RANGE } from './units';
+export const DAYLIGHT_RANGE: readonly [number, number] = [0, 1];
+export const DAYLIGHT_STEP = 0.01;
 export const EXPOSURE_RANGE: readonly [number, number] = [0.05, 8];
 
-/** The serialized format's first field. A different value means a rig this build cannot read. */
-const RIG_FORMAT = 'v1';
-
-/** The finest step any control offers is the sun angle at 0.001 degrees, so three decimals round trip. */
+const RIG_FORMAT = 'v2';
 const SERIALIZED_DECIMALS = 3;
 
-interface UnrealRectLight {
-  intensity: number;
-  kelvin: number;
-  visible: boolean;
-  locationCm: [number, number, number];
-  forward: [number, number, number];
-  sizeCm: [number, number];
+function round(value: number, decimals: number): number {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
 }
 
-interface UnrealPointRing {
-  intensity: number;
-  kelvin: number;
-  visible: boolean;
-  membersCm: [number, number, number][];
+/** Standard linear RGB channel to sRGB [0, 1]. */
+function linearToSrgb(c: number): number {
+  const clamped = Math.max(0, Math.min(1, c));
+  return clamped <= 0.0031308 ? clamped * 12.92 : 1.055 * Math.pow(clamped, 1 / 2.4) - 0.055;
 }
 
-interface UnrealSun {
-  intensity: number;
-  kelvin: number;
-  visible: boolean;
-  forward: [number, number, number];
+/** Standard sRGB channel to linear RGB [0, 1]. */
+export function srgbToLinear(c: number): number {
+  const clamped = Math.max(0, Math.min(1, c));
+  return clamped <= 0.04045 ? clamped / 12.92 : Math.pow((clamped + 0.055) / 1.055, 2.4);
 }
 
-interface UnrealSky {
-  intensity: number;
-  visible: boolean;
+/** Converts a linear RGB triple [0, 1] to a lowercase #rrggbb hex string. */
+export function linearRgbToHex(linearRgb: [number, number, number]): string {
+  const r = Math.round(linearToSrgb(linearRgb[0]) * 255);
+  const g = Math.round(linearToSrgb(linearRgb[1]) * 255);
+  const b = Math.round(linearToSrgb(linearRgb[2]) * 255);
+  const hex = (val: number) => val.toString(16).padStart(2, '0');
+  return `#${hex(r)}${hex(g)}${hex(b)}`;
+}
+
+/** Converts a Kelvin color temperature to an sRGB #rrggbb hex string. */
+export function kelvinToHex(kelvin: number): string {
+  return linearRgbToHex(kelvinToRgb(kelvin));
+}
+
+/** The sRGB gel Unreal authors on every studio rect light: RGB (188, 225, 255). */
+const AUTHORED_TINT_SRGB: readonly [number, number, number] = [188, 225, 255];
+
+/** One tint channel, authored 0-255 sRGB, to linear. Non-finite collapses to 0, never NaN out. */
+function tintChannelToLinear(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return srgbToLinear(Math.min(1, Math.max(0, value)));
 }
 
 /**
- * The Unreal values, verbatim from lights.json. Locations and sizes are centimetres, intensities are
- * candela except the sun, which Unreal states in lux and writes with no intensity_units field.
+ * The effective color of a studio light: Unreal combines the Kelvin temperature with the authored
+ * sRGB tint by multiplication, so the two combine once in linear space — kelvinToRgb is already
+ * linear and the tint crosses srgbToLinear exactly once — and linearRgbToHex stores the result as
+ * sRGB hex. Every channel stays in [0, 1], so no NaN or out-of-range value can reach a light.
  */
-const UNREAL: {
-  top: UnrealRectLight;
-  key: UnrealRectLight;
-  fill: UnrealRectLight;
-  back: UnrealRectLight;
-  indirect: UnrealPointRing;
-  sun: UnrealSun;
-  sky: UnrealSky;
-} = {
-  top: {
-    intensity: 25,
-    kelvin: 6500,
-    visible: true,
-    locationCm: [0, 0, 600],
-    forward: [-2.220446049250313e-16, 0, -1.0000000000000002],
-    sizeCm: [400, 400],
-  },
+export function kelvinTintToHex(
+  kelvin: number,
+  tint: readonly [number, number, number] = AUTHORED_TINT_SRGB,
+): string {
+  const kelvinLinear = kelvinToRgb(kelvin);
+  const tintLinear: [number, number, number] = [
+    tintChannelToLinear(tint[0] / 255),
+    tintChannelToLinear(tint[1] / 255),
+    tintChannelToLinear(tint[2] / 255),
+  ];
+  return linearRgbToHex([
+    kelvinLinear[0] * tintLinear[0],
+    kelvinLinear[1] * tintLinear[1],
+    kelvinLinear[2] * tintLinear[2],
+  ]);
+}
+
+/** Normalizes any valid hex color string into a clean lowercase '#rrggbb' format. */
+export function normalizeHexColor(value: string, fallback = '#ffffff'): string {
+  if (typeof value !== 'string') return fallback;
+  let clean = value.trim().toLowerCase();
+  if (clean.startsWith('#')) clean = clean.slice(1);
+  if (clean.length === 3) {
+    clean = clean[0] + clean[0] + clean[1] + clean[1] + clean[2] + clean[2];
+  }
+  if (!/^[0-9a-f]{6}$/.test(clean)) {
+    return fallback;
+  }
+  return `#${clean}`;
+}
+
+/** Converts an '#rrggbb' hex string to linear RGB [0, 1] for Three.js. */
+export function hexToLinearRgb(hex: string): [number, number, number] {
+  const clean = normalizeHexColor(hex).slice(1);
+  const r = parseInt(clean.slice(0, 2), 16) / 255;
+  const g = parseInt(clean.slice(2, 4), 16) / 255;
+  const b = parseInt(clean.slice(4, 6), 16) / 255;
+  return [srgbToLinear(r), srgbToLinear(g), srgbToLinear(b)];
+}
+
+/** Unreal values verbatim from assets-src/source/unreal/lights.json. */
+const UNREAL = {
   key: {
     intensity: 15,
     kelvin: 4500,
+    tint: [188, 225, 255] as [number, number, number],
     visible: true,
-    locationCm: [200, -200, 280],
-    forward: [-0.6459741880212506, 0.645974188021251, -0.40673664307580015],
-    sizeCm: [60, 90],
+    locationCm: [200, -200, 280] as [number, number, number],
+    forward: [-0.6459741880212506, 0.645974188021251, -0.40673664307580015] as [number, number, number],
+    sizeCm: [60, 90] as [number, number],
   },
   fill: {
     intensity: 7,
     kelvin: 7000,
+    tint: [188, 225, 255] as [number, number, number],
     visible: false,
-    locationCm: [-215, -230, 280],
-    forward: [0.645974188021251, 0.6459741880212508, -0.40673664307580015],
-    sizeCm: [150, 150],
+    locationCm: [-215, -230, 280] as [number, number, number],
+    forward: [0.645974188021251, 0.6459741880212508, -0.40673664307580015] as [number, number, number],
+    sizeCm: [150, 150] as [number, number],
   },
   back: {
     intensity: 7,
     kelvin: 6500,
+    tint: [188, 225, 255] as [number, number, number],
     visible: false,
-    locationCm: [5, 330, 300],
-    forward: [-4.440892098500626e-16, -0.9135454576426016, -0.4067366430757995],
-    sizeCm: [150, 150],
-  },
-  indirect: {
-    intensity: 5,
-    kelvin: 5000,
-    visible: true,
-    // BP_PointLightActor_01 to _08, in that order. The ring is not perfectly circular in the level and is
-    // kept as authored: the radii run 7.110, 7.122 and 7.128 metres.
-    membersCm: [
-      [0, 711, 657],
-      [-503.629166, 503.62887, 657],
-      [-712.8, 0, 657],
-      [-503.629166, -503.62887, 657],
-      [0, -711, 657],
-      [503.629166, -503.62887, 657],
-      [712.8, 0, 657],
-      [503.629166, 503.62887, 657],
-    ],
+    locationCm: [5, 330, 300] as [number, number, number],
+    forward: [-4.440892098500626e-16, -0.9135454576426016, -0.4067366430757995] as [number, number, number],
+    sizeCm: [150, 150] as [number, number],
   },
   sun: {
     intensity: 7,
     kelvin: 7000,
     visible: true,
-    forward: [0.6387413386906354, -0.11617802907643715, -0.7605998736573714],
-  },
-  sky: {
-    intensity: 2,
-    visible: true,
+    forward: [0.6387413386906354, -0.11617802907643715, -0.7605998736573714] as [number, number, number],
   },
 };
 
 /**
- * The sun's arc. The Unreal sun points 49.517 degrees below the horizontal (its own pitch), so the sun sits
- * at that elevation on the far side of the sky from where it shines. The arc runs through that same
- * vertical plane: its east end is the horizontal unit vector in the plane whose x is positive, three's +x
- * being east, and the angle sweeps from there through the zenith to the west end.
+ * The sun's arc across the Rotunda.
+ * East end: unit vector in vertical plane with +x. Sweeps through zenith (90 deg) to west.
  */
 function deriveSunArc(): { east: [number, number, number]; angleDeg: number } {
   const direction = unrealToThreeDirection(UNREAL.sun.forward);
-  // The unit vector from the origin towards the sun is the opposite of the one it shines along.
   const toSun: [number, number, number] = [-direction[0], -direction[1], -direction[2]];
   const horizontal = Math.hypot(toSun[0], toSun[2]);
-  // The end of the arc with a positive x is the east one. The Unreal sun's own x is negative, so the arc's
-  // east end is the opposite horizontal vector and the sun sits past the zenith, in the west half.
   const sign = toSun[0] < 0 ? -1 : 1;
-  // A sun straight overhead has no horizontal part and every arc through it is the same arc, so +x wins.
   const east: [number, number, number] =
     horizontal > 0 ? [(sign * toSun[0]) / horizontal, 0, (sign * toSun[2]) / horizontal] : [1, 0, 0];
   const cosine = toSun[0] * east[0] + toSun[2] * east[2];
@@ -202,19 +203,13 @@ function deriveSunArc(): { east: [number, number, number]; angleDeg: number } {
   return { east, angleDeg: round(angleDeg, SERIALIZED_DECIMALS) };
 }
 
-function round(value: number, decimals: number): number {
-  const factor = 10 ** decimals;
-  return Math.round(value * factor) / factor;
-}
-
 const SUN_ARC = deriveSunArc();
 
 /**
- * The direction the sun shines along at a given angle on its arc: 0 east, 90 zenith, 180 west. The rig
- * keeps every sun entry's direction equal to this, so nothing downstream has to know the arc exists.
+ * Returns the direction vector the sun shines along for a given angle on its arc (0 east, 90 zenith, 180 west).
  */
 export function sunDirection(angleDeg: number): [number, number, number] {
-  const radians = (clamp(angleDeg, SUN_ANGLE_RANGE[0], SUN_ANGLE_RANGE[1]) * Math.PI) / 180;
+  const radians = (clamp(angleDeg, 0, 180) * Math.PI) / 180;
   const cosine = Math.cos(radians);
   const toSun: [number, number, number] = [
     cosine * SUN_ARC.east[0],
@@ -224,39 +219,107 @@ export function sunDirection(angleDeg: number): [number, number, number] {
   return [-toSun[0], -toSun[1], -toSun[2]];
 }
 
-/** What a control for this kind of light spans. The panel and parseRig share it so they cannot disagree. */
-export function intensityScale(kind: RigLightKind): IntensityScale {
-  switch (kind) {
-    case 'sun':
-      return { range: SUN_LUX_RANGE, step: 0.5, unit: 'lx' };
-    case 'sky':
-      return { range: SKY_SCALE_RANGE, step: 0.1, unit: 'scale' };
-    default:
-      return { range: CANDELA_RANGE, step: 0.5, unit: 'cd' };
+export interface DaylightParameters {
+  /** Sun angle in degrees along arc: 130.4829 (Unreal reference). */
+  angleDeg: number;
+  /** Sun direction vector [x, y, z] pointing along sunlight path. */
+  direction: [number, number, number];
+  /** Sun intensity in lux. */
+  intensity: number;
+  /** Correlated color temperature in Kelvin. */
+  kelvin: number;
+  /** Normalized #rrggbb hex color tint. */
+  color: string;
+  /** Environment/sky intensity factor for scene.environmentIntensity. */
+  skyIntensity: number;
+  /** Background intensity factor for scene.backgroundIntensity. */
+  backgroundIntensity: number;
+  /** Coordinated renderer tone mapping exposure. */
+  exposure: number;
+}
+
+/**
+ * Evaluates the coordinated daylight parameters from the single continuous daylight input:
+ * 0.0: Minimum Daylight (navigable, warm 4000 K sun, gentle ambient, conservative exposure)
+ * 0.5: Reference Daylight (authoritative Unreal reference: 7.0 lux, 7000 K #f3f8ff, sky 2.0, exposure 1.0)
+ * 1.0: Maximum Daylight (bright 12.0 lux, crisp 7500 K, sky 2.6, stopped-down exposure to prevent clipping)
+ */
+export function daylightParameters(daylight: number): DaylightParameters {
+  const safeDaylight = typeof daylight === 'number' && !Number.isNaN(daylight) ? daylight : 0.5;
+  const d = clamp(safeDaylight, DAYLIGHT_RANGE[0], DAYLIGHT_RANGE[1]);
+
+  // Sun direction matches the established web conversion of the Unreal directional light
+  const angleDeg = SUN_ARC.angleDeg;
+  const direction = unrealToThreeDirection(UNREAL.sun.forward);
+
+  // Directional sun intensity increases smoothly: 2.0 at d=0, 7.0 at d=0.5 (Unreal reference), 12.0 at d=1
+  const intensity = round(2.0 + 10.0 * d, SERIALIZED_DECIMALS);
+
+  // Color temperature: warm low daylight (4000 K) -> Unreal reference white-tinted (7000 K) -> crisp (7500 K)
+  const kelvin = Math.round(
+    d <= 0.5
+      ? 4000 + (7000 - 4000) * (d / 0.5)
+      : 7000 + (7500 - 7000) * ((d - 0.5) / 0.5),
+  );
+  const color = kelvinToHex(kelvin);
+
+  // Environment/sky intensity: concave quadratic curve 1.0 -> 2.0 (Unreal SkyLight 2) -> 2.6
+  const sky = round(-0.8 * d * d + 2.4 * d + 1.0, SERIALIZED_DECIMALS);
+
+  // Background intensity: visually related to environment without blowing out cloud detail
+  const background = round(-0.10 * d * d + 0.25 * d + 0.15, SERIALIZED_DECIMALS);
+
+  // Coordinated exposure: conservative tone-mapping exposure preventing highlight clipping at high daylight
+  const exposure = round(1.10 - 0.20 * d, SERIALIZED_DECIMALS);
+
+  return {
+    angleDeg,
+    direction,
+    intensity,
+    kelvin,
+    color,
+    skyIntensity: sky,
+    backgroundIntensity: background,
+    exposure,
+  };
+}
+
+/** Evaluates the active directional sun parameters for the runtime rig. */
+export function daylightSun(daylight: number): DaylightParameters {
+  return daylightParameters(daylight);
+}
+
+/** Evaluates the sky environment intensity for a given rig. */
+export function skyIntensity(rig: Rig): number {
+  return daylightParameters(rig.daylight).skyIntensity;
+}
+
+export function intensityScale(kind: 'rect' = 'rect'): IntensityScale {
+  void kind;
+  return { range: CANDELA_RANGE, step: 0.5, unit: 'cd' };
+}
+
+function freezeRig(rig: Rig): Rig {
+  for (const light of rig.lights) {
+    if (light.position) Object.freeze(light.position);
+    if (light.direction) Object.freeze(light.direction);
+    if (light.size) Object.freeze(light.size);
+    Object.freeze(light);
   }
+  Object.freeze(rig.lights);
+  Object.freeze(rig);
+  return rig;
 }
 
 function buildDefaultRig(): Rig {
   const lights: RigLight[] = [
-    {
-      id: 'top',
-      label: 'TopLight',
-      kind: 'rect',
-      on: UNREAL.top.visible,
-      intensity: UNREAL.top.intensity,
-      kelvin: UNREAL.top.kelvin,
-      position: unrealToThreePosition(UNREAL.top.locationCm),
-      direction: unrealToThreeDirection(UNREAL.top.forward),
-      size: [UNREAL.top.sizeCm[0] / 100, UNREAL.top.sizeCm[1] / 100],
-      castShadow: false,
-    },
     {
       id: 'key',
       label: 'KeyLight',
       kind: 'rect',
       on: UNREAL.key.visible,
       intensity: UNREAL.key.intensity,
-      kelvin: UNREAL.key.kelvin,
+      color: kelvinTintToHex(UNREAL.key.kelvin, UNREAL.key.tint), // #bcc8bd
       position: unrealToThreePosition(UNREAL.key.locationCm),
       direction: unrealToThreeDirection(UNREAL.key.forward),
       size: [UNREAL.key.sizeCm[0] / 100, UNREAL.key.sizeCm[1] / 100],
@@ -268,7 +331,7 @@ function buildDefaultRig(): Rig {
       kind: 'rect',
       on: UNREAL.fill.visible,
       intensity: UNREAL.fill.intensity,
-      kelvin: UNREAL.fill.kelvin,
+      color: kelvinTintToHex(UNREAL.fill.kelvin, UNREAL.fill.tint), // #b3dbff
       position: unrealToThreePosition(UNREAL.fill.locationCm),
       direction: unrealToThreeDirection(UNREAL.fill.forward),
       size: [UNREAL.fill.sizeCm[0] / 100, UNREAL.fill.sizeCm[1] / 100],
@@ -280,120 +343,68 @@ function buildDefaultRig(): Rig {
       kind: 'rect',
       on: UNREAL.back.visible,
       intensity: UNREAL.back.intensity,
-      kelvin: UNREAL.back.kelvin,
+      color: kelvinTintToHex(UNREAL.back.kelvin, UNREAL.back.tint), // #bce1ff
       position: unrealToThreePosition(UNREAL.back.locationCm),
       direction: unrealToThreeDirection(UNREAL.back.forward),
       size: [UNREAL.back.sizeCm[0] / 100, UNREAL.back.sizeCm[1] / 100],
       castShadow: false,
     },
-    {
-      id: 'indirect',
-      label: 'IndirectLight',
-      kind: 'point',
-      on: UNREAL.indirect.visible,
-      intensity: UNREAL.indirect.intensity,
-      kelvin: UNREAL.indirect.kelvin,
-      // The ring centre, for the panel and the proof overlay. The lights go where members says.
-      position: [0, UNREAL.indirect.membersCm[0][2] / 100, 0],
-      members: UNREAL.indirect.membersCm.map(unrealToThreePosition),
-      castShadow: false,
-    },
-    {
-      id: 'sun',
-      label: 'Sun',
-      kind: 'sun',
-      on: UNREAL.sun.visible,
-      intensity: UNREAL.sun.intensity,
-      kelvin: UNREAL.sun.kelvin,
-      direction: sunDirection(SUN_ARC.angleDeg),
-      sunAngleDeg: SUN_ARC.angleDeg,
-      castShadow: true,
-    },
-    {
-      id: 'sky',
-      label: 'Sky',
-      kind: 'sky',
-      on: UNREAL.sky.visible,
-      intensity: UNREAL.sky.intensity,
-      // The Unreal SkyLight carries no temperature. 6500 K is the neutral the panel shows; nothing reads it
-      // until the environment gains a tint.
-      kelvin: 6500,
-      castShadow: false,
-    },
   ];
-  return freezeRig({ lights, exposure: 1 });
+
+  return freezeRig({
+    lights,
+    daylight: 0.5, // Neutral Day
+    exposure: 1,
+  });
 }
 
-/**
- * Frozen so a caller that mutates the default fails loudly instead of poisoning every rig derived from it
- * later. updateLight and parseRig build new objects, so nothing in this module needs to write to one.
- */
-function freezeRig(rig: Rig): Rig {
-  for (const light of rig.lights) {
-    if (light.position) Object.freeze(light.position);
-    if (light.direction) Object.freeze(light.direction);
-    if (light.size) Object.freeze(light.size);
-    if (light.members) {
-      for (const member of light.members) Object.freeze(member);
-      Object.freeze(light.members);
-    }
-    Object.freeze(light);
-  }
-  Object.freeze(rig.lights);
-  Object.freeze(rig);
-  return rig;
-}
-
-/** The rig the page boots with: the Unreal level's own studio, converted. */
 export const DEFAULT_RIG: Rig = buildDefaultRig();
 
 /**
- * The sky's contribution for Environment.apply(scene, intensity). An off sky is 0 rather than its stored
- * intensity, so switching it off removes the environment light the same way visible false removes a lamp.
+ * Immutable update of a studio light in the rig.
  */
-export function skyIntensity(rig: Rig): number {
-  const sky = rig.lights.find((light) => light.id === 'sky');
-  return sky && sky.on ? sky.intensity : 0;
-}
-
-/**
- * One light replaced, everything else shared. Values are clamped to their own ranges, so a rig can never
- * hold a temperature or an intensity the panel could not have produced.
- *
- * On the sun, sunAngleDeg is the source of truth: a patch carrying it recomputes direction, and a patch
- * carrying direction for the sun is ignored, because two ways to orient one light is one too many.
- */
-export function updateLight(rig: Rig, id: RigLight['id'], patch: Partial<RigLight>): Rig {
+export function updateLight(rig: Rig, id: RigStudioLightId, patch: Partial<RigLight>): Rig {
   const lights = rig.lights.map((light) => {
     if (light.id !== id) return light;
     const next: RigLight = { ...light };
     if (patch.on !== undefined) next.on = patch.on;
     if (patch.intensity !== undefined) {
-      const scale = intensityScale(light.kind);
-      next.intensity = clamp(patch.intensity, scale.range[0], scale.range[1]);
+      next.intensity = clamp(patch.intensity, CANDELA_RANGE[0], CANDELA_RANGE[1]);
     }
-    if (patch.kelvin !== undefined) next.kelvin = clamp(patch.kelvin, KELVIN_RANGE[0], KELVIN_RANGE[1]);
-    if (patch.castShadow !== undefined) next.castShadow = patch.castShadow;
+    if (patch.color !== undefined) {
+      next.color = normalizeHexColor(patch.color, light.color);
+    }
     if (patch.position !== undefined) next.position = patch.position;
     if (patch.size !== undefined) next.size = patch.size;
-    if (patch.members !== undefined) next.members = patch.members;
-    if (light.kind === 'sun') {
-      if (patch.sunAngleDeg !== undefined) {
-        const angle = clamp(patch.sunAngleDeg, SUN_ANGLE_RANGE[0], SUN_ANGLE_RANGE[1]);
-        next.sunAngleDeg = round(angle, SERIALIZED_DECIMALS);
-        next.direction = sunDirection(next.sunAngleDeg);
-      }
-    } else if (patch.direction !== undefined) {
-      next.direction = patch.direction;
-    }
+    if (patch.direction !== undefined) next.direction = patch.direction;
     return next;
   });
-  return { lights, exposure: rig.exposure };
+  return { lights, daylight: rig.daylight, exposure: rig.exposure };
 }
 
-/** Exposure replaced, lights shared. Same immutable shape as updateLight. */
+/**
+ * Immutable update of the continuous daylight setting.
+ * Deterministically updates coordinated exposure from daylightParameters.
+ */
+export function updateDaylight(rig: Rig, daylight: number): Rig {
+  const safeDaylight = typeof daylight === 'number' && !Number.isNaN(daylight) ? daylight : 0.5;
+  const clampedDaylight = clamp(safeDaylight, DAYLIGHT_RANGE[0], DAYLIGHT_RANGE[1]);
+  const params = daylightParameters(clampedDaylight);
+  return {
+    lights: rig.lights,
+    daylight: clampedDaylight,
+    exposure: params.exposure,
+  };
+}
+
+/** Exposure replaced, lights and daylight shared. */
 export function updateExposure(rig: Rig, exposure: number): Rig {
-  return { lights: rig.lights, exposure: clamp(exposure, EXPOSURE_RANGE[0], EXPOSURE_RANGE[1]) };
+  const safeExposure = typeof exposure === 'number' && Number.isFinite(exposure) ? exposure : 1.0;
+  return {
+    lights: rig.lights,
+    daylight: rig.daylight,
+    exposure: clamp(safeExposure, EXPOSURE_RANGE[0], EXPOSURE_RANGE[1]),
+  };
 }
 
 function formatNumber(value: number): string {
@@ -401,22 +412,22 @@ function formatNumber(value: number): string {
 }
 
 /**
- * The rig as one URL safe string, for a link that carries a lighting setup. Stable order, the rig's own
- * order: every field is a decimal number or a 0/1 flag, separated by commas inside a light and semicolons
- * between lights, all of which a query string carries unescaped.
- *
- * Only what a control can change is written: on, intensity, kelvin, the sun's angle and the exposure.
- * Positions, sizes and the ring come from the level, and parseRig takes them from the base rig.
+ * Serializes the rig into a compact URL-safe string (v2).
+ * Hex colors are written without leading '#' so no percent-encoding is required in URLs.
+ * Exposure is omitted when equal to default (DEFAULT_RIG.exposure = 1) to keep links byte-identical.
+ * Example: v2;key,1,15,bcc8bd;fill,0,7,b3dbff;back,0,7,bce1ff;day,0.5
  */
 export function serializeRig(rig: Rig): string {
   const parts = [RIG_FORMAT];
   for (const light of rig.lights) {
     const on = light.on ? '1' : '0';
-    const fields = [light.id, on, formatNumber(light.intensity), formatNumber(light.kelvin)];
-    if (light.sunAngleDeg !== undefined) fields.push(formatNumber(light.sunAngleDeg));
-    parts.push(fields.join(','));
+    const hex = light.color.replace(/^#/, '').toLowerCase();
+    parts.push([light.id, on, formatNumber(light.intensity), hex].join(','));
   }
-  parts.push(`e,${formatNumber(rig.exposure)}`);
+  parts.push(`day,${formatNumber(rig.daylight)}`);
+  if (round(rig.exposure, SERIALIZED_DECIMALS) !== round(DEFAULT_RIG.exposure, SERIALIZED_DECIMALS)) {
+    parts.push(`e,${formatNumber(rig.exposure)}`);
+  }
   return parts.join(';');
 }
 
@@ -427,32 +438,81 @@ function readNumber(field: string | undefined, fallback: number): number {
 }
 
 /**
- * The inverse of serializeRig, tolerant of anything: a wrong format tag, a missing light, an unknown id, a
- * short row, a word where a number belongs. Every unreadable field falls back to the base rig's value and
- * every readable one is clamped by updateLight, so no input produces a rig the panel could not show.
+ * Tolerant parser supporting current v2 format and explicit migration from legacy v1 strings.
+ * Never throws on malformed input. Removed Top and Indirect lights are completely ignored
+ * and NEVER reinterpreted as another light.
  */
-export function parseRig(text: string, base: Rig): Rig {
+export function parseRig(text: string, base: Rig = DEFAULT_RIG): Rig {
+  if (typeof text !== 'string' || text.length === 0) return base;
   const parts = text.split(';');
-  if (parts[0] !== RIG_FORMAT) return base;
-  let rig = base;
-  for (const part of parts.slice(1)) {
-    const fields = part.split(',');
-    const id = fields[0];
-    if (id === 'e') {
-      rig = updateExposure(rig, readNumber(fields[1], rig.exposure));
-      continue;
+  const version = parts[0];
+
+  if (version === 'v2') {
+    let rig = base;
+    for (const part of parts.slice(1)) {
+      const fields = part.split(',');
+      const id = fields[0];
+      if (id === 'day') {
+        rig = updateDaylight(rig, readNumber(fields[1], rig.daylight));
+        continue;
+      }
+      if (id === 'e') {
+        rig = updateExposure(rig, readNumber(fields[1], rig.exposure));
+        continue;
+      }
+      if (id === 'key' || id === 'fill' || id === 'back') {
+        const patch: Partial<RigLight> = {};
+        if (fields[1] === '1') patch.on = true;
+        else if (fields[1] === '0') patch.on = false;
+        if (fields[2] !== undefined) patch.intensity = readNumber(fields[2], 0);
+        if (fields[3] !== undefined && fields[3].length > 0) {
+          patch.color = normalizeHexColor(fields[3]);
+        }
+        rig = updateLight(rig, id, patch);
+      }
     }
-    const light = rig.lights.find((entry) => entry.id === id);
-    if (!light) continue;
-    const patch: Partial<RigLight> = {
-      on: fields[1] === '1' ? true : fields[1] === '0' ? false : light.on,
-      intensity: readNumber(fields[2], light.intensity),
-      kelvin: readNumber(fields[3], light.kelvin),
-    };
-    if (light.sunAngleDeg !== undefined) {
-      patch.sunAngleDeg = readNumber(fields[4], light.sunAngleDeg);
-    }
-    rig = updateLight(rig, light.id, patch);
+    return rig;
   }
-  return rig;
+
+  // Explicit backward-compatible migration from v1 format
+  if (version === 'v1') {
+    let rig = base;
+    for (const part of parts.slice(1)) {
+      const fields = part.split(',');
+      const id = fields[0];
+
+      // Explicitly ignore removed lights: TopLight, IndirectLight, exposure
+      if (id === 'top' || id === 'indirect' || id === 'e') {
+        continue;
+      }
+
+      if (id === 'key' || id === 'fill' || id === 'back') {
+        const patch: Partial<RigLight> = {};
+        if (fields[1] === '1') patch.on = true;
+        else if (fields[1] === '0') patch.on = false;
+        if (fields[2] !== undefined) patch.intensity = readNumber(fields[2], 0);
+        // In v1, fields[3] was Kelvin color temperature
+        if (fields[3] !== undefined && fields[3].length > 0) {
+          const kelvin = readNumber(fields[3], 6500);
+          patch.color = kelvinToHex(kelvin);
+        }
+        rig = updateLight(rig, id, patch);
+        continue;
+      }
+
+      if (id === 'sun') {
+        // In v1, sun had sunAngleDeg at fields[4]
+        if (fields[4] !== undefined && fields[4].length > 0) {
+          const angle = readNumber(fields[4], 90);
+          // Map angle [15, 165] back to daylight [0, 1]
+          const mappedDaylight = clamp((angle - 15) / 150, 0, 1);
+          rig = updateDaylight(rig, round(mappedDaylight, SERIALIZED_DECIMALS));
+        }
+      }
+    }
+    return rig;
+  }
+
+  // Unknown format tag falls back safely to base
+  return base;
 }

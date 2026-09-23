@@ -13,7 +13,11 @@ describe('mountModeSwitch', () => {
     document.body.appendChild(root);
   });
 
-  function make(initialMode: CameraMode = 'orbit', walkReady = true) {
+  function make(
+    initialMode: CameraMode = 'orbit',
+    walkReady = true,
+    hasPointerLock = true,
+  ) {
     let mode = initialMode;
     const listeners = new Set<(m: CameraMode) => void>();
     const readyListeners = new Set<() => void>();
@@ -39,7 +43,7 @@ describe('mountModeSwitch', () => {
       }),
     };
 
-    const handle = mountModeSwitch(root, mount);
+    const handle = mountModeSwitch(root, mount, { hasPointerLock });
     const triggerWalkReady = () => {
       for (const l of readyListeners) {
         l();
@@ -75,13 +79,72 @@ describe('mountModeSwitch', () => {
     handle.dispose();
   });
 
-  it('clicking a button calls setMode', async () => {
-    const { mount, handle } = make('orbit', true);
-    const walk = root.querySelector('button[data-mode="walk"]') as HTMLButtonElement;
+  it('keeps Orbit selectable after Walk has released the mouse', async () => {
+    const { mount, handle } = make('walk', true);
+    const orbit = root.querySelector('button[data-mode="orbit"]') as HTMLButtonElement;
 
-    walk.click();
-    expect(mount.setMode).toHaveBeenCalledWith('walk');
+    orbit.click();
+    expect(mount.setMode).toHaveBeenCalledWith('orbit');
 
+    handle.dispose();
+  });
+
+  it('shows clear pointer-lock exit guidance while walking', () => {
+    const { mount, handle } = make('walk', true);
+    const hint = document.body.querySelector<HTMLElement>('.archviz-walk-hint');
+
+    expect(hint?.hidden).toBe(false);
+    expect(hint?.textContent).toContain('Press Esc to release the mouse');
+    expect(hint?.textContent).toContain('Press O to return to Orbit');
+
+    void mount.setMode('orbit');
+    expect(hint?.hidden).toBe(true);
+
+    handle.dispose();
+  });
+
+  it('returns to Orbit with O while walking', () => {
+    const { mount, handle } = make('walk', true);
+    const event = new KeyboardEvent('keydown', {
+      code: 'KeyO',
+      bubbles: true,
+      cancelable: true,
+    });
+
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(mount.setMode).toHaveBeenCalledWith('orbit');
+    handle.dispose();
+  });
+
+  it('leaves O alone for modified keys and interactive controls', () => {
+    const { mount, handle } = make('walk', true);
+    const input = document.createElement('input');
+    document.body.appendChild(input);
+
+    input.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyO', bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyO', ctrlKey: true }));
+
+    const editable = document.createElement('div');
+    editable.setAttribute('contenteditable', 'plaintext-only');
+    document.body.appendChild(editable);
+    editable.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyO', bubbles: true }));
+
+    expect(mount.setMode).not.toHaveBeenCalled();
+    input.remove();
+    editable.remove();
+    handle.dispose();
+  });
+
+  it('keeps pointer-lock guidance and its shortcut off touch Walk controls', () => {
+    const { mount, handle } = make('walk', true, false);
+    const hint = document.body.querySelector<HTMLElement>('.archviz-walk-hint');
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyO' }));
+
+    expect(hint?.hidden).toBe(true);
+    expect(mount.setMode).not.toHaveBeenCalled();
     handle.dispose();
   });
 

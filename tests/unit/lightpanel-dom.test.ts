@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DEFAULT_RIG, updateLight } from '../../src/lighting/rig';
+import { CANDELA_RANGE, DAYLIGHT_RANGE, DEFAULT_RIG } from '../../src/lighting/rig';
 import type { Rig } from '../../src/lighting/rig';
-import { CANDELA_RANGE, KELVIN_RANGE, SUN_ANGLE_RANGE, SUN_LUX_RANGE } from '../../src/lighting/units';
 import { mountLightPanel } from '../../src/ui/lightpanel';
 import type { LightPanelHandle } from '../../src/ui/lightpanel';
 
@@ -21,21 +20,8 @@ afterEach(() => {
   root.remove();
 });
 
-interface MountOptions {
-  rig: Rig;
-  onChange: (rig: Rig) => void;
-  presets: Record<string, Rig>;
-}
-
-function mount(options: Partial<MountOptions> = {}): LightPanelHandle {
-  const onChange = options.onChange ?? vi.fn();
-  const presets = options.presets;
-  panel = mountLightPanel(
-    root,
-    presets
-      ? { rig: options.rig ?? DEFAULT_RIG, onChange, presets }
-      : { rig: options.rig ?? DEFAULT_RIG, onChange },
-  );
+function mount(rig: Rig = DEFAULT_RIG, onChange = vi.fn()): LightPanelHandle {
+  panel = mountLightPanel(root, { rig, onChange });
   return panel;
 }
 
@@ -43,53 +29,61 @@ function rows(): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>('.lightpanel__row')];
 }
 
-function control(id: string, name: 'on' | 'intensity' | 'kelvin' | 'angle'): HTMLInputElement {
+function studioControl(
+  id: string,
+  name: 'on' | 'intensity' | 'color',
+): HTMLInputElement {
   const found = root.querySelector<HTMLInputElement>(`[data-light="${id}"] [id$="-${id}-${name}"]`);
   if (!found) throw new Error(`no ${name} control for ${id}`);
   return found;
 }
 
-function readout(id: string, name: 'intensity' | 'kelvin' | 'angle'): string {
-  const input = control(id, name);
+function studioReadout(id: string, name: 'intensity' | 'color'): string {
+  const input = studioControl(id, name);
   const output = root.querySelector<HTMLOutputElement>(`output[for="${input.id}"]`);
   if (!output) throw new Error(`no readout for ${id} ${name}`);
   return output.textContent ?? '';
 }
 
-/** A real input event, the one a dragged slider fires, not a synthetic call of the handler. */
-function drag(input: HTMLInputElement, value: string): void {
-  input.value = value;
-  input.dispatchEvent(new Event('input', { bubbles: true }));
+function daylightControl(): HTMLInputElement {
+  const found = root.querySelector<HTMLInputElement>('input.lightpanel__range--daylight');
+  if (!found) throw new Error('no daylight range control found');
+  return found;
+}
+
+function daylightReadout(): string {
+  const input = daylightControl();
+  const output = root.querySelector<HTMLOutputElement>(`output[for="${input.id}"]`);
+  if (!output) throw new Error('no daylight readout found');
+  return output.textContent ?? '';
 }
 
 describe('mountLightPanel', () => {
-  it('renders one row per light, in the rig order', () => {
+  it('renders exactly four rows: Key, Fill, Back, and Daylight', () => {
     mount();
-    expect(rows()).toHaveLength(7);
-    expect(rows().map((row) => row.dataset.light)).toEqual([
-      'top',
-      'key',
-      'fill',
-      'back',
-      'indirect',
-      'sun',
-      'sky',
-    ]);
-    expect(rows().map((row) => row.querySelector('legend')?.textContent)).toEqual([
-      'TopLight',
+    expect(rows()).toHaveLength(4);
+    expect(rows().map((r) => r.dataset.light)).toEqual(['key', 'fill', 'back', 'daylight']);
+    expect(rows().map((r) => r.querySelector('legend')?.textContent)).toEqual([
       'KeyLight',
       'FillLight',
       'BackLight',
-      'IndirectLight',
-      'Sun',
-      'Sky',
+      'Daylight',
     ]);
   });
 
-  it('spans intensity in candela for the rect and point lights', () => {
+  it('contains zero Top, Indirect, Kelvin, or Preset controls', () => {
     mount();
-    for (const id of ['top', 'key', 'fill', 'back', 'indirect']) {
-      const input = control(id, 'intensity');
+    expect(root.querySelector('[data-light="top"]')).toBeNull();
+    expect(root.querySelector('[data-light="indirect"]')).toBeNull();
+    expect(root.querySelector('select')).toBeNull();
+    expect(root.querySelector('.lightpanel__presets')).toBeNull();
+    expect(root.querySelectorAll('input[id*="kelvin"]')).toHaveLength(0);
+  });
+
+  it('spans intensity in candela for Key, Fill, and Back [0, 50]', () => {
+    mount();
+    for (const id of ['key', 'fill', 'back']) {
+      const input = studioControl(id, 'intensity');
       expect(input.type).toBe('range');
       expect(input.min).toBe(String(CANDELA_RANGE[0]));
       expect(input.max).toBe(String(CANDELA_RANGE[1]));
@@ -97,167 +91,131 @@ describe('mountLightPanel', () => {
     }
   });
 
-  it('spans the sun in lux and the sky in its own scale', () => {
+  it('provides native color inputs with #RRGGBB readouts for Key, Fill, Back', () => {
     mount();
-    expect(control('sun', 'intensity').max).toBe(String(SUN_LUX_RANGE[1]));
-    expect(control('sky', 'intensity').max).toBe('4');
-    expect(control('sky', 'intensity').step).toBe('0.1');
-  });
-
-  it('spans temperature from 2700 K to 8000 K in steps of 50 on every row', () => {
-    mount();
-    for (const row of rows()) {
-      const input = control(row.dataset.light ?? '', 'kelvin');
-      expect(input.min).toBe(String(KELVIN_RANGE[0]));
-      expect(input.max).toBe(String(KELVIN_RANGE[1]));
-      expect(input.step).toBe('50');
+    for (const id of ['key', 'fill', 'back']) {
+      const input = studioControl(id, 'color');
+      expect(input.type).toBe('color');
+      expect(input.value.startsWith('#')).toBe(true);
+      expect(studioReadout(id, 'color')).toBe(input.value);
     }
   });
 
-  it('gives the sun an angle range and gives it to nothing else', () => {
+  it('initializes default readouts matching authored values', () => {
     mount();
-    const angle = control('sun', 'angle');
-    expect(angle.min).toBe(String(SUN_ANGLE_RANGE[0]));
-    expect(angle.max).toBe(String(SUN_ANGLE_RANGE[1]));
-    expect(root.querySelectorAll('[id$="-angle"]')).toHaveLength(1);
+    expect(studioReadout('key', 'intensity')).toBe('15.0 cd');
+    expect(studioReadout('key', 'color')).toBe('#bcc8bd');
+
+    expect(studioReadout('fill', 'intensity')).toBe('7.0 cd');
+    expect(studioReadout('fill', 'color')).toBe('#b3dbff');
+
+    expect(studioReadout('back', 'intensity')).toBe('7.0 cd');
+    expect(studioReadout('back', 'color')).toBe('#bce1ff');
   });
 
-  it('shows the rig values with their units', () => {
+  it('provides a continuous Daylight range with Dawn/Day/Dusk guidance', () => {
     mount();
-    expect(control('top', 'on').checked).toBe(true);
-    expect(control('fill', 'on').checked).toBe(false);
-    expect(control('top', 'intensity').value).toBe('25');
-    expect(readout('top', 'intensity')).toBe('25 cd');
-    expect(readout('top', 'kelvin')).toBe('6500 K');
-    expect(readout('sun', 'intensity')).toBe('7 lx');
-    expect(readout('sun', 'angle')).toBe('130.483 deg');
-    expect(readout('sky', 'intensity')).toBe('2 scale');
+    const range = daylightControl();
+    expect(range.type).toBe('range');
+    expect(range.min).toBe(String(DAYLIGHT_RANGE[0]));
+    expect(range.max).toBe(String(DAYLIGHT_RANGE[1]));
+    expect(daylightReadout()).toBe('Day');
+
+    const guidance = root.querySelector('.lightpanel__guidance');
+    expect(guidance).not.toBeNull();
+    expect(guidance?.textContent).toContain('Dawn');
+    expect(guidance?.textContent).toContain('Day');
+    expect(guidance?.textContent).toContain('Dusk');
   });
 
-  it('labels every control and keeps it reachable from the keyboard', () => {
-    mount();
-    const inputs = [...root.querySelectorAll<HTMLInputElement>('input')];
-    expect(inputs.length).toBe(7 * 3 + 1);
-    for (const input of inputs) {
-      expect(input.id).not.toBe('');
-      const label = root.querySelector<HTMLLabelElement>(`label[for="${input.id}"]`);
-      expect(label?.textContent).toBeTruthy();
-      // Native controls only: nothing here is a div with a click handler, so nothing needs a tabindex.
-      expect(input.tabIndex).toBe(0);
-      expect(input.disabled).toBe(false);
-    }
-  });
-});
-
-describe('the panel reporting a change', () => {
-  it('calls onChange with the whole rig, one value different', () => {
+  it('changing checkbox fires onChange with updated on state', () => {
     const onChange = vi.fn();
-    mount({ onChange });
-    drag(control('key', 'kelvin'), '5500');
+    mount(DEFAULT_RIG, onChange);
+
+    const check = studioControl('key', 'on');
+    check.checked = false;
+    check.dispatchEvent(new Event('change', { bubbles: true }));
+
     expect(onChange).toHaveBeenCalledTimes(1);
-    const next: Rig = onChange.mock.calls[0][0];
-    expect(next).toEqual(updateLight(DEFAULT_RIG, 'key', { kelvin: 5500 }));
-    expect(next).not.toBe(DEFAULT_RIG);
-    expect(DEFAULT_RIG.lights[1].kelvin).toBe(4500);
+    const emittedRig = onChange.mock.calls[0][0] as Rig;
+    expect(emittedRig.lights.find((l) => l.id === 'key')?.on).toBe(false);
   });
 
-  it('reports a checkbox, a slider and the sun angle the same way', () => {
+  it('dragging intensity slider fires onChange with updated candela', () => {
     const onChange = vi.fn();
-    mount({ onChange });
-    control('fill', 'on').checked = true;
-    control('fill', 'on').dispatchEvent(new Event('input', { bubbles: true }));
-    drag(control('top', 'intensity'), '12.5');
-    drag(control('sun', 'angle'), '45');
-    expect(onChange).toHaveBeenCalledTimes(3);
-    const last: Rig = onChange.mock.calls[2][0];
-    expect(last.lights[2].on).toBe(true);
-    expect(last.lights[0].intensity).toBe(12.5);
-    expect(last.lights[5].sunAngleDeg).toBe(45);
-    // The sun's direction follows its angle, which is the rig's job, not the panel's.
-    expect(last.lights[5].direction?.[1]).toBeCloseTo(-Math.sin((45 * Math.PI) / 180), 9);
+    mount(DEFAULT_RIG, onChange);
+
+    const range = studioControl('key', 'intensity');
+    range.value = '35.5';
+    range.dispatchEvent(new Event('input', { bubbles: true }));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const emittedRig = onChange.mock.calls[0][0] as Rig;
+    expect(emittedRig.lights.find((l) => l.id === 'key')?.intensity).toBe(35.5);
+    expect(studioReadout('key', 'intensity')).toBe('35.5 cd');
   });
 
-  it('accumulates: the second change carries the first', () => {
+  it('changing color fires onChange with normalized color hex', () => {
     const onChange = vi.fn();
-    mount({ onChange });
-    drag(control('key', 'kelvin'), '5500');
-    drag(control('top', 'intensity'), '30');
-    const last: Rig = onChange.mock.calls[1][0];
-    expect(last.lights[1].kelvin).toBe(5500);
-    expect(last.lights[0].intensity).toBe(30);
+    mount(DEFAULT_RIG, onChange);
+
+    const color = studioControl('key', 'color');
+    color.value = '#00ff88';
+    color.dispatchEvent(new Event('input', { bubbles: true }));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const emittedRig = onChange.mock.calls[0][0] as Rig;
+    expect(emittedRig.lights.find((l) => l.id === 'key')?.color).toBe('#00ff88');
+    expect(studioReadout('key', 'color')).toBe('#00ff88');
   });
 
-  it('updates the readout as the value moves', () => {
-    mount();
-    drag(control('top', 'intensity'), '12.5');
-    expect(readout('top', 'intensity')).toBe('12.5 cd');
-  });
-});
-
-describe('LightPanelHandle.setRig', () => {
-  it('updates every control without calling onChange', () => {
+  it('dragging daylight range fires onChange and updates readout', () => {
     const onChange = vi.fn();
-    const handle = mount({ onChange });
-    handle.setRig(updateLight(updateLight(DEFAULT_RIG, 'fill', { on: true }), 'top', { intensity: 40 }));
-    expect(control('fill', 'on').checked).toBe(true);
-    expect(control('top', 'intensity').value).toBe('40');
-    expect(readout('top', 'intensity')).toBe('40 cd');
+    mount(DEFAULT_RIG, onChange);
+
+    const range = daylightControl();
+    range.value = '0.1';
+    range.dispatchEvent(new Event('input', { bubbles: true }));
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const emittedRig = onChange.mock.calls[0][0] as Rig;
+    expect(emittedRig.daylight).toBe(0.1);
+    expect(daylightReadout()).toBe('Dawn');
+  });
+
+  it('setRig updates controls without calling onChange', () => {
+    const onChange = vi.fn();
+    const handle = mount(DEFAULT_RIG, onChange);
+
+    const nextRig: Rig = {
+      lights: [
+        { ...DEFAULT_RIG.lights[0], intensity: 40, color: '#123456' },
+        { ...DEFAULT_RIG.lights[1], on: true, intensity: 20 },
+        { ...DEFAULT_RIG.lights[2], intensity: 10 },
+      ],
+      daylight: 0.9,
+      exposure: 1,
+    };
+
+    handle.setRig(nextRig);
     expect(onChange).not.toHaveBeenCalled();
+
+    expect(studioReadout('key', 'intensity')).toBe('40.0 cd');
+    expect(studioReadout('key', 'color')).toBe('#123456');
+    expect(studioControl('fill', 'on').checked).toBe(true);
+    expect(daylightReadout()).toBe('Dusk');
   });
 
-  it('leaves the next change built on the rig it was given', () => {
+  it('dispose removes panel element and aborts listeners', () => {
     const onChange = vi.fn();
-    const handle = mount({ onChange });
-    handle.setRig(updateLight(DEFAULT_RIG, 'fill', { on: true }));
-    drag(control('key', 'kelvin'), '5500');
-    const next: Rig = onChange.mock.calls[0][0];
-    expect(next.lights[2].on).toBe(true);
-    expect(next.lights[1].kelvin).toBe(5500);
-  });
-});
+    const handle = mount(DEFAULT_RIG, onChange);
+    const range = studioControl('key', 'intensity');
 
-describe('presets', () => {
-  it('lists none when none are given', () => {
-    mount();
-    expect(root.querySelector('select')).toBeNull();
-  });
-
-  it('lists one option per preset behind a placeholder', () => {
-    mount({ presets: { Studio: DEFAULT_RIG, Evening: updateLight(DEFAULT_RIG, 'sun', { intensity: 2 }) } });
-    const select = root.querySelector('select');
-    expect([...(select?.options ?? [])].map((option) => option.value)).toEqual(['', 'Studio', 'Evening']);
-  });
-
-  it('loads the chosen rig and goes back to its placeholder', () => {
-    const onChange = vi.fn();
-    const evening = updateLight(DEFAULT_RIG, 'sun', { intensity: 2 });
-    mount({ onChange, presets: { Studio: DEFAULT_RIG, Evening: evening } });
-    const select = root.querySelector('select');
-    if (!select) throw new Error('no preset select');
-    select.value = 'Evening';
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-    expect(onChange).toHaveBeenCalledWith(evening);
-    expect(select.value).toBe('');
-    expect(control('sun', 'intensity').value).toBe('2');
-  });
-});
-
-describe('LightPanelHandle.dispose', () => {
-  it('empties the root', () => {
-    const handle = mount();
-    expect(root.childElementCount).toBe(1);
     handle.dispose();
-    panel = null;
-    expect(root.childElementCount).toBe(0);
-  });
+    expect(root.querySelector('.lightpanel')).toBeNull();
 
-  it('stops reporting: a control that is gone cannot fire', () => {
-    const onChange = vi.fn();
-    const handle = mount({ onChange });
-    const input = control('key', 'kelvin');
-    handle.dispose();
-    panel = null;
-    drag(input, '5500');
+    range.value = '10';
+    range.dispatchEvent(new Event('input', { bubbles: true }));
     expect(onChange).not.toHaveBeenCalled();
   });
 });

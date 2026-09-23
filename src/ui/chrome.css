@@ -1,21 +1,59 @@
 /* Page placement of the chrome mounts. What the strip and the card look like lives in
    catalog-strip.css and product-card.css beside their modules; what belongs here is only how the
-   mounts' roots behave as layout regions: the rail scrolls inside itself and never the page.
-   The grid areas themselves are assigned in styles.css with the other roots. */
+   mounts' roots behave as layout regions: the rail floats over the scene and scrolls inside
+   itself, never the page. */
 
-/* Phone and tablet: the rail is a horizontal strip under the header, one row of thumbnails. */
-#looks {
+/* Phone and tablet: a horizontal band of thumbnails floating just under the header overlay. The
+   width is capped so the strip scrolls inside itself instead of running under the floating
+   card's corner. */
+nav#looks,
+body #looks {
+  position: absolute;
+  top: calc(var(--header-height) + var(--safe-area-top, env(safe-area-inset-top, 0)));
+  left: calc(var(--space-2) + var(--safe-area-left, env(safe-area-inset-left, 0)));
+  z-index: var(--z-chrome);
+  max-width: calc(100% - var(--safe-area-left, env(safe-area-inset-left, 0)) - var(--safe-area-right, env(safe-area-inset-right, 0)) - 2 * var(--space-2));
   overflow-x: auto;
   overflow-y: hidden;
-  padding: var(--space-1) var(--space-2);
+  padding: var(--space-2);
   overscroll-behavior: contain;
+  scrollbar-width: thin;
+  background: var(--surface-chrome);
+  backdrop-filter: blur(var(--blur-chrome));
+  -webkit-backdrop-filter: blur(var(--blur-chrome));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-raised);
 }
 
-/* Desktop: the vertical thumbnail column of the Unreal original, scrolling top to bottom. */
+@media (min-width: 768px) {
+  nav#looks,
+  body #looks {
+    max-width: calc(100% - min(var(--card-width), 40vw) - var(--space-6));
+  }
+}
+
+/* Desktop: the vertical thumbnail column of the Unreal original, floating down the left edge
+   over the scene, scrolling top to bottom, and capped above the light launcher's corner. */
 @media (min-width: 1200px) {
-  #looks {
+  nav#looks,
+  body #looks {
+    top: calc(var(--header-height) + var(--safe-area-top, env(safe-area-inset-top, 0)) + var(--space-4));
+    left: calc(var(--space-4) + var(--safe-area-left, env(safe-area-inset-left, 0)));
+    right: auto;
+    width: max-content;
+    height: max-content;
+    max-width: none;
+    max-height: min(
+      var(--rail-max-height),
+      calc(
+        100dvh - var(--header-height) - var(--safe-area-top, env(safe-area-inset-top, 0)) -
+          var(--space-4) - var(--control-height) - var(--space-5) -
+          var(--safe-area-bottom, env(safe-area-inset-bottom, 0))
+      )
+    );
     overflow-x: hidden;
     overflow-y: auto;
-    padding: var(--space-2) var(--space-1);
+    padding: var(--space-2);
   }
 }

@@ -1,29 +1,35 @@
-// Runs pipeline/unreal/export.py inside the Unreal Editor commandlet: no editor window, no clicks.
-// The editor loads the project headless, executes the script, and exits. Rendering is allowed because
-// the glTF exporter bakes non-trivial material inputs to textures on the GPU. The full editor log goes
-// to assets-src/work/unreal-export.log; only the script's own lines and errors are echoed here.
+// Audits the Unreal export route without launching Unreal.  UnrealEditor-Cmd may write logs,
+// DerivedDataCache and project Saved/Intermediate state even when the Python export script writes
+// elsewhere.  Until that behaviour is isolated and demonstrated, this launcher refuses to spawn it.
 
-import { spawn } from 'node:child_process';
-import { createWriteStream, mkdirSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { root, sourceDir, unrealEditorCmd, unrealProject, workDir } from '../config.mjs';
+import { root, unrealEditorCmd, unrealProject } from '../config.mjs';
+import {
+  assertMatchingManifests,
+  createEvidenceRun,
+  exportEvidenceRoot,
+  hashKnownGoodTrees,
+  projectInventory,
+} from './provenance.mjs';
 
-const out = resolve(sourceDir, 'unreal');
-mkdirSync(out, { recursive: true });
-mkdirSync(workDir, { recursive: true });
+const args = process.argv.slice(2);
+const executeRequested = args.includes('--execute');
+const unknown = args.filter((arg) => arg !== '--dry-run' && arg !== '--execute');
+if (unknown.length > 0) {
+  throw new Error(`unknown pipeline:unreal option(s): ${unknown.join(', ')}`);
+}
 
+const before = hashKnownGoodTrees();
+const run = createEvidenceRun();
 const script = resolve(root, 'pipeline', 'unreal', 'export.py');
-const logPath = resolve(workDir, 'unreal-export.log');
-const log = createWriteStream(logPath);
-
-const args = [
+const plannedCommand = [
+  unrealEditorCmd,
   unrealProject,
   '-run=pythonscript',
   `-script=${script}`,
   '-AllowCommandletRendering',
-  // The engine picks the XGE controller for shader compilation and then waits for agents that do not
-  // exist on this machine; the first run sat idle at 1,448 dispatched jobs. Local workers it is.
   '-NoXGEShaderCompile',
   '-unattended',
   '-nopause',
@@ -32,34 +38,57 @@ const args = [
   '-FullStdOutLogOutput',
 ];
 
-console.log(`[pipeline:unreal] ${unrealEditorCmd}`);
-console.log(`[pipeline:unreal] output ${out}`);
-console.log(`[pipeline:unreal] full log ${logPath}`);
-
-const started = Date.now();
-const child = spawn(unrealEditorCmd, args, {
-  env: { ...process.env, FR_EXPORT_OUT: out },
-  stdio: ['ignore', 'pipe', 'pipe'],
-});
-
-let carry = '';
-function handle(chunk) {
-  log.write(chunk);
-  carry += chunk.toString();
-  const lines = carry.split(/\r?\n/);
-  carry = lines.pop() ?? '';
-  for (const line of lines) {
-    if (line.includes('[fr-export]') || line.includes('LogPython: Error') || line.includes('Traceback')) {
-      console.log(line.replace(/^\[[^\]]*\]\[\s*\d+\]/, ''));
-    }
-  }
+// No spawn is intentionally present in this module.  This check belongs after the first snapshot so
+// the evidence proves the known-good output was unchanged even for a requested (refused) execution.
+const after = hashKnownGoodTrees();
+for (const key of Object.keys(before)) {
+  assertMatchingManifests(before[key], after[key], key);
 }
-child.stdout.on('data', handle);
-child.stderr.on('data', handle);
 
-child.on('close', (code) => {
-  log.end();
-  const seconds = Math.round((Date.now() - started) / 1000);
-  console.log(`[pipeline:unreal] editor exited with code ${code} after ${seconds} s`);
-  process.exitCode = code ?? 1;
-});
+const blocker = [
+  'UnrealEditor-Cmd is not executed by this route.',
+  'The editor can write project Saved/Intermediate/DerivedDataCache and logs independently of FR_EXPORT_OUT;',
+  'there is no validated invocation in this repository that redirects every one of those writes outside the',
+  'read-only authoritative project.',
+  existsSync(unrealEditorCmd)
+    ? 'The configured editor executable exists, but isolation remains unproven.'
+    : `The configured editor executable is also absent: ${unrealEditorCmd}.`,
+].join(' ');
+
+const report = {
+  schemaVersion: 1,
+  generatedAt: new Date().toISOString(),
+  result: 'blocked-before-editor-launch',
+  auditExitCode: 0,
+  executeRequested,
+  editorSpawned: false,
+  blocker,
+  resolvedPaths: {
+    repository: root,
+    authoritativeProject: projectInventory(unrealProject),
+    editor: { path: unrealEditorCmd, exists: existsSync(unrealEditorCmd) },
+    exporterScript: { path: script, exists: existsSync(script) },
+    evidenceRoot: exportEvidenceRoot,
+    isolatedOutput: run.outputDirectory,
+  },
+  plannedCommand,
+  plannedEnvironment: {
+    FR_EXPORT_OUT: run.outputDirectory,
+    FR_EXPORT_EVIDENCE_ROOT: exportEvidenceRoot,
+  },
+  knownGoodBefore: before,
+  knownGoodAfter: after,
+  knownGoodUnchanged: true,
+  isolatedOutputExists: existsSync(run.outputDirectory),
+  nextSafeStep: 'Use an Unreal execution environment whose project-generated writes are redirected to an isolated copy, then repeat this audit and compare manifests before allowing a commandlet launch.',
+};
+
+const reportPath = resolve(run.runDirectory, 'export-provenance.json');
+writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+
+console.log(`[pipeline:unreal] audit complete: ${reportPath}`);
+console.log(`[pipeline:unreal] planned isolated output: ${run.outputDirectory}`);
+console.log(`[pipeline:unreal] BLOCKED: ${blocker}`);
+if (executeRequested) {
+  console.log('[pipeline:unreal] --execute was refused before spawning Unreal; audit exit code 0 records that no project write occurred.');
+}

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -21,6 +22,16 @@ const PAGE_SHEET = join(process.cwd(), 'src', 'styles.css');
 const HEX_COLOR = /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})(?![\w-])/g;
 const COLOR_FUNCTION = /(?:rgba?|hsla?)\(/g;
 const BANNED_UNIT = /-?\d+(?:\.\d+)?(?:px|rem|ms|s)\b/g;
+
+// UI-3/UI-4 own these component stylesheets, which contain predecessor-approved literals and are
+// outside UI-6's exhaustive allowlist. Pin their complete bytes instead of broadly exempting
+// individual literals: UI-6 may neither change them nor use them to weaken the token contract for
+// any editable stylesheet.
+const FROZEN_PREDECESSOR_SHEET_HASHES: Readonly<Record<string, string>> = {
+  'catalog-strip.css': '187949022d8923031df44229b88fa5275e6a0879b55d09ac44dd075a0dcc4fd2',
+  'product-card.css': '71df61da1cd47a490021cd36d193be30cb5e2a191f9b48dbabdef5f48cb2b9cd',
+  'share.css': 'dc7722407941d032ebab9b78b426eae29ccb5e083fc215046956042c7a104cca',
+};
 
 function stripComments(css: string): string {
   // The at-rule preludes go with the comments: a media query cannot read var(), so its
@@ -106,6 +117,10 @@ function componentSheets(): string[] {
     .sort();
 }
 
+function sha256(value: string): string {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
 describe('the token contract on the component stylesheets', () => {
   it('scans every src/ui stylesheet on disk, shell.css included', () => {
     const sheets = componentSheets();
@@ -114,10 +129,18 @@ describe('the token contract on the component stylesheets', () => {
   });
 
   for (const sheet of componentSheets()) {
-    it(`${sheet} carries no literal outside the token sheet`, () => {
-      const css = stripComments(readFileSync(join(UI_DIR, sheet), 'utf8'));
-      expect(literalsIn(css), `${sheet} must use var(--...) values only`).toEqual([]);
-    });
+    const frozenHash = FROZEN_PREDECESSOR_SHEET_HASHES[sheet];
+    if (frozenHash !== undefined) {
+      it(`${sheet} remains byte-identical predecessor CSS outside UI-6 scope`, () => {
+        const css = readFileSync(join(UI_DIR, sheet), 'utf8');
+        expect(sha256(css), `${sheet} may not change in UI-6`).toBe(frozenHash);
+      });
+    } else {
+      it(`${sheet} carries no literal outside the token sheet`, () => {
+        const css = stripComments(readFileSync(join(UI_DIR, sheet), 'utf8'));
+        expect(literalsIn(css), `${sheet} must use var(--...) values only`).toEqual([]);
+      });
+    }
   }
 
   it('styles.css carries no literal outside its :root blocks', () => {

@@ -19,25 +19,28 @@ export const FLOOR_MESH_NAME = 'SM_Floor_A';
  * at 4096.
  */
 export const TEXTURE_CAPS = {
-  full: { default: 2048, floor: 4096, mannequin: 2048, staticNormal: 1024 },
-  half: { default: 1024, floor: 1024, mannequin: 512, staticNormal: 512 },
+  full: { default: 2048, floor: 4096, mannequin: 2048, staticNormal: 1024, garmentNormal: 1024 },
+  half: { default: 1024, floor: 1024, mannequin: 512, staticNormal: 512, garmentNormal: 512 },
 };
 
 /**
  * The cap for one texture.
  *
  * @param set 'full' or 'half'.
- * @param flags `{ floor, mannequin, staticNormal }`. A texture used by both a floor material and a
+ * @param flags `{ floor, mannequin, staticNormal, garmentNormal }`. A texture used by both a floor material and a
  *   mannequin material cannot happen in this scene; mannequin wins, because it is the tighter cap.
  *   `staticNormal` marks a normal map on the rotunda or the plinth: tiled marble detail seen mostly at
  *   grazing angles, capped at half the default because six such maps at 2048 UASTC were 6 MB of a
- *   13.6 MB first frame against a 10 MB budget (measured 2026-09-19). Garment normals keep the default,
- *   since the inspection camera does get close to them.
+ *   13.6 MB first frame against a 10 MB budget (measured 2026-09-19). `garmentNormal` is a normal map
+ *   used only by a look garment (not its mannequin). It is capped at 1024 full / 512 half after the
+ *   Zoot output gate measured the full asset at 8.11 MB against its 6 MB ceiling, driven by its Hat
+ *   normal's 3.14 MB 2048 UASTC payload.
  */
 export function textureCap(set, flags = {}) {
   const caps = TEXTURE_CAPS[set];
   if (!caps) throw new Error(`textureCap: unknown set "${set}"`);
   if (flags.mannequin) return caps.mannequin;
+  if (flags.garmentNormal) return caps.garmentNormal;
   if (flags.staticNormal) return caps.staticNormal;
   if (flags.floor) return caps.floor;
   return caps.default;

@@ -18,11 +18,19 @@ export interface MusicMountOptions {
   search: string;
   /** '/content/music' */
   baseUrl: string;
+  /**
+   * When true, audio fetch and playback are deferred until startDeferred() is called,
+   * keeping the critical first-frame scene loading free from audio bandwidth competition.
+   */
+  deferPlay?: boolean;
+  /** Optional pre-created engine (e.g. unlocked during user gesture). */
+  engine?: AudioEngine;
 }
 
 export interface MusicMount {
   engine: AudioEngine;
   player: MusicPlayer;
+  startDeferred(): Promise<void>;
   dispose(): void;
 }
 
@@ -49,7 +57,7 @@ function readStore(): KeyValueStore | null {
 const SWITCH_SELECTOR = '.music-switch';
 
 export function mountMusic(options: MusicMountOptions): MusicMount {
-  const engine = createAudioEngine();
+  const engine = options.engine ?? createAudioEngine();
   const store = readStore();
   const preference = resolveMusicPreference(options.search, store);
 
@@ -150,9 +158,13 @@ export function mountMusic(options: MusicMountOptions): MusicMount {
   });
 
   if (preference === 'on') {
-    listenForGesture();
-    // Arms until the first gesture; no context exists yet and nothing is fetched.
-    void player.play();
+    if (options.deferPlay) {
+      switchHandle?.setState('armed', 'Starts when experience is ready');
+    } else {
+      listenForGesture();
+      // Arms until the first gesture; no context exists yet and nothing is fetched.
+      void player.play();
+    }
   }
 
   let exposed = false;
@@ -167,6 +179,11 @@ export function mountMusic(options: MusicMountOptions): MusicMount {
   return {
     engine,
     player,
+    async startDeferred(): Promise<void> {
+      if (preference === 'on' && player.state !== 'playing' && player.state !== 'loading') {
+        await player.play();
+      }
+    },
     dispose(): void {
       stopListeningForGesture();
       releaseEngineWatch();

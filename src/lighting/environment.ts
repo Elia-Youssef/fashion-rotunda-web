@@ -21,7 +21,7 @@ import type { RenderTarget } from 'three';
 export interface Environment {
   texture: Texture;
   /** Assigns the map and its strength. Intensity comes from the rig's sky entry, through skyIntensity(). */
-  apply(scene: Scene, intensity: number): void;
+  apply(scene: Scene, intensity: number, backgroundIntensity?: number): void;
   dispose(): void;
 }
 
@@ -33,10 +33,22 @@ export interface Environment {
  */
 const ROOM_BLUR_RADIANS = 0.3;
 
-function fromRenderTarget(target: RenderTarget, background: Texture | null = null): Environment {
+/**
+ * The authored panorama has sky in its first scanlines, but HDRLoader's default flipY=true puts
+ * the ground at the dome zenith after three r186's PMREM/background conversion. Clear that flag
+ * before either PMREM path sees the source. The manual environment target used for lighting and
+ * the blur-triggered background target then keep the same upright orientation. The up/horizon/
+ * down browser captures in both backends verify this renderer-specific choice.
+ */
+export function orientHdrEquirectangular(texture: Texture): void {
+  texture.mapping = EquirectangularReflectionMapping;
+  texture.flipY = false;
+}
+
+export function fromRenderTarget(target: RenderTarget, background: Texture | null = null): Environment {
   return {
     texture: target.texture,
-    apply(scene: Scene, intensity: number): void {
+    apply(scene: Scene, intensity: number, backgroundIntensity = 0.25): void {
       scene.environment = target.texture;
       scene.environmentIntensity = intensity;
       if (background !== null) {
@@ -47,7 +59,7 @@ function fromRenderTarget(target: RenderTarget, background: Texture | null = nul
         // The source sky contains values far above display white. Keeping the visible copy below
         // the lighting strength preserves cloud detail through the dome instead of clipping it
         // into a flat white ceiling; the PMREM still receives the source at full range.
-        scene.backgroundIntensity = 0.25;
+        scene.backgroundIntensity = backgroundIntensity;
         scene.backgroundBlurriness = 0.08;
       }
     },
@@ -83,7 +95,7 @@ export async function createRoomEnvironment(renderer: WebGPURenderer): Promise<E
 export async function createHdrEnvironment(renderer: WebGPURenderer, url: string): Promise<Environment> {
   await renderer.init();
   const source = await new HDRLoader().loadAsync(url);
-  source.mapping = EquirectangularReflectionMapping;
+  orientHdrEquirectangular(source);
   const generator = new PMREMGenerator(renderer);
   const target = generator.fromEquirectangular(source);
   generator.dispose();

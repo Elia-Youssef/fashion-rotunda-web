@@ -39,7 +39,7 @@ test('shows the first look in the catalogue on its default variant', async ({ pa
   const catalog = await readCatalog(request);
   const first = catalog.looks[0];
 
-  const canvas = await openScene(page, '/?webgl=1');
+  const canvas = await openScene(page, '/?webgl=1&gate=off');
 
   await expect(canvas).toHaveAttribute('data-look', first.id);
   await expect(canvas).toHaveAttribute('data-variant', first.defaultVariant);
@@ -59,7 +59,7 @@ test('takes the look and the variant from the url', async ({ page, request }) =>
   expect(zoot, 'the catalogue carries the zoot suit').toBeDefined();
   expect(zoot?.variants).toContain('dark');
 
-  const canvas = await openScene(page, '/?webgl=1&look=zoot-suit&variant=dark');
+  const canvas = await openScene(page, '/?webgl=1&gate=off&look=zoot-suit&variant=dark');
 
   await expect(canvas).toHaveAttribute('data-look', 'zoot-suit');
   await expect(canvas).toHaveAttribute('data-variant', 'dark');
@@ -79,7 +79,7 @@ test('falls back to the defaults, with a warning, on a url that names neither', 
     }
   });
 
-  const canvas = await openScene(page, '/?webgl=1&look=doublet&variant=chrome');
+  const canvas = await openScene(page, '/?webgl=1&gate=off&look=doublet&variant=chrome');
 
   await expect(canvas).toHaveAttribute('data-look', first.id);
   await expect(canvas).toHaveAttribute('data-variant', first.defaultVariant);

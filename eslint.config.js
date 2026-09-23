@@ -7,7 +7,17 @@ export default tseslint.config(
   // Git worktrees lint themselves from inside their own folder; from here they are duplicate
   // copies of the same files.
   // public/ holds shipped content and vendored transcoder files (basis_transcoder.js), never source.
-  { ignores: ['dist/**', 'node_modules/**', '.worktrees/**', 'public/**'] },
+  {
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      '.worktrees/**',
+      'public/**',
+      'assets-src/**',
+      // Evidence runner utilities are archived/generated Node verification artifacts, not product source.
+      'briefs/reports/**/*.mjs',
+    ],
+  },
   js.configs.recommended,
   tseslint.configs.recommended,
   {

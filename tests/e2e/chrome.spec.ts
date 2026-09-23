@@ -78,9 +78,11 @@ test('the swatches switch the mannequin and Reset returns the default', async ({
 
 // The reachability census (G6.1): at each of the three shell viewports, with the sheets opened
 // where they exist, every census control is visible, sized for a touch (44 by 44 CSS px on the
-// phone viewport), inside the viewport, and no two census boxes intersect. The phone keeps one
-// sheet at a time, so its census runs in two phases: the Look sheet first, then the Light sheet;
-// every control is asserted in at least one phase. The page itself never scrolls at any point.
+// phone viewport), inside the viewport, and no two census boxes intersect. The Light Control
+// drawer starts closed on every breakpoint, so its phase is asserted after opening it through the
+// same toggle a visitor uses. The phone keeps one sheet at a time, so its census runs in three
+// phases: closed first, then the Look sheet, then the Light sheet; every control is asserted in
+// at least one phase. The page itself never scrolls at any point.
 
 interface CensusControl {
   name: string;
@@ -94,6 +96,7 @@ function census(): CensusControl[] {
     ['first thumbnail', '#looks button >> nth=0', 'both'],
     ['Rotate', '.product-card__action[data-action="rotate"]', 'card'],
     ['Reset', '.product-card__action[data-action="reset"]', 'card'],
+    ['Material', '.product-card__action[data-action="material"]', 'card'],
     ['swatch 1', '.product-card__swatch >> nth=0', 'card'],
     ['swatch 2', '.product-card__swatch >> nth=1', 'card'],
     ['swatch 3', '.product-card__swatch >> nth=2', 'card'],
@@ -103,8 +106,8 @@ function census(): CensusControl[] {
     ['Orbit mode', 'button[data-mode="orbit"]', 'both'],
     ['Walk mode', 'button[data-mode="walk"]', 'both'],
     ['Light Control', '#shell-light-toggle', 'light'],
-    ['first light on switch', '.lightpanel__row[data-light="top"] .lightpanel__switch', 'light'],
-    ['preset select', '.lightpanel__select', 'light'],
+    ['first light on switch', '.lightpanel__row[data-light="key"] .lightpanel__switch', 'light'],
+    ['first light color', '.lightpanel__row[data-light="key"] .lightpanel__color', 'light'],
     ['Measure', '.proof-panel__measure', 'both'],
     ['badge', '.badge', 'both'],
   ];
@@ -116,6 +119,54 @@ interface Box {
   y: number;
   width: number;
   height: number;
+}
+
+interface SafeArea {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/** A non-zero synthetic cut-out proves the token abstraction rather than Chromium's zero env(). */
+async function installSafeArea(page: Page): Promise<SafeArea> {
+  const safeArea: SafeArea = { top: 19, right: 23, bottom: 29, left: 17 };
+  await page.evaluate((insets) => {
+    const root = document.documentElement;
+    root.style.setProperty('--safe-area-top', `${insets.top}px`);
+    root.style.setProperty('--safe-area-right', `${insets.right}px`);
+    root.style.setProperty('--safe-area-bottom', `${insets.bottom}px`);
+    root.style.setProperty('--safe-area-left', `${insets.left}px`);
+  }, safeArea);
+  return safeArea;
+}
+
+async function assertInsideSafeRectangle(
+  page: Page,
+  selector: string,
+  safeArea: SafeArea,
+  label: string,
+): Promise<void> {
+  const viewport = page.viewportSize();
+  expect(viewport, `${label}: viewport is available`).not.toBeNull();
+  if (viewport === null) {
+    return;
+  }
+  const box = await page.locator(selector).boundingBox();
+  expect(box, `${label}: ${selector} has a bounding box`).not.toBeNull();
+  if (box === null) {
+    return;
+  }
+  expect(box.x, `${label}: ${selector} clears the left inset`).toBeGreaterThanOrEqual(safeArea.left);
+  expect(box.y, `${label}: ${selector} clears the top inset`).toBeGreaterThanOrEqual(safeArea.top);
+  expect(
+    box.x + box.width,
+    `${label}: ${selector} clears the right inset`,
+  ).toBeLessThanOrEqual(viewport.width - safeArea.right);
+  expect(
+    box.y + box.height,
+    `${label}: ${selector} clears the bottom inset`,
+  ).toBeLessThanOrEqual(viewport.height - safeArea.bottom);
 }
 
 function boxesIntersect(a: Box, b: Box): boolean {
@@ -223,44 +274,87 @@ async function assertShortLandscape(page: Page, controls: CensusControl[], tag: 
   expect(canvasBox?.width, `${tag}: canvas has positive width`).toBeGreaterThan(0);
   expect(canvasBox?.height, `${tag}: canvas has positive height`).toBeGreaterThan(0);
 
+  // The badge corner floats over the scene rather than claiming a footer row, so the sheets are
+  // bounded by the viewport itself, not by a strip below the stage.
+  const viewport = page.viewportSize();
+  const insideViewport = (label: string, box: { x: number; y: number; width: number; height: number } | null): void => {
+    expect(box, `${tag}: ${label} has a bounding box`).not.toBeNull();
+    if (box === null || viewport === null) {
+      return;
+    }
+    expect(box.width, `${tag}: ${label} has positive width`).toBeGreaterThan(0);
+    expect(box.height, `${tag}: ${label} has positive height`).toBeGreaterThan(0);
+    expect(
+      box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height,
+      `${tag}: ${label} stays inside the viewport`,
+    ).toBe(true);
+  };
+
+  const safeAreaOffsets = await page.evaluate(() => {
+    const read = (selector: string) => {
+      const element = document.querySelector<HTMLElement>(selector);
+      if (element === null) {
+        return null;
+      }
+      const style = getComputedStyle(element);
+      return { left: style.left, right: style.right };
+    };
+    return {
+      looks: read('#looks'),
+      lookPill: read('.shell-pill--look'),
+      lightRow: read('#shell-light-row'),
+    };
+  });
+  // Chromium's desktop viewport has zero physical insets, so these are the token-only resolved
+  // values. The CSS rule itself adds the platform env() inset, keeping landscape cut-outs clear.
+  expect(safeAreaOffsets.looks, `${tag}: rail has left and right safe-area offsets`).toEqual({
+    left: '8px',
+    right: '8px',
+  });
+  expect(safeAreaOffsets.lookPill, `${tag}: Look pill has a left safe-area offset`).toMatchObject({
+    left: '12px',
+  });
+  expect(safeAreaOffsets.lightRow, `${tag}: Light Control has a right safe-area offset`).toMatchObject({
+    right: '12px',
+  });
+
   await page.locator('.shell-pill--look').click();
   const card = page.locator('#shell-card');
   const cardBox = await card.boundingBox();
-  expect(cardBox, `${tag}: card sheet has a box`).not.toBeNull();
-  if (cardBox === null) {
-    throw new Error(`${tag}: card sheet has no bounding box`);
-  }
-  expect(cardBox?.width, `${tag}: card sheet has positive width`).toBeGreaterThan(0);
-  expect(cardBox?.height, `${tag}: card sheet has positive height`).toBeGreaterThan(0);
-  const footerBox = await page.locator('footer').boundingBox();
-  expect(footerBox, `${tag}: footer has a box`).not.toBeNull();
-  if (footerBox === null) {
-    throw new Error(`${tag}: footer has no bounding box`);
-  }
-  expect(cardBox.y + cardBox.height, `${tag}: card sheet clears the footer`).toBeLessThanOrEqual(
-    footerBox.y + 1,
-  );
+  insideViewport('card sheet', cardBox);
 
+  const footerControls = controls.filter(
+    (entry) => entry.selector === '.proof-panel__measure' || entry.selector === '.badge',
+  );
+  const footerBox = await page.locator('footer').boundingBox();
+  expect(footerBox, `${tag}: footer has a bounding box`).not.toBeNull();
+  if (cardBox !== null && footerBox !== null) {
+    expect(
+      cardBox.y + cardBox.height,
+      `${tag}: card sheet clears the persistent footer controls`,
+    ).toBeLessThanOrEqual(footerBox.y + 1);
+  }
+  // Short sheets are intentionally internally scrollable: each control must be reachable, but
+  // they do not all need to fit in the 390 px viewport simultaneously.
   for (const control of controls.filter((entry) => entry.phase === 'card')) {
     await assertReachableInSheet(page, control, `${tag} card sheet`);
   }
+  await assertPhase(page, footerControls, true, `${tag} card sheet footer`);
 
   await page.locator('#shell-card .shell-sheet__close').click();
   await page.locator('#shell-light-toggle').click();
-  const lightSheet = page.locator('#shell-light-row');
-  const lightBox = await lightSheet.boundingBox();
-  expect(lightBox, `${tag}: light sheet has a box`).not.toBeNull();
-  if (lightBox === null) {
-    throw new Error(`${tag}: light sheet has no bounding box`);
+  const lightBox = await page.locator('#shell-light-row').boundingBox();
+  insideViewport('light sheet', lightBox);
+  if (lightBox !== null && footerBox !== null) {
+    expect(
+      lightBox.y + lightBox.height,
+      `${tag}: light sheet clears the persistent footer controls`,
+    ).toBeLessThanOrEqual(footerBox.y + 1);
   }
-  expect(lightBox?.height, `${tag}: light sheet has positive height`).toBeGreaterThan(0);
-  expect(lightBox.y + lightBox.height, `${tag}: light sheet clears the footer`).toBeLessThanOrEqual(
-    footerBox.y + 1,
-  );
-
-  for (const control of controls.filter((entry) => entry.phase !== 'card')) {
+  for (const control of controls.filter((entry) => entry.phase === 'light')) {
     await assertReachableInSheet(page, control, `${tag} light sheet`);
   }
+  await assertPhase(page, footerControls, true, `${tag} light sheet footer`);
 
   const scroll = await page.evaluate(() => {
     const scroller = document.scrollingElement;
@@ -299,24 +393,102 @@ for (const viewport of CENSUS_VIEWPORTS) {
 
     const controls = census();
     const tag = `${viewport.width}x${viewport.height}`;
+    // The closed phase: the always-visible chrome, plus the Light Control launcher itself.
+    const closedPhase = [
+      ...controls.filter((control) => control.phase === 'both'),
+      { name: 'Light Control', selector: '#shell-light-toggle', phase: 'light' } as CensusControl,
+    ];
     if (viewport.shortLandscape === true) {
+      await assertPhase(page, closedPhase, true, `${tag} closed`);
       await assertShortLandscape(page, controls, tag);
       return;
     }
     if (!viewport.phone) {
-      // One phase: the panel is open by default and the card is a column.
+      // Closed chrome first; then the drawer opens through the toggle and the whole census holds
+      // with the card as the floating overlay of the upper right.
+      await assertPhase(page, closedPhase, false, `${tag} closed`);
+      await page.locator('#shell-light-toggle').click();
+      await expect(page.locator('#shell-light-panel')).toBeVisible();
       await assertPhase(page, controls, false, tag);
       return;
     }
 
-    // Phase 1: the Look sheet. Phase 2: close it, open the Light sheet.
+    // Phase 0: closed. Phase 1 retains the footer's Badge and Measure action below the Look sheet.
+    // Phase 2 does the same below the Light sheet, so no sheet merely paints over a live control.
+    await assertPhase(page, closedPhase, true, `${tag} closed`);
     await page.locator('.shell-pill--look').click();
-    const cardPhase = controls.filter((control) => control.phase !== 'light');
+    const cardPhase = [
+      ...controls.filter((control) => control.phase === 'card'),
+      ...controls.filter(
+        (control) => control.selector === '.proof-panel__measure' || control.selector === '.badge',
+      ),
+    ];
     await assertPhase(page, cardPhase, true, `${tag} look sheet`);
 
     await page.locator('#shell-card .shell-sheet__close').click();
     await page.locator('#shell-light-toggle').click();
-    const lightPhase = controls.filter((control) => control.phase !== 'card');
+    const lightPhase = [
+      ...controls.filter((control) => control.phase === 'light'),
+      ...controls.filter(
+        (control) => control.selector === '.proof-panel__measure' || control.selector === '.badge',
+      ),
+    ];
     await assertPhase(page, lightPhase, true, `${tag} light sheet`);
+  });
+}
+
+for (const viewport of [
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+]) {
+  test(`synthetic safe areas contain overlay chrome at ${viewport.width}x${viewport.height}`, async ({
+    page,
+  }) => {
+    skipUnlessWebgl2();
+    await page.setViewportSize(viewport);
+    await page.goto('/?webgl=1&e2e=1&proof=1');
+    await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'ready', {
+      timeout: SCENE_READY_TIMEOUT,
+    });
+    const safeArea = await installSafeArea(page);
+    const tag = `${viewport.width}x${viewport.height} synthetic safe area`;
+
+    // Closed state: header actions, rail, both launcher pills, and the persistent footer must all
+    // stay in the rectangle. This checks physical bounds, not resolved zero-inset CSS strings.
+    for (const selector of [
+      'header button.music-switch',
+      'button[data-mode="orbit"]',
+      'button[data-mode="walk"]',
+      '#looks',
+      '.shell-pill--look',
+      '#shell-light-toggle',
+      '.proof-panel__measure',
+      '.badge',
+    ]) {
+      await assertInsideSafeRectangle(page, selector, safeArea, `${tag} closed`);
+    }
+
+    await page.locator('.shell-pill--look').click();
+    await expect(page.locator('#shell-card')).toBeVisible();
+    for (const selector of [
+      '#shell-card',
+      '#shell-card .shell-sheet__close',
+      '.proof-panel__measure',
+      '.badge',
+    ]) {
+      await assertInsideSafeRectangle(page, selector, safeArea, `${tag} Look sheet`);
+    }
+
+    await page.locator('#shell-card .shell-sheet__close').click();
+    await page.locator('#shell-light-toggle').click();
+    await expect(page.locator('#shell-light-panel')).toBeVisible();
+    for (const selector of [
+      '#shell-light-row',
+      '#shell-light-row .shell-sheet__close',
+      '.proof-panel__measure',
+      '.badge',
+    ]) {
+      await assertInsideSafeRectangle(page, selector, safeArea, `${tag} Light sheet`);
+    }
   });
 }

@@ -34,6 +34,33 @@ function extractMaterialNames(glbPath: string): string[] {
   });
 }
 
+/** Names whose emitted full-quality material retains the authored clearcoat extension. */
+function extractClearcoatMaterialNames(glbPath: string): string[] {
+  const bytes = readFileSync(glbPath);
+  if (bytes.length < 20) return [];
+  const jsonLength = bytes.readUInt32LE(12);
+  const jsonText = bytes.toString('utf8', 20, 20 + jsonLength);
+  const parsed: unknown = JSON.parse(jsonText);
+  if (typeof parsed !== 'object' || parsed === null || !('materials' in parsed)) return [];
+  const materials = parsed.materials;
+  if (!Array.isArray(materials)) return [];
+  return materials.flatMap((material) => {
+    if (
+      typeof material !== 'object' ||
+      material === null ||
+      !('name' in material) ||
+      typeof material.name !== 'string' ||
+      !('extensions' in material) ||
+      typeof material.extensions !== 'object' ||
+      material.extensions === null ||
+      !('KHR_materials_clearcoat' in material.extensions)
+    ) {
+      return [];
+    }
+    return [material.name];
+  });
+}
+
 function requireTuning(name: string): MaterialTuning {
   const tuning = tuningFor(name);
   if (tuning === null) throw new Error(`expected a tuning for ${name}`);
@@ -99,7 +126,7 @@ describe('materials tuning table', () => {
     // KHR_materials_sheen: sheen, sheenRoughness, sheenColor
     const allowedKeysPerMaterial: Record<string, (keyof MaterialTuning)[]> = {
       [DOME_GLASS_MATERIAL]: ['transmission', 'thickness', 'ior', 'roughness'],
-      MI_Quartzite_White_Base: ['clearcoat', 'clearcoatRoughness'],
+      MI_Marble_Nero_Base: ['clearcoat', 'clearcoatRoughness'],
       MI_Marble_Nero_Vert: ['clearcoat', 'clearcoatRoughness'],
       MI_Quartzite_BlueFusion: ['clearcoat', 'clearcoatRoughness'],
       MI_Marble_SilverWave: ['clearcoat', 'clearcoatRoughness'],
@@ -123,11 +150,25 @@ describe('materials tuning table', () => {
   });
 
   it('returns null for materials not in the tuning table', () => {
+    expect(tuningFor('MI_Quartzite_White_Base')).toBeNull();
     expect(tuningFor('MI_Quartzite_White_Vert')).toBeNull();
     expect(tuningFor('MI_Pedestal_Main')).toBeNull();
     expect(tuningFor('M_CLay')).toBeNull();
     expect(tuningFor('MI_WallisDress_Mannequin_Base')).toBeNull();
     expect(tuningFor('Unknown_Material')).toBeNull();
+  });
+
+  it('restores both authored Nero clearcoat materials after the half tier strips clearcoat', () => {
+    const contentDir = resolve(process.cwd(), 'public/content');
+    const fullClearcoat = extractClearcoatMaterialNames(resolve(contentDir, 'rotunda.glb')).sort();
+    const halfClearcoat = extractClearcoatMaterialNames(resolve(contentDir, 'half/rotunda.glb'));
+    const authoredNero = ['MI_Marble_Nero_Base', 'MI_Marble_Nero_Vert'];
+
+    expect(fullClearcoat).toEqual(authoredNero);
+    expect(halfClearcoat).toEqual([]);
+    for (const name of authoredNero) {
+      expect(requireTuning(name)).toMatchObject({ clearcoat: 1.0, clearcoatRoughness: 0.1 });
+    }
   });
 
   it('exports the global dome transmission decision', () => {
@@ -138,10 +179,10 @@ describe('materials tuning table', () => {
 describe('applyTuning', () => {
   it('upgrades MeshStandardMaterial to MeshPhysicalMaterial when clearcoat is tuned', () => {
     const standard = new MeshStandardMaterial({ roughness: 0.5 });
-    standard.name = 'MI_Quartzite_White_Base';
+    standard.name = 'MI_Marble_Nero_Base';
     const mesh = new Mesh(undefined, standard);
 
-    const applied = applyTuning(mesh, requireTuning('MI_Quartzite_White_Base'));
+    const applied = applyTuning(mesh, requireTuning('MI_Marble_Nero_Base'));
     expect(mesh.material).toBe(applied);
     expect(applied).toBeInstanceOf(MeshPhysicalMaterial);
     const physical = applied as MeshPhysicalMaterial;
@@ -197,10 +238,10 @@ describe('applyTuning', () => {
     const first = new MeshStandardMaterial();
     first.name = 'first';
     const second = new MeshStandardMaterial();
-    second.name = 'MI_Quartzite_White_Base';
+    second.name = 'MI_Marble_Nero_Base';
     const mesh = new Mesh(undefined, [first, second]);
 
-    expect(() => applyTuning(mesh, requireTuning('MI_Quartzite_White_Base'))).toThrow(
+    expect(() => applyTuning(mesh, requireTuning('MI_Marble_Nero_Base'))).toThrow(
       'one material per mesh',
     );
     expect(mesh.material).toEqual([first, second]);

@@ -36,9 +36,6 @@ export interface ChromeHandle {
   dispose(): void;
 }
 
-/** The stub the Audio action reports until G5.1's audio step wires the files. */
-export const AUDIO_STUB_MESSAGE = "audio arrives with G5.1's audio step";
-
 export function mountChrome(options: ChromeOptions): ChromeHandle {
   const { catalog, showroom } = options;
 
@@ -56,6 +53,22 @@ export function mountChrome(options: ChromeOptions): ChromeHandle {
 
   /** Look switches in flight. Busy is one slot in the handle, so it clears with the last settle. */
   let pendingSwitches = 0;
+
+  /**
+   * Variant changes share one ordered lane. A swatch can still be resolving when Reset is pressed;
+   * issuing both calls concurrently lets the earlier swatch finish last and silently undo Reset.
+   * Chaining every mutation preserves the visitor's intent order, so the last requested operation
+   * is also the last operation applied by the showroom.
+   */
+  let variantMutations: Promise<void> = Promise.resolve();
+
+  function mutateVariant(name: string): Promise<void> {
+    const mutation = variantMutations.then(() => showroom.setVariant(name));
+    // Keep the lane usable after a rejected content mutation while returning the real result to
+    // the caller so it can report the specific failed swatch or Reset.
+    variantMutations = mutation.catch(() => undefined);
+    return mutation;
+  }
 
   function syncToCurrent(): void {
     const id = showroom.currentLook;
@@ -93,7 +106,7 @@ export function mountChrome(options: ChromeOptions): ChromeHandle {
   /** Applies a swatch, then marks what the showroom actually took, not what was asked for. */
   async function applyVariant(name: string): Promise<void> {
     try {
-      await showroom.setVariant(name);
+      await mutateVariant(name);
     } catch (error) {
       // A variant the look file does not carry is a content defect worth seeing, not a dead page.
       console.warn(`[archviz] the look would not take the variant "${name}"`, error);
@@ -105,7 +118,7 @@ export function mountChrome(options: ChromeOptions): ChromeHandle {
   async function applyReset(look: CatalogLook): Promise<void> {
     showroom.setLookYaw(0);
     try {
-      await showroom.setVariant(look.defaultVariant);
+      await mutateVariant(look.defaultVariant);
     } catch (error) {
       console.warn(`[archviz] the look "${look.id}" would not take its default variant`, error);
     }
@@ -126,10 +139,6 @@ export function mountChrome(options: ChromeOptions): ChromeHandle {
         card.setRotating(options.onRotateToggle());
         options.onChange();
       },
-      audio(): void {
-        console.info(`[archviz] ${AUDIO_STUB_MESSAGE}`);
-        options.onChange();
-      },
       reset(): void {
         const look = lookById(showroom.currentLook);
         if (look === null) {
@@ -142,8 +151,6 @@ export function mountChrome(options: ChromeOptions): ChromeHandle {
       },
     },
   });
-  // The audio files are not wired yet, so the card carries the action as a disabled button.
-  card.setAudioAvailable(false);
 
   const strip = mountCatalogStrip(options.stripRoot, {
     looks: catalog.looks,

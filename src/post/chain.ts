@@ -71,8 +71,8 @@ import type { Node, PassNode, UniformNode, WebGPURenderer } from 'three/webgpu';
 import { postSettingsFor, settingsForLevel } from './settings';
 import type { Backend, PostSettings } from './settings';
 import type { TierSettings } from '../tiers/table';
-import { createGovernor } from './governor';
-import type { EnhancedLevel, Governor } from './governor';
+import { createGovernor, governorOperates } from './governor';
+import type { EnhancedLevel, Governor, GovernorDiagnostics, GovernorState } from './governor';
 import { gradeLut, LUT_SIZE } from './grade';
 
 export interface PostChainOptions {
@@ -89,6 +89,20 @@ export interface PostChainOptions {
    * for it to reach the screen. The composition root passes `() => loop.invalidate()`.
    */
   requestFrame?: () => void;
+  /** Governor decision carried across a CSS-box graph rebuild; omitted for a fresh session. */
+  governorState?: GovernorState;
+  /**
+   * Whether recovery may qualify when the chain is created, so a rebuild between two frames
+   * never lets an ineligible sample clear the qualification the old chain had accumulated.
+   * The composition root computes it from page lifecycle facts; the chain additionally
+   * requires that it has not fallen back.
+   */
+  recoveryEligible?: boolean;
+  /**
+   * Test-only (?e2e=1): start with real-frame governor sampling blocked. The composition root
+   * carries it across a rebuild so an injected deterministic sequence stays the only input.
+   */
+  deterministicSampling?: boolean;
   /** Where the depth of field focuses: the look on the plinth; default [0, 1, 0]. */
   focusTarget?: [number, number, number];
 }
@@ -119,7 +133,41 @@ export interface PostChain {
   setDepthOfFieldAllowed(allowed: boolean): void;
   /** Call on every canvas size or pixel ratio change. */
   setSize(width: number, height: number): void;
+  /** Full governor state for a CSS-box graph rebuild, or null when the governor is disabled. */
+  readonly governorState: GovernorState | null;
+  /** Committed governor record for the proof panel and the canvas attributes; null when disabled. */
+  readonly governorDiagnostics: GovernorDiagnostics | null;
+  /** A runtime post failure has committed this chain to pass-through until the page reloads. */
+  readonly fellBack: boolean;
+  /**
+   * Recovery eligibility, driven by the composition root from page lifecycle facts (loaded,
+   * revealed, visible, no renderer error). The chain combines it with its own fallback state.
+   */
+  setRecoveryEligible(eligible: boolean): void;
+  /**
+   * Test-only deterministic control, reachable solely through the guarded `?e2e=1` handle in the
+   * composition root. It injects observations through the same state machine; it can never
+   * assign a level directly, and it never exists on a production page.
+   */
+  readonly governorHarness: GovernorTestHarness | null;
   dispose(): void;
+}
+
+/** The narrow surface the e2e governor tests drive; see PostChain.governorHarness. */
+export interface GovernorTestHarness {
+  /** Blocks real-frame samples so the injected sequence is the governor's only input. */
+  setDeterministic(on: boolean): void;
+  /** Injects one synthetic observation with explicit workMs, nowMs and recovery eligibility. */
+  observe(workMs: number, nowMs: number, eligible: boolean): GovernorDiagnostics | null;
+}
+
+/**
+ * A fallback graph is already pass-through and has no temporal resources to recreate. Rebuilding
+ * it after a CSS resize would resurrect the effects that just failed, so the composition root must
+ * retain it and forward only its new size.
+ */
+export function postChainRebuildAllowed(fellBack: boolean): boolean {
+  return !fellBack;
 }
 
 /** What a tier that asks for nothing renders with: the beauty, straight to the output quad. */
@@ -216,7 +264,7 @@ function applyDevSwitch(
       governorEnabled: false,
     };
   }
-  const governorEnabled = backend === 'webgpu' && (tier.ssgi !== 'off' || tier.ssr);
+  const governorEnabled = governorOperates(backend, tier, wanted !== null);
   return { settings: tier, governorEnabled };
 }
 
@@ -309,7 +357,27 @@ export function createPostChain(options: PostChainOptions): PostChain {
       budgetMs: options.tier.frameBudgetMs,
       windowFrames: 60,
       patience: 2,
+      ...(options.governorState === undefined ? {} : { initialState: options.governorState }),
     });
+  }
+  let fellBack = false;
+  // Start false and apply the supplied gate below. That makes an ineligible reconstruction clear
+  // a carried recovery stream instead of silently retaining it because both values happened to be
+  // false at construction time.
+  let recoveryEligible = false;
+  let deterministicSampling = options.deterministicSampling === true;
+
+  /**
+   * The one gate behind the interface method, the construction option and the fallback path:
+   * recovery qualification exists only while every lifecycle fact holds, and losing it clears
+   * the accumulated run immediately rather than at the next sample.
+   */
+  function applyRecoveryEligible(eligible: boolean): void {
+    const combined = eligible && governor !== null && !fellBack;
+    recoveryEligible = combined;
+    if (!combined) {
+      governor?.invalidateRecovery();
+    }
   }
 
   let lastMotionTimestamp = 0;
@@ -556,21 +624,21 @@ export function createPostChain(options: PostChainOptions): PostChain {
     target.lutTexture?.dispose();
   }
 
-  let graph = buildGraph(settings);
-  let fellBack = false;
+  // Start a rebuilt graph at the carried governor level, rather than constructing/rendering a
+  // one-frame full-quality graph before render() has a chance to apply that level.
+  let graph = buildGraph(settingsForLevel(settings, currentLevel()));
+  // Initial recovery eligibility is applied once fellBack exists. A carried qualification only
+  // survives when the reconstructed chain is eligible right now.
+  applyRecoveryEligible(options.recoveryEligible === true);
   let lastSizeKey = '';
 
-  /** Forwards drawing-buffer pixels to everything allocated in the current graph. */
+  /**
+   * Applies the one size value this composition owns directly. PassNode and the display nodes size
+   * their own render targets in `updateBefore`, after their source pass has rendered at the new
+   * canvas dimensions. Eagerly resizing those targets here races that order on WebGPU and can make
+   * TRAA copy a newly-sized region from the previous-sized beauty texture.
+   */
   function forwardSize(pixelWidth: number, pixelHeight: number): void {
-    graph.scenePass.setSize(pixelWidth, pixelHeight);
-    graph.prePass?.setSize(pixelWidth, pixelHeight);
-    graph.gtao?.setSize(pixelWidth, pixelHeight);
-    graph.ssgiNode?.setSize(pixelWidth, pixelHeight);
-    graph.ssrNode?.setSize(pixelWidth, pixelHeight);
-    if (graph.bloomNode !== null && graph.hasRendered) {
-      graph.bloomNode.setSize(pixelWidth, pixelHeight);
-    }
-    graph.dofNode?.setSize(pixelWidth, pixelHeight);
     graph.aspectUniform.value = pixelHeight > 0 ? pixelWidth / pixelHeight : 1.0;
   }
 
@@ -692,6 +760,8 @@ export function createPostChain(options: PostChainOptions): PostChain {
           throw error;
         }
         fellBack = true;
+        // A fallback ends recovery: qualification accumulated on the enhanced path is void.
+        applyRecoveryEligible(false);
         console.warn(
           `[archviz] post chain fell back to pass-through on ${backendName(renderer)}:`,
           error,
@@ -735,6 +805,72 @@ export function createPostChain(options: PostChainOptions): PostChain {
       return currentFeatures();
     },
 
+    get governorState(): GovernorState | null {
+      return governor?.state ?? null;
+    },
+
+    get governorDiagnostics(): GovernorDiagnostics | null {
+      if (governor === null || fellBack) {
+        return null;
+      }
+      // No explicit clock: the governor reports against its last observed sample, which is the
+      // real performance.now() in production and the injected clock in the deterministic harness.
+      const diagnostics = governor.diagnostics();
+      return {
+        ...diagnostics,
+        // The proof bridge reports the chain's current combined gate, not the eligibility of a
+        // sample observed before a tab hide/loading transition.
+        recoveryEligible,
+      };
+    },
+
+    get fellBack(): boolean {
+      return fellBack;
+    },
+
+    setRecoveryEligible(eligible: boolean): void {
+      applyRecoveryEligible(eligible);
+    },
+
+    get governorHarness(): GovernorTestHarness | null {
+      if (governor === null || fellBack) {
+        return null;
+      }
+      return {
+        setDeterministic(on: boolean): void {
+          const changed = deterministicSampling !== on;
+          deterministicSampling = on;
+          if (on || changed) {
+            // The injected samples carry their own clock. Readings observed on the page's real
+            // clock before this moment - and injected readings before returning to real frames -
+            // must not leak into the other timeline. The stream-owned state resets while the
+            // committed level, cooldown and history carry over.
+            const active = governor;
+            active?.resetSamplingState();
+          }
+        },
+        observe(
+          workMs: number,
+          nowMs: number,
+          eligible: boolean,
+        ): GovernorDiagnostics | null {
+          const active = governor;
+          if (active === null || fellBack) {
+            return null;
+          }
+          // The injected eligibility is explicit on purpose: the tests synthesise lifecycle
+          // interruptions no real tab event can produce deterministically.
+          const before = active.level;
+          active.observe(workMs, nowMs, eligible);
+          if (active.level !== before) {
+            // The decided level is applied in render(); a frame must be drawn for it to commit.
+            requestFrame?.();
+          }
+          return active.diagnostics(nowMs);
+        },
+      };
+    },
+
     setDepthOfFieldAllowed(allowed: boolean): void {
       applyDepthOfFieldAllowed(allowed);
     },
@@ -743,14 +879,18 @@ export function createPostChain(options: PostChainOptions): PostChain {
       if (governor === null || fellBack) {
         return;
       }
-      // onFrameTime fires only for frames the loop actually drew (loop.ts lines 62-68), so every
-      // reading that reaches here is a drawn frame. The full-resolution frames are the ones at
-      // rest, and a motion gate would have hidden exactly those from the governor.
-      if (graph.settings.ssgi === 'off' && !graph.settings.ssr) {
+      if (deterministicSampling) {
+        // The e2e harness owns the stream while deterministic sampling is on; a real frame's
+        // reading must not contaminate the injected sequence.
         return;
       }
+      // onFrameTime fires only for frames the loop actually drew (loop.ts lines 62-68), so every
+      // reading that reaches here is a drawn frame. The governor keeps receiving them at every
+      // level, including below 'no-ssr': G3.5-R recovery has to be able to climb back from there,
+      // and the ladder's own patience decides whether another step is ever taken.
       const before = governor.level;
-      if (governor.observe(workMs) !== before) {
+      governor.observe(workMs, performance.now(), recoveryEligible);
+      if (governor.level !== before) {
         // The new level is applied in render(), which an idle loop would not reach on its own.
         requestFrame?.();
       }

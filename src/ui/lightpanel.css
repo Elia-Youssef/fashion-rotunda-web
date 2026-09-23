@@ -1,52 +1,66 @@
-/* The lighting panel. Every colour, size and duration comes from the token sheet in
-   styles.css; nothing here is set from script, which is why the module carries no inline
-   styles at all. */
+/* The simplified lighting panel. Every colour, size and token comes from styles.css.
+   Compact, translucent, floating drawer character matching UI-1 contract. */
 
 .lightpanel {
-  display: grid;
-  gap: var(--space-1);
-  max-width: var(--card-width);
-  margin: var(--space-2) var(--space-3);
-  font-size: var(--type-sm);
-}
-
-.lightpanel__presets {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-2);
-}
-
-.lightpanel__select {
-  min-height: var(--control-height);
-  padding: var(--space-1) var(--space-2);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-1);
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-}
-
-/* One row per light: the name across the top, then label, control and readout in three columns. */
-.lightpanel__row {
-  display: grid;
-  grid-template-columns: auto 1fr var(--size-value);
-  align-items: center;
-  gap: var(--space-1) var(--space-2);
+  width: 100%;
+  max-width: var(--card-width);
   margin: 0;
-  padding: var(--space-1) var(--space-2) var(--space-2);
+  font-size: var(--type-sm);
+  color: var(--text);
+}
+
+/* One fieldset per channel: Key, Fill, Back, Daylight */
+.lightpanel__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: var(--space-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-1);
+  border-radius: var(--radius-2);
+  background: var(--surface-overlay);
+  backdrop-filter: var(--blur-overlay);
+  -webkit-backdrop-filter: var(--blur-overlay);
 }
 
 .lightpanel__name {
-  grid-column: 1 / -1;
   padding: 0 var(--space-1);
+  font-size: var(--type-sm);
   font-weight: 600;
   letter-spacing: 0.04em;
+  color: var(--text);
+}
+
+.lightpanel__control-group {
+  display: grid;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-height);
+}
+
+/* Studio light rows: On switch, Intensity, and Color */
+.lightpanel__control-group--switch {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.lightpanel__control-group--range {
+  grid-template-columns: var(--size-media) 1fr var(--size-value);
+}
+
+.lightpanel__control-group--color {
+  grid-template-columns: var(--size-media) auto 1fr;
+}
+
+.lightpanel__control-group--daylight {
+  grid-template-columns: auto 1fr var(--size-media);
 }
 
 .lightpanel__label {
+  font-size: var(--type-sm);
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -54,16 +68,14 @@
 .lightpanel__range {
   width: 100%;
   min-width: 0;
-  /* The drag target is the whole control height, not the track line the browser draws. */
   min-height: var(--control-height);
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
-/* The on switch sits in the control column so the three columns line up on every row. The native
-   checkbox refuses to grow, so it is drawn here: a square that fills with the accent when on.
-   appearance: none keeps it a real input, only restyled. */
+/* Native switch checkbox */
 .lightpanel__switch {
   justify-self: start;
-  appearance: none;
   width: var(--control-height);
   height: var(--control-height);
   margin: 0;
@@ -71,17 +83,69 @@
   border-radius: var(--radius-1);
   background: var(--surface);
   cursor: pointer;
+  accent-color: var(--accent);
 }
 
-.lightpanel__switch:checked {
-  border-color: var(--accent);
-  background: var(--accent);
+/* Native color input */
+.lightpanel__color {
+  width: var(--control-height);
+  height: var(--control-height);
+  min-width: var(--control-height);
+  min-height: var(--control-height);
+  padding: var(--focus-ring);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-1);
+  background: var(--surface);
+  cursor: pointer;
 }
 
-/* Tabular figures keep the column from twitching as a slider moves. */
+.lightpanel__color::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.lightpanel__color::-webkit-color-swatch {
+  border: none;
+  border-radius: calc(var(--radius-1) - var(--focus-ring));
+}
+
+/* Tabular figures for readouts */
 .lightpanel__value {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+  font-size: var(--type-sm);
   text-align: right;
   color: var(--text);
+  white-space: nowrap;
+}
+
+.lightpanel__value--color {
+  text-align: left;
+  margin-left: var(--space-2);
+}
+
+/* Daylight / Atmosphere continuous track and visible guidance */
+.lightpanel__daylight-track {
+  display: flex;
+  flex-direction: column;
+  gap: var(--focus-ring);
+  width: 100%;
+  min-width: 0;
+}
+
+.lightpanel__guidance {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 var(--space-1);
+  font-size: var(--type-sm);
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.lightpanel__guidance-item {
+  line-height: 1;
+}
+
+.lightpanel__datalist {
+  display: none;
 }

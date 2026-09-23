@@ -17,6 +17,8 @@ import { createLoop } from './loop/loop';
 import { ResolutionScaler } from './loop/scaler';
 import { createPostChain } from './post/chain';
 import type { PostChain } from './post/chain';
+import { postChainRebuildAllowed } from './post/chain';
+import type { GovernorDiagnostics } from './post/governor';
 import { FrameTimes } from './proof/frametime';
 import { createGpuTimes, handleTimestampError } from './proof/gpu';
 import { latestLookSwitchMs, markFirstFrame, snapshot } from './proof/marks';
@@ -36,8 +38,12 @@ import type { TierName } from './tiers/table';
 import { mountA11y } from './ui/a11y';
 import { mountBadge } from './ui/badge';
 import { mountChrome } from './ui/chrome';
-import { gateWanted, mountLoadingGate } from './ui/loading-gate';
 import { mountShell } from './ui/shell';
+import { createAudioEngine } from './audio/engine';
+import { lobbyWanted, mountEntryLobby } from './ui/entry-lobby';
+import type { EntryLobby } from './ui/entry-lobby';
+import { SceneRevealCoordinator } from './ui/scene-reveal';
+import type { ReadinessPredicates } from './ui/scene-reveal';
 
 /** What the scene is made of, as the e2e suite reads it. Material names are three.js type strings. */
 interface SceneDescription {
@@ -49,6 +55,8 @@ interface SceneDescription {
 
 declare global {
   interface Window {
+    archvizLobby?: EntryLobby | null;
+    archvizReveal?: SceneRevealCoordinator | null;
     /**
      * Test-only handle, mounted in dev and behind `?e2e=1`. The e2e suite drives look switches
      * through it, which no visitor-facing control can do until G5.1 mounts the catalogue UI, and
@@ -62,6 +70,16 @@ declare global {
       musicState(): string;
       /** Scene-graph turntable state, kept test-only so yaw coverage is not a canvas scalar check. */
       turntableState(): TurntableState;
+      /**
+       * Test-only governor control: enables deterministic sampling, injects one synthetic
+       * observation with explicit workMs/nowMs/recovery eligibility, and reads the diagnostic
+       * snapshot. It never assigns a level directly and exists only under the e2e guard above.
+       */
+      governor: {
+        setDeterministic(on: boolean): void;
+        observe(workMs: number, nowMs: number, eligible: boolean): GovernorDiagnostics | null;
+        diagnostics(): GovernorDiagnostics | null;
+      };
     };
   }
 }
@@ -175,6 +193,47 @@ function switchOrder(ids: string[], startId: string, count: number): string[] {
 }
 
 async function main(): Promise<void> {
+  const showLobby = lobbyWanted(search);
+  const lobbyElement = document.getElementById('entry-lobby');
+  const headerElement = document.getElementById('shell-header');
+  const mainElement = document.querySelector('main');
+  const footerElement = document.querySelector('footer');
+
+  let lobby: EntryLobby | null = null;
+  let musicPreference: 'on' | 'off' = 'on';
+
+  if (!showLobby) {
+    lobbyElement?.remove();
+    headerElement?.removeAttribute('inert');
+    headerElement?.removeAttribute('aria-hidden');
+    mainElement?.removeAttribute('inert');
+    mainElement?.removeAttribute('aria-hidden');
+    footerElement?.removeAttribute('inert');
+    footerElement?.removeAttribute('aria-hidden');
+  } else {
+    // Static inspection without creating a GPU context
+    const hasWebGPU = typeof navigator !== 'undefined' && 'gpu' in navigator;
+    const hasWebGL2 = typeof window !== 'undefined' && 'WebGL2RenderingContext' in window;
+    if (!hasWebGPU && !hasWebGL2) {
+      lobby = mountEntryLobby({
+        search,
+        unsupportedMessage:
+          'This exhibition requires WebGPU or WebGL 2. Your graphics browser does not support these features.',
+      });
+      if (import.meta.env.DEV || params.get('e2e') === '1') {
+        window.archvizLobby = lobby;
+      }
+      return;
+    }
+
+    lobby = mountEntryLobby({ search });
+    if (import.meta.env.DEV || params.get('e2e') === '1') {
+      window.archvizLobby = lobby;
+    }
+    const loadRequest = await lobby.waitForLoadRequest();
+    musicPreference = loadRequest.musicPreference;
+  }
+
   const page = requireElement('main', 'main element');
   const aside = requireElement('aside', 'side panel');
   const shell = mountShell(document);
@@ -188,27 +247,64 @@ async function main(): Promise<void> {
   // untouched, so the page still explains itself instead of showing a dead rectangle.
   const support = detectSupport();
   if (!support.webgpu && !support.webgl2) {
-    showPoster(page, {
-      imageUrl: '/poster/hero.jpg',
-      message: 'This page needs WebGPU or WebGL 2. Your browser has neither.',
-      credit: 'Still from the Unreal Engine original.',
-    });
+    if (lobby !== null) {
+      lobby.setError(
+        'This exhibition requires WebGPU or WebGL 2. Your graphics browser does not support these features.',
+      );
+    } else {
+      showPoster(page, {
+        imageUrl: '/poster/hero.jpg',
+        message: 'This page needs WebGPU or WebGL 2. Your browser has neither.',
+        credit: 'Still from the Unreal Engine original.',
+      });
+    }
     return;
   }
 
   const canvas = requireCanvas();
-
-  // The loading gate (G6.5) mounts here, before the renderer, so it is on screen from
-  // the first paint; its reveal comes after the content and the controls, further down.
-  const gate = gateWanted(search)
-    ? mountLoadingGate({ root: document.body, canvas, contentBase: FULL_CONTENT_BASE, onEnter: wake })
-    : null;
+  const stopProgress = lobby !== null ? lobby.trackProgress(FULL_CONTENT_BASE) : () => {};
 
   // Decided before the renderer exists because it decides how the renderer is built: the timestamp
   // queries and their per-frame resolve serve the panel and nothing else, so a visitor who never
   // asks for the panel pays for neither. Read once, used by the renderer options, by drawFrame and
   // by the mount below, so the three can never disagree.
   const proofOn = overlayWanted(search, import.meta.env.DEV);
+
+  let revealCoordinator: SceneRevealCoordinator | null = null;
+  /**
+   * Null until the tier has settled, because the settled tier decides which effects the chain
+   * builds. From then on it replaces renderer.render for every frame. Declared before the
+   * renderer callbacks below so they can drop recovery eligibility on a device error.
+   */
+  let chain: PostChain | null = null;
+  /** True once the renderer or GPU device reported an error or loss; recovery never requalifies. */
+  let rendererError = false;
+  /** True once ENTRY-3 reached 'revealed', or once loading settled on the no-lobby path. */
+  let revealSettled = false;
+  /** True once a look stands on the plinth, which is what makes a frame worth marking. */
+  let contentOnScreen = false;
+  /** True once the tier benchmark has finished and tier is settled. */
+  let tierSettled = false;
+  /** Carried across post-chain rebuilds so a deterministic e2e sequence stays the only input. */
+  let e2eDeterministicGovernor = false;
+
+  /**
+   * Recovery eligibility, G3.5-R: every lifecycle fact must hold before a sample stream may
+   * count toward the ten-second qualification. The chain adds its own fallback rule on top.
+   */
+  function recoveryEligibleNow(): boolean {
+    return (
+      contentOnScreen &&
+      tierSettled &&
+      revealSettled &&
+      !document.hidden &&
+      !rendererError
+    );
+  }
+
+  function updateRecoveryEligibility(): void {
+    chain?.setRecoveryEligible(recoveryEligibleNow());
+  }
 
   // The tier owns the pixel ratio cap, but the decision needs the backend and the GPU name, which
   // only exist once the renderer is up. Start at the Base cap and apply the tier's cap below.
@@ -217,8 +313,31 @@ async function main(): Promise<void> {
     pixelRatioCap: TIERS.base.pixelRatioCap,
     forceWebGL,
     trackTimestamp: proofOn,
-    onDeviceLost: (info) => showLossNotice(document.body, info, () => location.reload()),
-    onError: (error) => console.error('[archviz] renderer error', error),
+    onDeviceLost: (info) => {
+      const message = 'The graphics device was lost. Reload to restore the showroom.';
+      rendererError = true;
+      updateRecoveryEligibility();
+      canvas.dataset.scene = 'error';
+      if (revealCoordinator !== null) {
+        revealCoordinator.fail(message);
+      } else {
+        // Before the coordinator exists, the opaque lobby is already the fail-closed surface.
+        lobby?.setError(message);
+      }
+      showLossNotice(document.body, info, () => location.reload());
+    },
+    onError: (error) => {
+      console.error('[archviz] renderer error', error);
+      rendererError = true;
+      updateRecoveryEligibility();
+      canvas.dataset.scene = 'error';
+      const message = 'Renderer initialization failed. Please retry.';
+      if (revealCoordinator !== null) {
+        revealCoordinator.fail(message);
+      } else {
+        lobby?.setError(message);
+      }
+    },
   });
   console.info(`[archviz] renderer backend: ${backend}`);
 
@@ -230,25 +349,31 @@ async function main(): Promise<void> {
 
   const badge = mountBadge(shell.roots.proof, { backend, gpuName, tier: null });
 
+  let audioEngine;
+  if (musicPreference === 'on') {
+    audioEngine = createAudioEngine();
+    // The user click was the gesture: unlock context immediately without playing yet
+    void audioEngine.unlock();
+  }
+
   // The music switch (G5.6) mounts in the header here, before the content loads, so a
   // visitor can press it while the room is still arriving; the music needs no scene.
   const music = mountMusic({
     headerRoot: shell.roots.header,
     search,
     baseUrl: '/content/music',
+    deferPlay: showLobby,
+    ...(audioEngine !== undefined ? { engine: audioEngine } : {}),
   });
 
   canvas.dataset.scene = 'loading';
 
   /** Null until the catalogue has arrived; the showroom owns the scene and the camera. */
   let showroom: Showroom | null = null;
-  /** True once a look stands on the plinth, which is what makes a frame worth marking. */
-  let contentOnScreen = false;
-  /**
-   * Null until the tier has settled, because the settled tier decides which effects the chain
-   * builds. From then on it replaces renderer.render for every frame.
-   */
-  let chain: PostChain | null = null;
+  /** Last CSS canvas box. A changed box needs a fresh temporal post graph on WebGPU. */
+  let lastCanvasBoxKey = '';
+  /** Reapplied whenever a resize rebuilds the post graph. */
+  let depthOfFieldAllowed = true;
 
   // The tier benchmark measures a render call, so the loop needs something to render before the
   // showroom exists. An empty scene keeps that measurement real; the G0.2 cube was the previous
@@ -317,9 +442,20 @@ async function main(): Promise<void> {
     if (width === 0 || height === 0) {
       return;
     }
+    const boxKey = `${width}:${height}`;
+    const boxChanged = boxKey !== lastCanvasBoxKey;
     showroom?.setAspect(width / height);
     renderer.setSize(width, height, false);
-    chain?.setSize(width, height);
+    // Three's temporal nodes create GPU history targets lazily in their render ordering. Reusing
+    // a graph whose source target was allocated at a different CSS box can make WebGPU copy a
+    // new-sized range from its previous-sized GPU texture. Rebuild only for a real box change;
+    // pixel-ratio governor steps retain their graph and are still read by the nodes each frame.
+    if (chain !== null && boxChanged && postChainRebuildAllowed(chain.fellBack)) {
+      rebuildPostChain();
+    } else {
+      chain?.setSize(width, height);
+    }
+    lastCanvasBoxKey = boxKey;
   }
   resize();
 
@@ -420,14 +556,32 @@ async function main(): Promise<void> {
   // The canvas box changes with the window and with the side panel's content (the overlay widens the
   // panel after the first frame), so the observer watches the element, not the window; a window
   // listener left the drawing buffer at the old width and squashed the frame.
-  new ResizeObserver(() => {
+  const resizeAndInvalidate = (): void => {
     resize();
     loop.invalidate();
-  }).observe(canvas);
+  };
+  new ResizeObserver(resizeAndInvalidate).observe(canvas);
+  // A transition restart wakes the RAF loop from its own window/visual-viewport listener. Resize
+  // the renderer and post chain first in this earlier-registered listener, so WebGPU never renders
+  // one new-sized post pass against the previous-sized default framebuffer.
+  window.addEventListener('resize', resizeAndInvalidate);
+  window.visualViewport?.addEventListener('resize', resizeAndInvalidate);
   window.addEventListener('pointerdown', wake, { passive: true });
   window.addEventListener('pointermove', wake, { passive: true });
   window.addEventListener('keydown', wake);
   window.addEventListener('wheel', wake, { passive: true });
+  // G3.5-R: a hidden or restored tab, and any page lifecycle interruption, ends recovery
+  // qualification immediately. Time spent hidden never counts; restoration starts a fresh
+  // ten-second qualification because the accumulated run was cleared on the way out.
+  document.addEventListener('visibilitychange', () => {
+    updateRecoveryEligibility();
+  });
+  window.addEventListener('pagehide', () => {
+    chain?.setRecoveryEligible(false);
+  });
+  window.addEventListener('pageshow', () => {
+    updateRecoveryEligibility();
+  });
 
   if (proofOn) {
     mountProofPanel(shell.roots.proof, {
@@ -443,6 +597,8 @@ async function main(): Promise<void> {
           gpu: { p50: gpuSeries.p50(), p95: gpuSeries.p95(), available: gpuSeries.available },
           lookSwitchMs: latestLookSwitchMs(),
           post: canvas.dataset.post ?? 'off',
+          governor: canvas.dataset.governor ?? 'off',
+          governorLog: canvas.dataset.governorLog ?? '',
         }),
       measure: async () => {
         if (cameraMount === null) {
@@ -506,8 +662,9 @@ async function main(): Promise<void> {
   }
 
   /**
-   * What the post chain is drawing, as the e2e suites read it: "ao,traa", "ao,msaa",
-   * "ao,traa,lut,vignette", "off".
+   * What the post chain is drawing, as the e2e suites read it: "ao,traa", "ao,traa,ssgi-half,ssr",
+   * "off". The committed governor record rides the same per-frame publish, so a decision reaches
+   * the canvas and the proof panel only after render() has applied it.
    */
   function publishPostState(): void {
     const on = chain?.features ?? null;
@@ -530,6 +687,69 @@ async function main(): Promise<void> {
     if (canvas.dataset.post !== value) {
       canvas.dataset.post = value;
     }
+    const diagnostics = chain?.governorDiagnostics ?? null;
+    const governorStatus = formatGovernorStatus(diagnostics);
+    if (canvas.dataset.governor !== governorStatus) {
+      canvas.dataset.governor = governorStatus;
+    }
+    const governorLog = diagnostics === null ? '[]' : JSON.stringify(diagnostics.events);
+    if (canvas.dataset.governorLog !== governorLog) {
+      canvas.dataset.governorLog = governorLog;
+    }
+  }
+
+  /**
+   * The data-governor bridge, G3.5-R: fixed-order, bounded tokens read by the proof snapshot,
+   * the panel and the e2e suite. 'off' means no governor runs this page (WebGL 2, a forced
+   * `?post=` slice, or pass-through).
+   */
+  function formatGovernorStatus(diagnostics: GovernorDiagnostics | null): string {
+    if (diagnostics === null) {
+      return 'off';
+    }
+    const p95 = diagnostics.lastP95Ms === null ? 'none' : diagnostics.lastP95Ms.toFixed(1);
+    return [
+      `level=${diagnostics.level}`,
+      `activity=${diagnostics.activity}`,
+      `eligible=${diagnostics.recoveryEligible ? '1' : '0'}`,
+      `cooldown=${Math.ceil(diagnostics.cooldownRemainingMs)}`,
+      `patience=${diagnostics.consecutiveOverBudget}/${diagnostics.patience}`,
+      `qualify=${Math.floor(diagnostics.recoveryElapsedMs)}/${diagnostics.recoveryQualificationMs}`,
+      `p95=${p95}`,
+      `budget=${diagnostics.budgetMs.toFixed(1)}`,
+      `threshold=${diagnostics.recoveryThresholdMs.toFixed(2)}`,
+    ].join(';');
+  }
+
+  /**
+   * Recreates temporal post resources after a CSS canvas-box change without changing its settings.
+   * The governor state, the recovery eligibility and the deterministic-sampling flag all ride
+   * along, so a rebuild neither resets nor improves quality and never contaminates an injected
+   * e2e sequence with real-frame samples.
+   */
+  function rebuildPostChain(): PostChain | null {
+    if (showroom === null) {
+      return null;
+    }
+    const previous = chain;
+    const governorState = previous?.governorState;
+    chain = createPostChain({
+      renderer,
+      scene: showroom.scene,
+      camera: showroom.camera,
+      tier: settings,
+      isTouch,
+      backend,
+      requestFrame: () => {
+        loop.invalidate();
+      },
+      recoveryEligible: recoveryEligibleNow(),
+      deterministicSampling: e2eDeterministicGovernor,
+      ...(governorState === null || governorState === undefined ? {} : { governorState }),
+    });
+    chain.setDepthOfFieldAllowed(depthOfFieldAllowed);
+    previous?.dispose();
+    return chain;
   }
 
   try {
@@ -581,23 +801,19 @@ async function main(): Promise<void> {
     publishSceneState();
     loop.invalidate();
     await settleTier();
+    tierSettled = true;
+    // Without the lobby there is no ENTRY-3 transition to wait for: loading settled is revealed.
+    // On the lobby path revealSettled stays false until the coordinator reaches 'revealed'.
+    if (!showLobby) {
+      revealSettled = true;
+    }
 
     // The settled tier decides which effects the chain builds, which is why the chain is created
     // here and not before the benchmark: the benchmark measures the plain render it calibrates on.
-    chain = createPostChain({
-      renderer,
-      scene: showroom.scene,
-      camera: showroom.camera,
-      tier: settings,
-      isTouch,
-      backend,
-      // The chain changes its own picture off the render callback (the rest timer, a governor
-      // step); the loop must draw the frame that applies it.
-      requestFrame: () => {
-        loop.invalidate();
-      },
-    });
-    publishPostState();
+    const initializedChain = rebuildPostChain();
+    if (initializedChain === null) {
+      throw new Error('the post chain was not created for the loaded showroom');
+    }
     loop.invalidate();
     // TRAA accumulates over frames and this loop stops drawing when nothing moves, so without a
     // wake the page would idle on the first frame of the history. One wake window lets it converge
@@ -621,11 +837,12 @@ async function main(): Promise<void> {
     });
     cameraMount = cameraHandle;
     proofView = catalog.views.proof;
-    mountModeSwitch(shell.roots.header, cameraHandle);
-    const finishingPass = chain;
+    mountModeSwitch(shell.roots.header, cameraHandle, { hasPointerLock: !isTouch });
+    const finishingPass = initializedChain;
     finishingPass.setDepthOfFieldAllowed(cameraHandle.mode === 'orbit');
     cameraHandle.onModeChange((mode) => {
-      finishingPass.setDepthOfFieldAllowed(mode === 'orbit');
+      depthOfFieldAllowed = mode === 'orbit';
+      chain?.setDepthOfFieldAllowed(depthOfFieldAllowed);
     });
     mountChrome({
       catalog,
@@ -666,11 +883,103 @@ async function main(): Promise<void> {
       drawFrame,
       onChange: () => loop.invalidate(),
     });
-    mountA11y({ root: document.body, aside: shell.roots.card, canvas, search });
-    // A let's narrowing does not reach inside a closure, so the non-null showroom is bound to a
-    // const for the compile; switchLooks rebinds the same way for the same reason.
     const room = showroom;
-    await gate?.ready(() => renderer.compileAsync(room.scene, room.camera));
+    let shadersCompiled = false;
+    try {
+      const compilePromise = renderer.compileAsync(room.scene, room.camera);
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Shader compilation timed out')), 15000);
+      });
+      await Promise.race([compilePromise, timeoutPromise]);
+      shadersCompiled = true;
+    } catch (compileError) {
+      canvas.dataset.scene = 'error';
+      console.error('[archviz] shader compilation failed or timed out', compileError);
+      lobby?.setError('Shader compilation timed out or failed. Please retry.');
+      return;
+    }
+
+    drawFrame();
+    lobby?.setReady();
+    stopProgress();
+
+    if (!showLobby) {
+      mountA11y({ root: document.body, aside: shell.roots.card, canvas, search });
+      if (musicPreference === 'on') {
+        void music.startDeferred();
+      }
+    } else {
+      const predicates: ReadinessPredicates = {
+        rendererExists: () => renderer !== null && renderer !== undefined,
+        backendActive: () => backend === 'webgpu' || backend === 'webgl2',
+        canvasSized: () =>
+          canvas.clientWidth > 0 &&
+          canvas.clientHeight > 0 &&
+          canvas.width > 0 &&
+          canvas.height > 0,
+        tierSettled: () => tierSettled,
+        showroomExists: () => showroom !== null,
+        staticsMounted: () => showroom !== null && showroom.scene.children.length > 0,
+        lookAndVariantMounted: () => contentOnScreen,
+        cameraPoseActive: () => cameraMount !== null && showroom !== null,
+        lightingAttached: () => lighting !== null,
+        postChainAssembled: () => chain !== null,
+        shadersCompiled: () => shadersCompiled,
+        noError: () => canvas.dataset.scene !== 'error',
+        realFrameCompleted: () => frameCount >= 1 && contentOnScreen,
+      };
+
+      const coordinator = new SceneRevealCoordinator({
+        canvas,
+        search,
+        lobby,
+        predicates,
+        wakeRenderer: () => {
+          loop.invalidate();
+          wake();
+        },
+        onFrameRequest: async () => {
+          // The coordinator counts only frames delivered by the running RAF loop. This resolves
+          // after drawFrame, rather than treating a synchronous renderer call as a committed frame.
+          await nextFrame();
+        },
+        onRevealed: () => {
+          headerElement?.removeAttribute('inert');
+          headerElement?.removeAttribute('aria-hidden');
+          mainElement?.removeAttribute('inert');
+          mainElement?.removeAttribute('aria-hidden');
+          footerElement?.removeAttribute('inert');
+          footerElement?.removeAttribute('aria-hidden');
+
+          // ENTRY-3 has reached 'revealed': recovery qualification may start accruing now.
+          revealSettled = true;
+          updateRecoveryEligibility();
+
+          if (mainElement !== null) {
+            mainElement.tabIndex = -1;
+            mainElement.focus({ preventScroll: true });
+          }
+
+          if (musicPreference === 'on') {
+            void music.startDeferred();
+          }
+
+          const a11y = mountA11y({ root: document.body, aside: shell.roots.card, canvas, search });
+          a11y.announcer.say('Experience ready');
+        },
+        onError: (err) => {
+          canvas.dataset.scene = 'error';
+          console.error('[archviz] transition error', err);
+        },
+      });
+      revealCoordinator = coordinator;
+
+      if (import.meta.env.DEV || params.get('e2e') === '1') {
+        window.archvizReveal = coordinator;
+      }
+
+      await coordinator.execute();
+    }
 
     if (import.meta.env.DEV || params.get('e2e') === '1') {
       const ids = catalog.looks.map((entry) => entry.id);
@@ -734,11 +1043,24 @@ async function main(): Promise<void> {
           }
           return active.turntableState;
         },
+        governor: {
+          setDeterministic(on: boolean): void {
+            e2eDeterministicGovernor = on;
+            chain?.governorHarness?.setDeterministic(on);
+          },
+          observe(workMs: number, nowMs: number, eligible: boolean): GovernorDiagnostics | null {
+            return chain?.governorHarness?.observe(workMs, nowMs, eligible) ?? null;
+          },
+          diagnostics(): GovernorDiagnostics | null {
+            return chain?.governorDiagnostics ?? null;
+          },
+        },
       };
     }
   } catch (error) {
     canvas.dataset.scene = 'error';
     console.error('[archviz] the showroom failed to load', error);
+    lobby?.setError('Showroom initialization failed. We were unable to load the 3D showroom assets.');
   }
 }
 

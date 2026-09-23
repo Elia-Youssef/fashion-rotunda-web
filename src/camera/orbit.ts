@@ -56,6 +56,8 @@ export interface OrbitHandle {
   readonly position: [number, number, number];
   /** The orbit's target in metres. */
   readonly target: [number, number, number];
+  /** The live vertical perspective FOV in degrees. */
+  readonly fov: number;
   /** removes every listener it added */
   dispose(): void;
 }
@@ -515,6 +517,10 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
 
     get target(): [number, number, number] {
       return [target.x, target.y, target.z];
+    },
+
+    get fov(): number {
+      return camera.fov;
     },
 
     dispose(): void {

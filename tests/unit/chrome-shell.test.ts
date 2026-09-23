@@ -140,7 +140,7 @@ describe('mountShell', () => {
     const button = document.getElementById('shell-light-toggle');
     expect(button?.tagName).toBe('BUTTON');
     expect(button?.getAttribute('aria-controls')).toBe('shell-light-panel');
-    expect(button?.getAttribute('aria-expanded')).toBe('true');
+    expect(button?.getAttribute('aria-expanded')).toBe('false');
     expect(button?.textContent).toBe('Light Control');
   });
 
@@ -152,13 +152,40 @@ describe('mountShell', () => {
 });
 
 describe('the light panel disclosure', () => {
-  it('starts open above the phone width and hides the panel when closed', () => {
+  it('starts closed at every review viewport, ARIA and hidden in agreement', () => {
+    const reviewViewports: Array<[number, number]> = [
+      [1440, 900],
+      [820, 1180],
+      [390, 844],
+      [844, 390],
+    ];
+    for (const [width, height] of reviewViewports) {
+      stubViewport(width, height);
+      shell = mountShell(document);
+      const panel = document.getElementById('shell-light-panel');
+      const button = document.getElementById('shell-light-toggle');
+      expect(shell.lightPanelOpen, `${width}x${height}: the panel starts closed`).toBe(false);
+      expect(panel?.hidden, `${width}x${height}: the panel root is hidden`).toBe(true);
+      expect(
+        button?.getAttribute('aria-expanded'),
+        `${width}x${height}: the toggle agrees it is closed`,
+      ).toBe('false');
+      shell?.dispose();
+      shell = null;
+    }
+  });
+
+  it('opens on the button above the phone width and hides the panel when closed again', () => {
     stubViewport(1200);
     shell = mountShell(document);
     const panel = document.getElementById('shell-light-panel');
     const button = document.getElementById('shell-light-toggle');
+    expect(shell.lightPanelOpen).toBe(false);
+    expect(panel?.hidden).toBe(true);
+    button?.click();
     expect(shell.lightPanelOpen).toBe(true);
     expect(panel?.hidden).toBe(false);
+    expect(button?.getAttribute('aria-expanded')).toBe('true');
     shell.setLightPanelOpen(false);
     expect(panel?.hidden).toBe(true);
     expect(button?.getAttribute('aria-expanded')).toBe('false');
@@ -194,6 +221,48 @@ describe('the light panel disclosure', () => {
     shell.setLightPanelOpen(true);
     expect(row?.dataset.open).toBe('true');
   });
+
+  it.each([
+    [390, 844],
+    [844, 390],
+  ])('keeps the closed light-sheet close control inert at %ix%i', (width, height) => {
+    stubViewport(width, height);
+    shell = mountShell(document);
+    const chrome = document.querySelector<HTMLElement>('#shell-light-row .shell-sheet__chrome');
+    const close = chrome?.querySelector<HTMLButtonElement>('.shell-sheet__close');
+
+    expect(chrome?.hidden).toBe(true);
+    expect(chrome?.inert).toBe(true);
+    expect(chrome?.getAttribute('aria-hidden')).toBe('true');
+    expect(close?.tabIndex).toBe(-1);
+
+    shell.setLightPanelOpen(true);
+    expect(chrome?.hidden).toBe(false);
+    expect(chrome?.inert).toBe(false);
+    expect(chrome?.getAttribute('aria-hidden')).toBe('false');
+    expect(close?.tabIndex).toBe(0);
+  });
+
+  it.each([
+    [390, 844],
+    [844, 390],
+    [1440, 900],
+  ])('dismisses the light disclosure with Escape and returns focus at %ix%i', (width, height) => {
+    stubViewport(width, height);
+    shell = mountShell(document);
+    const toggle = document.getElementById('shell-light-toggle') as HTMLButtonElement;
+    toggle.focus();
+    toggle.click();
+    expect(shell.lightPanelOpen).toBe(true);
+
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(escape);
+
+    expect(escape.defaultPrevented).toBe(true);
+    expect(shell.lightPanelOpen).toBe(false);
+    expect(document.getElementById('shell-light-panel')?.hidden).toBe(true);
+    expect(document.activeElement).toBe(toggle);
+  });
 });
 
 describe('the card sheet', () => {
@@ -227,6 +296,38 @@ describe('the card sheet', () => {
     expect(shell.lightPanelOpen).toBe(true);
   });
 
+  it('hides and inerts the background rail while either phone sheet is open', () => {
+    stubViewport(390);
+    const cardControl = document.createElement('button');
+    cardControl.className = 'product-card__action';
+    document.getElementById('shell-card')?.appendChild(cardControl);
+    shell = mountShell(document);
+    const rail = document.getElementById('looks');
+
+    expect(rail?.hidden).toBe(false);
+    expect(rail?.inert).toBe(false);
+    expect(rail?.getAttribute('aria-hidden')).toBe('false');
+
+    shell.setLightPanelOpen(true);
+    expect(rail?.hidden).toBe(true);
+    expect(rail?.inert).toBe(true);
+    expect(rail?.getAttribute('aria-hidden')).toBe('true');
+    shell.setLightPanelOpen(false);
+    expect(rail?.hidden).toBe(false);
+    expect(rail?.inert).toBe(false);
+    expect(rail?.getAttribute('aria-hidden')).toBe('false');
+
+    shell.setCardOpen(true);
+    expect(document.activeElement).toBe(
+      document.querySelector('#shell-card .shell-sheet__close'),
+    );
+    expect(rail?.hidden).toBe(true);
+    expect(rail?.inert).toBe(true);
+    shell.setCardOpen(false);
+    expect(rail?.hidden).toBe(false);
+    expect(rail?.inert).toBe(false);
+  });
+
   it('opens and closes the card sheet on a short landscape tablet', () => {
     stubViewport(844, 390);
     shell = mountShell(document);
@@ -258,6 +359,26 @@ describe('the card sheet', () => {
     expect(shell.lightPanelOpen).toBe(false);
     expect(document.getElementById('shell-light-panel')?.hidden).toBe(true);
   });
+
+  it.each([
+    [390, 844],
+    [844, 390],
+  ])('dismisses the card sheet with Escape and returns focus at %ix%i', (width, height) => {
+    stubViewport(width, height);
+    shell = mountShell(document);
+    const trigger = document.querySelector<HTMLButtonElement>('.shell-pill--look');
+    trigger?.focus();
+    trigger?.click();
+    expect(shell.cardOpen).toBe(true);
+
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(escape);
+
+    expect(escape.defaultPrevented).toBe(true);
+    expect(shell.cardOpen).toBe(false);
+    expect(document.getElementById('shell-card')?.hidden).toBe(true);
+    expect(document.activeElement).toBe(trigger);
+  });
 });
 
 describe('onBreakpointChange', () => {
@@ -284,18 +405,18 @@ describe('onBreakpointChange', () => {
     expect(seen).toEqual([]);
   });
 
-  it('returns the breakpoints to their defaults on a change', () => {
+  it('returns the breakpoints to their closed defaults on a change', () => {
     stubViewport(390);
     shell = mountShell(document);
     shell.setCardOpen(true);
     resizeTo(1300);
     expect(shell.breakpoint).toBe('desktop');
-    expect(shell.lightPanelOpen).toBe(true);
+    expect(shell.lightPanelOpen).toBe(false);
     expect(shell.cardOpen).toBe(true);
     expect(document.getElementById('shell-card')?.hidden).toBe(false);
   });
 
-  it('returns a short tablet to columns when its height grows', () => {
+  it('returns a short tablet to columns closed when its height grows', () => {
     stubViewport(844, 390);
     shell = mountShell(document);
     expect(shell.cardOpen).toBe(false);
@@ -303,8 +424,73 @@ describe('onBreakpointChange', () => {
     resizeTo(844, 900);
     expect(shell.breakpoint).toBe('tablet');
     expect(shell.cardOpen).toBe(true);
-    expect(shell.lightPanelOpen).toBe(true);
+    expect(shell.lightPanelOpen).toBe(false);
     expect(document.getElementById('shell-card')?.hidden).toBe(false);
+  });
+
+  it('returns focus to Light Control when a responsive transition hides the open panel', () => {
+    stubViewport(844, 900);
+    const control = document.createElement('button');
+    document.getElementById('shell-light-panel')?.appendChild(control);
+    shell = mountShell(document);
+    shell.setLightPanelOpen(true);
+    control.focus();
+
+    resizeTo(844, 390);
+
+    expect(document.getElementById('shell-light-panel')?.hidden).toBe(true);
+    expect(document.activeElement).toBe(document.getElementById('shell-light-toggle'));
+  });
+
+  it('returns focus to Look when entering sheet mode hides the desktop card', () => {
+    stubViewport(1440, 900);
+    const control = document.createElement('button');
+    document.getElementById('shell-card')?.appendChild(control);
+    shell = mountShell(document);
+    control.focus();
+
+    resizeTo(390, 844);
+
+    expect(document.getElementById('shell-card')?.hidden).toBe(true);
+    expect(document.activeElement).toBe(document.querySelector('.shell-pill--look'));
+  });
+
+  it('moves focus off sheet-only Close controls when leaving sheet mode', () => {
+    stubViewport(390, 844);
+    const cardControl = document.createElement('button');
+    cardControl.className = 'product-card__action';
+    document.getElementById('shell-card')?.appendChild(cardControl);
+    shell = mountShell(document);
+
+    shell.setLightPanelOpen(true);
+    const lightClose = document.querySelector<HTMLButtonElement>(
+      '#shell-light-row .shell-sheet__close',
+    );
+    lightClose?.focus();
+    resizeTo(1440, 900);
+    expect(document.activeElement).toBe(document.getElementById('shell-light-toggle'));
+
+    resizeTo(390, 844);
+    shell.setCardOpen(true);
+    const cardClose = document.querySelector<HTMLButtonElement>('#shell-card .shell-sheet__close');
+    cardClose?.focus();
+    resizeTo(1440, 900);
+    expect(document.activeElement).toBe(cardControl);
+  });
+
+  it('moves focus from the phone Look pill to a visible card control on desktop', () => {
+    stubViewport(390, 844);
+    const cardControl = document.createElement('button');
+    cardControl.className = 'product-card__action';
+    document.getElementById('shell-card')?.appendChild(cardControl);
+    shell = mountShell(document);
+    const lookPill = document.querySelector<HTMLButtonElement>('.shell-pill--look');
+    lookPill?.focus();
+
+    resizeTo(1440, 900);
+
+    expect(lookPill?.hidden).toBe(true);
+    expect(document.activeElement).toBe(cardControl);
   });
 });
 
@@ -320,7 +506,11 @@ describe('dispose', () => {
     expect(document.querySelectorAll('.shell-sheet__chrome')).toHaveLength(0);
     expect(document.getElementById('shell-card')?.hidden).toBe(false);
     expect(document.getElementById('shell-light-panel')?.hidden).toBe(false);
+    expect(document.getElementById('looks')?.hidden).toBe(false);
+    expect(document.getElementById('looks')?.inert).toBe(false);
+    expect(document.getElementById('looks')?.hasAttribute('aria-hidden')).toBe(false);
     expect(document.getElementById('shell-light-row')?.dataset.open).toBeUndefined();
     expect(document.getElementById('shell-stage')?.dataset.sheet).toBeUndefined();
+    expect(document.body.hasAttribute('data-shell-sheet-open')).toBe(false);
   });
 });
