@@ -13,8 +13,26 @@ const VIEWPORT_PADDING_PX = 8;
 const ANCHOR_GAP_PX = 6;
 
 /**
- * One tooltip element for the page: any element with data-tooltip shows it on hover and on focus,
- * hides it on leave, blur and Escape; aria-describedby links them while shown.
+ * Whether a focus should show its tooltip: only when the browser draws the focus ring, that is,
+ * keyboard focus or script focus that follows keyboard use. A mouse click that opens a panel and
+ * moves focus into it would otherwise cover the panel with a tooltip every time. A runtime that
+ * cannot parse :focus-visible keeps the old behaviour and shows it.
+ */
+function focusIsVisible(target: EventTarget | null): boolean {
+  if (!(target instanceof Element)) {
+    return true;
+  }
+  try {
+    return target.matches(':focus-visible');
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * One tooltip element for the page: any element with data-tooltip shows it on hover and on
+ * keyboard-visible focus, hides it on leave, blur and Escape; aria-describedby links them while
+ * shown.
  */
 export function installTooltips(root: HTMLElement): TooltipHandle {
   const tooltip = document.createElement('div');
@@ -132,7 +150,7 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
     'focusin',
     (event) => {
       const anchor = findAnchor(event.target);
-      if (anchor !== null) {
+      if (anchor !== null && focusIsVisible(event.target)) {
         show(anchor);
       }
     },
