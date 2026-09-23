@@ -149,3 +149,290 @@
 .lightpanel__datalist {
   display: none;
 }
+
+/* Words only assistive technology reads: the light's name in front of each control's label, so a
+   control announces as "KeyLight Intensity" wherever focus lands. The standard clip pattern. */
+.lightpanel__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
+/* The switch label carries two words; the sheets and the tablet drawer show "On". */
+.lightpanel__label-text--bar {
+  display: none;
+}
+
+/* Desktop, 1200 and up with the height for it: the Unreal Light Control panel. One translucent
+   bar (its box is #shell-light-panel in styles.css) holding four columns side by side, each a bold
+   light name over its controls, each readout small and starting right after its track. This block is the
+   coarse-pointer version and keeps the 44 px targets; the fine-pointer block below makes the
+   controls compact at the 24 px WCAG 2.5.8 floor. */
+@media (min-width: 1200px) and (min-height: 600px) {
+  .lightpanel {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, var(--light-column-width)));
+    column-gap: var(--light-column-gap);
+    width: auto;
+    max-width: none;
+  }
+
+  .lightpanel__row {
+    position: relative;
+    gap: 0;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  /* A floated legend is an ordinary first item of the column instead of a border caption. */
+  .lightpanel__name {
+    float: left;
+    width: 100%;
+    padding: 0;
+    font-size: var(--light-type-title);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: 0;
+    white-space: nowrap;
+  }
+
+  /* The control rows sit a little in from the title's left edge, as in the reference. */
+  .lightpanel__control-group {
+    gap: var(--space-1);
+    margin-left: var(--light-row-inset);
+  }
+
+  /* Checkbox first, then "Enabled", as in the reference. */
+  .lightpanel__control-group--switch {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .lightpanel__control-group--switch .lightpanel__switch {
+    order: -1;
+  }
+
+  .lightpanel__label--switch {
+    font-size: var(--light-type-label);
+    color: var(--text);
+  }
+
+  .lightpanel__label-text--sheet {
+    display: none;
+  }
+
+  .lightpanel__label-text--bar {
+    display: inline;
+  }
+
+  /* The studio rows show no "Intensity" or "Color" word; the label stays for assistive
+     technology through the same clip pattern as .lightpanel__sr. */
+  .lightpanel__label--quiet {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    border: 0;
+    white-space: nowrap;
+  }
+
+  /* Slider rows: the track, then the readout starting right after it. The readout column has
+     one fixed width so the tracks of every row and column share one length. */
+  .lightpanel__control-group--range {
+    grid-template-columns: minmax(0, 1fr) var(--light-readout-width);
+  }
+
+  /* Colour rows: a compact colour chip with its hex readout beside it. */
+  .lightpanel__control-group--color {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  .lightpanel__range {
+    margin: 0;
+  }
+
+  .lightpanel__value {
+    font-family: var(--font-ui);
+    font-size: var(--light-type-readout);
+    text-align: left;
+  }
+
+  .lightpanel__value--color {
+    margin-left: 0;
+  }
+
+  /* Daylight: "Atmosphere" and its phase readout on the first row, the slider under them, the
+     Dawn/Day/Dusk marks under the slider. */
+  .lightpanel__control-group--daylight {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'label value'
+      'track track';
+    row-gap: 0;
+  }
+
+  .lightpanel__control-group--daylight > .lightpanel__label {
+    grid-area: label;
+    font-size: var(--type-sm);
+    color: var(--text);
+  }
+
+  .lightpanel__control-group--daylight > .lightpanel__value {
+    grid-area: value;
+    text-align: right;
+  }
+
+  .lightpanel__control-group--daylight > .lightpanel__daylight-track {
+    grid-area: track;
+    gap: 0;
+  }
+
+  .lightpanel__guidance {
+    padding: 0;
+    font-size: var(--light-type-readout);
+  }
+}
+
+/* Fine pointer: the compact sizes, every target at the 24 px WCAG 2.5.8 floor. These sizes hold in
+   forced-colours mode too, where the controls keep their native drawing (next block). */
+@media (min-width: 1200px) and (min-height: 600px) and (pointer: fine) {
+  .lightpanel__control-group {
+    min-height: var(--light-target-fine);
+  }
+
+  .lightpanel__range {
+    height: var(--light-target-fine);
+    min-height: var(--light-target-fine);
+  }
+
+  .lightpanel__color {
+    width: var(--light-chip-width);
+    min-width: var(--light-target-fine);
+    height: var(--light-target-fine);
+    min-height: var(--light-target-fine);
+    padding: var(--light-swatch-inset) 0;
+  }
+
+  .lightpanel__switch {
+    width: var(--light-target-fine);
+    height: var(--light-target-fine);
+  }
+}
+
+/* Fine pointer, ordinary colours: the Unreal look. A thin light track with a small rectangular
+   thumb, a light grey checkbox with a light ring and a drawn tick, and a colour chip with a ring.
+   Forced-colours mode skips this block, so the native controls return there. */
+@media (min-width: 1200px) and (min-height: 600px) and (pointer: fine) and (forced-colors: none) {
+  .lightpanel__range {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+  }
+
+  .lightpanel__range::-webkit-slider-runnable-track {
+    height: var(--light-track-height);
+    border-radius: var(--light-track-height);
+    background: var(--text);
+  }
+
+  .lightpanel__range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: var(--light-thumb-width);
+    height: var(--light-thumb-height);
+    margin-top: calc((var(--light-track-height) - var(--light-thumb-height)) / 2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-1);
+    background: var(--text);
+  }
+
+  .lightpanel__range::-moz-range-track {
+    height: var(--light-track-height);
+    border-radius: var(--light-track-height);
+    background: var(--text);
+  }
+
+  .lightpanel__range::-moz-range-thumb {
+    width: var(--light-thumb-width);
+    height: var(--light-thumb-height);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-1);
+    background: var(--text);
+  }
+
+  /* The chip's ring is --text-muted, 3:1 or better against the panel over the darkest scene and
+     over the bright floor, so a dark or black light colour still shows its boundary. */
+  .lightpanel__color {
+    border: none;
+    background: none;
+  }
+
+  .lightpanel__color::-webkit-color-swatch {
+    border: 1px solid var(--text-muted);
+    border-radius: var(--radius-1);
+  }
+
+  .lightpanel__color::-moz-color-swatch {
+    border: 1px solid var(--text-muted);
+    border-radius: var(--radius-1);
+  }
+
+  /* A compact checkbox: a 24 px target whose transparent border leaves a 16 px box, like the
+     Unreal panel's. Unchecked is light grey inside a light ring; checked is the accent with a
+     tick drawn from two gradient strokes in the token colours. */
+  .lightpanel__switch {
+    appearance: none;
+    border: var(--light-check-inset) solid transparent;
+    border-radius: var(--radius-2);
+    background-color: var(--text-muted);
+    background-clip: padding-box;
+    box-shadow: inset 0 0 0 1px var(--text);
+  }
+
+  .lightpanel__switch:hover {
+    background-color: var(--brand-accent-architectural);
+  }
+
+  .lightpanel__switch:checked {
+    background-color: var(--accent);
+    background-image:
+      linear-gradient(
+        to top right,
+        transparent calc(50% - 1px),
+        var(--accent-text) calc(50% - 1px),
+        var(--accent-text) calc(50% + 1px),
+        transparent calc(50% + 1px)
+      ),
+      linear-gradient(
+        to bottom right,
+        transparent calc(50% - 1px),
+        var(--accent-text) calc(50% - 1px),
+        var(--accent-text) calc(50% + 1px),
+        transparent calc(50% + 1px)
+      );
+    background-position:
+      24% 64%,
+      68% 50%;
+    background-size:
+      22% 22%,
+      41% 44%;
+    background-repeat: no-repeat;
+    box-shadow: inset 0 0 0 1px var(--text);
+  }
+}

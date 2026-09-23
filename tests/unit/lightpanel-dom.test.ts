@@ -206,6 +206,27 @@ describe('mountLightPanel', () => {
     expect(daylightReadout()).toBe('Dusk');
   });
 
+  it('labels carry the light name for assistive technology and both switch words', () => {
+    mount();
+    const labelText = (input: HTMLInputElement): string =>
+      [...(input.labels ?? [])].map((label) => label.textContent ?? '').join(' ');
+    for (const [id, name] of [
+      ['key', 'KeyLight'],
+      ['fill', 'FillLight'],
+      ['back', 'BackLight'],
+    ] as const) {
+      const on = studioControl(id, 'on');
+      expect(on.labels).toHaveLength(1);
+      const onLabel = on.labels?.[0];
+      expect(onLabel?.querySelector('.lightpanel__sr')?.textContent).toBe(`${name} `);
+      expect(onLabel?.querySelector('.lightpanel__label-text--sheet')?.textContent).toBe('On');
+      expect(onLabel?.querySelector('.lightpanel__label-text--bar')?.textContent).toBe('Enabled');
+      expect(labelText(studioControl(id, 'intensity'))).toBe(`${name} Intensity`);
+      expect(labelText(studioControl(id, 'color'))).toBe(`${name} Color`);
+    }
+    expect(labelText(daylightControl())).toBe('Daylight Atmosphere');
+  });
+
   it('dispose removes panel element and aborts listeners', () => {
     const onChange = vi.fn();
     const handle = mount(DEFAULT_RIG, onChange);

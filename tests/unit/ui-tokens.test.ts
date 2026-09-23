@@ -28,7 +28,9 @@ const BANNED_UNIT = /-?\d+(?:\.\d+)?(?:px|rem|ms|s)\b/g;
 // individual literals: UI-6 may neither change them nor use them to weaken the token contract for
 // any editable stylesheet.
 const FROZEN_PREDECESSOR_SHEET_HASHES: Readonly<Record<string, string>> = {
-  'catalog-strip.css': '187949022d8923031df44229b88fa5275e6a0879b55d09ac44dd075a0dcc4fd2',
+  // 2026-09-23: re-pinned after the client asked for every look to show in the desktop rail; the
+  // desktop thumbnails now read their size from the rail's --rail-thumb token instead of 48px.
+  'catalog-strip.css': '286ad7d8d0e5fe831ae128118f3af9819386691f223eaaca83e758b79bb70ee7',
   'product-card.css': '71df61da1cd47a490021cd36d193be30cb5e2a191f9b48dbabdef5f48cb2b9cd',
   'share.css': 'dc7722407941d032ebab9b78b426eae29ccb5e083fc215046956042c7a104cca',
 };

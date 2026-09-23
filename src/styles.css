@@ -139,9 +139,46 @@
      crowding the scene out from under the chrome. */
   --header-height: 3.5rem;
   --rail-width: 5rem;
-  --rail-max-height: 370px;
+  /* The desktop rail shows every look at once. Its column runs from --rail-top down to the bottom
+     reserve, which keeps it clear of the light launcher and of the fine-pointer light bar (116px
+     over a 16px inset). A taller bar (coarse pointer, larger root font) still cannot meet the rail:
+     the bar opens right of the launcher, beyond the rail's right edge.
+     Thumbnails keep the strip's 48px while the column fits, shrink evenly down to the 24px WCAG
+     2.5.8 floor on a short window (44px on a coarse pointer, set in chrome.css), and only below
+     that floor does the rail scroll. The count is the shipped catalogue's seven looks
+     (tests/unit/chrome-strip.test.ts pins it to catalog.json). --rail-thumb is the size the
+     desktop strip draws; chrome.css computes it on the rail, and this default is the full size. */
+  --rail-thumb-max: 48px;
+  --rail-thumb-min: 24px;
+  --rail-thumb: var(--rail-thumb-max);
+  --rail-bottom-reserve: 140px;
+  --rail-look-count: 7;
+  --rail-top: calc(var(--header-height) + var(--safe-area-top) + var(--space-4));
+  --rail-available: calc(
+    100dvh - var(--rail-top) - var(--rail-bottom-reserve) - var(--safe-area-bottom)
+  );
   --card-width: 24rem;
   --panel-height: min(20rem, 38dvh);
+  /* The desktop Light Control bar, measured from the Unreal panel (client review item 2): four
+     columns beside the launcher, bold titles over small readouts. On a fine pointer its targets
+     sit at the 24px WCAG 2.5.8 floor; a coarse pointer keeps --control-height. */
+  --light-target-fine: 1.5rem;
+  --light-check-inset: 0.25rem;
+  --light-swatch-inset: 0.25rem;
+  --light-chip-width: 2rem;
+  --light-track-height: 0.125rem;
+  --light-thumb-width: 0.5rem;
+  --light-thumb-height: 0.875rem;
+  --light-column-width: clamp(8rem, 11vw, 9.25rem);
+  --light-column-gap: 1rem;
+  --light-row-inset: 0.3125rem;
+  --light-readout-width: 3.25rem;
+  --light-bar-pad-top: 0.5rem;
+  --light-bar-pad-bottom: 0.75rem;
+  --light-bar-pad-x: 0.875rem;
+  --light-type-title: 1.25rem;
+  --light-type-label: 0.875rem;
+  --light-type-readout: 0.6875rem;
   --footer-proof-height: min(12rem, 24dvh);
   /* When a phone sheet is open, its bottom edge clears the compact badge/Measure strip instead
      of painting over the controls. The two touch rows are also enough room when proof is absent. */
@@ -666,16 +703,40 @@ footer .proof-panel__measure {
   }
 }
 
+/* The rail's height, and the thumbnail size that fits it, belong to chrome.css alone. */
 @media (min-width: 1200px) {
   body #looks {
-    top: calc(var(--header-height) + var(--safe-area-top) + var(--space-4));
+    top: var(--rail-top);
     left: calc(var(--space-4) + var(--safe-area-left));
     right: auto;
     max-width: none;
-    max-height: calc(
-      100dvh - var(--header-height) - var(--safe-area-top) - var(--space-4) -
-        var(--control-height) - var(--space-5) - var(--safe-area-bottom)
+  }
+}
+
+/* Desktop with the height for it: the drawer becomes the Unreal panel's one bar, opened beside
+   the launcher and bottom-aligned with it, so the launcher never moves. All four columns show at
+   once (src/ui/lightpanel.css lays them out) and nothing scrolls inside the bar. */
+@media (min-width: 1200px) and (min-height: 600px) {
+  /* The row never reaches the card's column: its width stops a --space-4 gap short of the
+     card's left edge, so a larger root font shrinks the bar's columns instead of overlapping. */
+  #shell-light-row,
+  #shell-light-row[data-open='true'] {
+    flex-direction: row;
+    align-items: flex-end;
+    max-width: calc(
+      100vw - var(--safe-area-left) - var(--safe-area-right) - 3 * var(--space-4) -
+        min(var(--card-width), 40vw)
     );
+  }
+
+  #shell-light-row #shell-light-panel,
+  #shell-light-row[data-open='true'] #shell-light-panel {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-height: none;
+    overflow: visible;
+    padding: var(--light-bar-pad-top) var(--light-bar-pad-x) var(--light-bar-pad-bottom);
+    border-radius: var(--radius-2);
   }
 }
 

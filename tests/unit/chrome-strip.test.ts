@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { CatalogLook } from '../../src/catalog/catalog';
@@ -160,5 +162,19 @@ describe('CatalogStripHandle.dispose', () => {
     expect(root.childElementCount).toBe(0);
     button.click();
     expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+// The desktop rail divides its height by --rail-look-count to size every thumbnail, so the token
+// must match the looks the catalogue ships; a mismatch would make the rail scroll again.
+describe('the desktop rail look count', () => {
+  it('equals the number of looks in public/content/catalog.json', () => {
+    const css = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+    const token = /--rail-look-count:\s*(\d+)\s*;/.exec(css);
+    expect(token, '--rail-look-count is defined in styles.css').not.toBeNull();
+    const catalog = JSON.parse(
+      readFileSync(join(process.cwd(), 'public', 'content', 'catalog.json'), 'utf8'),
+    ) as { looks: unknown[] };
+    expect(Number(token?.[1])).toBe(catalog.looks.length);
   });
 });

@@ -11,6 +11,35 @@ const VIEWPORTS = [
   { name: 'short-landscape', width: 844, height: 390, sheet: true },
 ] as const;
 
+// The desktop bar matrix: the client's window (1669x1115 CSS), the common laptop sizes, and the
+// smallest window that still gets the desktop layout.
+const DESKTOP_BAR_VIEWPORTS = [
+  { width: 1669, height: 1115 },
+  { width: 1440, height: 900 },
+  { width: 1366, height: 768 },
+  { width: 1280, height: 720 },
+  { width: 1200, height: 640 },
+] as const;
+
+interface BarControl {
+  id: string;
+  width: number;
+  height: number;
+  bottom: number;
+  hit: boolean;
+  hitName: string;
+}
+
+interface DesktopBar {
+  toggle: { x: number; y: number; width: number; height: number };
+  panel: { left: number; top: number; right: number; bottom: number };
+  scroll: { height: number; clientHeight: number; width: number; clientWidth: number };
+  columns: Array<{ light: string; top: number; left: number; right: number }>;
+  /** null when the selector matched nothing, which the tests treat as a failure. */
+  overlaps: Record<string, boolean | null>;
+  controls: BarControl[];
+}
+
 interface ErrorLog {
   console: string[];
   page: string[];
@@ -123,6 +152,56 @@ async function assertHitAndSafe(
   expect(reading.rect.width, `${label}: has a 44px pointer width`).toBeGreaterThanOrEqual(44);
   expect(reading.rect.height, `${label}: has a 44px pointer height`).toBeGreaterThanOrEqual(44);
   expect(reading.hit, `${label}: center belongs to the control; hit ${reading.hitName}`).toBe(true);
+}
+
+/** The open desktop bar: its box, columns, controls, and whether it touches the other chrome. */
+async function readDesktopBar(page: Page): Promise<DesktopBar> {
+  return page.evaluate(() => {
+    const panel = document.querySelector<HTMLElement>('#shell-light-panel');
+    const toggle = document.querySelector<HTMLElement>('#shell-light-toggle');
+    if (panel === null || toggle === null) throw new Error('light row is unavailable');
+    const box = panel.getBoundingClientRect();
+    const toggleBox = toggle.getBoundingClientRect();
+    const intersects = (other: Element | null): boolean | null => {
+      if (other === null) return null;
+      const r = other.getBoundingClientRect();
+      return box.left < r.right && r.left < box.right && box.top < r.bottom && r.top < box.bottom;
+    };
+    return {
+      toggle: { x: toggleBox.x, y: toggleBox.y, width: toggleBox.width, height: toggleBox.height },
+      panel: { left: box.left, top: box.top, right: box.right, bottom: box.bottom },
+      scroll: {
+        height: panel.scrollHeight,
+        clientHeight: panel.clientHeight,
+        width: panel.scrollWidth,
+        clientWidth: panel.clientWidth,
+      },
+      columns: [...panel.querySelectorAll<HTMLElement>('.lightpanel__row')].map((row) => {
+        const r = row.getBoundingClientRect();
+        return { light: row.dataset.light ?? '', top: r.top, left: r.left, right: r.right };
+      }),
+      overlaps: {
+        rail: intersects(document.querySelector('#looks')),
+        card: intersects(document.querySelector('#shell-card')),
+        badge: intersects(document.querySelector('.badge')),
+        'proof strip': intersects(document.querySelector('#shell-proof')),
+        'music switch': intersects(document.querySelector('header button.music-switch')),
+        'mode switch': intersects(document.querySelector('.archviz-mode-switch')),
+      },
+      controls: [...panel.querySelectorAll<HTMLInputElement>('input')].map((input) => {
+        const r = input.getBoundingClientRect();
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return {
+          id: input.id,
+          width: r.width,
+          height: r.height,
+          bottom: r.bottom,
+          hit: hit === input || input.contains(hit),
+          hitName: `${hit?.tagName ?? 'null'}#${(hit as HTMLElement | null)?.id ?? ''}`,
+        };
+      }),
+    };
+  });
 }
 
 async function setNativeInput(locator: Locator, value: string): Promise<void> {
@@ -240,7 +319,13 @@ test.describe('UI-5: simplified Light Control drawer and rig', () => {
         expect(inputId, `${id} input has an id`).toBeTruthy();
         await expect(page.locator(`label[for="${inputId}"]`)).toHaveCount(1);
       }
+      // The desktop bar hides the "Intensity" and "Color" words; the names stay whole.
+      const title = await row.locator('legend').textContent();
+      await expect(panel.getByRole('checkbox', { name: `${title} Enabled`, exact: true })).toHaveCount(1);
+      await expect(panel.getByRole('slider', { name: `${title} Intensity`, exact: true })).toHaveCount(1);
+      await expect(panel.getByLabel(`${title} Color`, { exact: true })).toHaveCount(1);
     }
+    await expect(panel.getByRole('slider', { name: 'Daylight Atmosphere', exact: true })).toHaveCount(1);
 
     const daylight = panel.locator('[data-light="daylight"]');
     await expect(daylight.locator('.lightpanel__range--daylight')).toHaveAttribute('min', '0');
@@ -263,7 +348,9 @@ test.describe('UI-5: simplified Light Control drawer and rig', () => {
     expectNoErrors(errors);
   });
 
-  for (const viewport of VIEWPORTS.filter((entry) => entry.sheet)) {
+  // The 44 px rule holds wherever the drawer is a sheet or the tablet drawer. The desktop bar is
+  // compact on a fine pointer (24 px, tested below) and keeps 44 px on a coarse one.
+  for (const viewport of VIEWPORTS.filter((entry) => entry.sheet || entry.name === 'tablet')) {
     test(`safe-area, 44px and hit ownership for every control at ${viewport.width}x${viewport.height}`, async ({
       page,
     }) => {
@@ -279,9 +366,9 @@ test.describe('UI-5: simplified Light Control drawer and rig', () => {
       const panel = page.locator('#shell-light-panel');
       await expect(panel).toBeVisible();
 
-      const controls: Array<[string, Locator]> = [
-        ['close', page.locator('#shell-light-row .shell-sheet__close')],
-      ];
+      const controls: Array<[string, Locator]> = viewport.sheet
+        ? [['close', page.locator('#shell-light-row .shell-sheet__close')]]
+        : [];
       for (const id of STUDIO_LIGHTS) {
         const row = panel.locator(`[data-light="${id}"]`);
         controls.push(
@@ -322,6 +409,162 @@ test.describe('UI-5: simplified Light Control drawer and rig', () => {
       expectNoErrors(errors);
     });
   }
+
+  // Client review item 2 (2026-09-23): at desktop size the drawer is the Unreal panel's one bar
+  // beside the launcher. On a fine pointer its controls are compact, which reverses the UI-5/UI-6
+  // 44 px desktop clause at the client's request: every target keeps the 24 px WCAG 2.5.8 floor
+  // and owns its centre. The bar stays inside the bottom 140 px the rail leaves free, and it opens
+  // right of the rail, which is what keeps the two apart when a coarse pointer makes it taller.
+  for (const viewport of DESKTOP_BAR_VIEWPORTS) {
+    test(`desktop fine-pointer bar at ${viewport.width}x${viewport.height}: four columns, 24px targets, no overlap`, async ({
+      page,
+    }) => {
+      skipUnlessWebgl2();
+      test.setTimeout(120_000);
+      const errors = watchErrors(page);
+      await page.setViewportSize(viewport);
+      await openScene(page);
+      expect(await page.evaluate(() => matchMedia('(pointer: fine)').matches), 'fine pointer').toBe(true);
+      const toggle = page.locator('#shell-light-toggle');
+      const closedToggle = await toggle.boundingBox();
+      await toggle.click();
+      const panel = page.locator('#shell-light-panel');
+      await expect(panel).toBeVisible();
+      const bar = await readDesktopBar(page);
+
+      expect(bar.toggle, 'opening does not move the launcher').toEqual(closedToggle);
+      expect(bar.panel.left, 'the bar opens right of the launcher').toBeGreaterThanOrEqual(
+        bar.toggle.x + bar.toggle.width,
+      );
+      expect(Math.abs(bar.panel.bottom - (bar.toggle.y + bar.toggle.height)), 'bottom-aligned').toBeLessThanOrEqual(1);
+      expect(viewport.height - bar.panel.top, 'the bar stays in the bottom 140 px').toBeLessThanOrEqual(140);
+      const rail = await page.locator('#looks').boundingBox();
+      expect(rail, 'the rail exists on the page').not.toBeNull();
+      expect(bar.panel.left, 'the bar opens right of the rail').toBeGreaterThan((rail?.x ?? 0) + (rail?.width ?? 0));
+      expect(bar.scroll.height, 'no internal vertical scroll').toBeLessThanOrEqual(bar.scroll.clientHeight);
+      expect(bar.scroll.width, 'no internal horizontal scroll').toBeLessThanOrEqual(bar.scroll.clientWidth);
+      expect(bar.columns, 'four columns in one row').toHaveLength(4);
+      for (const column of bar.columns) {
+        expect(column.top, `${column.light} column shares the bar's row`).toBeCloseTo(bar.columns[0].top, 0);
+        expect(column.left, `${column.light} column is inside the bar`).toBeGreaterThanOrEqual(bar.panel.left);
+        expect(column.right, `${column.light} column is inside the bar`).toBeLessThanOrEqual(bar.panel.right);
+      }
+      for (const [name, overlaps] of Object.entries(bar.overlaps)) {
+        expect(overlaps, `the ${name} exists on the page`).not.toBeNull();
+        expect(overlaps, `the open bar does not overlap the ${name}`).toBe(false);
+      }
+      for (const control of bar.controls) {
+        expect(control.width, `${control.id}: 24px wide`).toBeGreaterThanOrEqual(24);
+        expect(control.height, `${control.id}: 24px tall`).toBeGreaterThanOrEqual(24);
+        expect(control.hit, `${control.id}: owns its centre; hit ${control.hitName}`).toBe(true);
+        expect(control.bottom, `${control.id}: inside the viewport`).toBeLessThanOrEqual(viewport.height);
+      }
+      expectNoErrors(errors);
+    });
+  }
+
+  test('desktop coarse-pointer bar keeps 44px targets with every column visible', async ({ browser }) => {
+    skipUnlessWebgl2();
+    test.setTimeout(120_000);
+    const context = await browser.newContext({
+      baseURL: 'http://localhost:4173',
+      viewport: { width: 1440, height: 900 },
+      deviceScaleFactor: 1,
+      hasTouch: true,
+    });
+    const page = await context.newPage();
+    const errors = watchErrors(page);
+    try {
+      await openScene(page);
+      expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), 'coarse pointer').toBe(true);
+      const toggle = page.locator('#shell-light-toggle');
+      const closedToggle = await toggle.boundingBox();
+      await toggle.click();
+      await expect(page.locator('#shell-light-panel')).toBeVisible();
+      const bar = await readDesktopBar(page);
+      expect(bar.toggle, 'opening does not move the launcher').toEqual(closedToggle);
+      expect(bar.scroll.height, 'no internal vertical scroll').toBeLessThanOrEqual(bar.scroll.clientHeight);
+      expect(bar.columns).toHaveLength(4);
+      // The coarse bar is taller than the rail's 140 px reserve; it stays clear because it opens
+      // right of the rail.
+      const rail = await page.locator('#looks').boundingBox();
+      expect(rail, 'the rail exists on the page').not.toBeNull();
+      expect(bar.panel.left, 'the bar opens right of the rail').toBeGreaterThan((rail?.x ?? 0) + (rail?.width ?? 0));
+      for (const [name, overlaps] of Object.entries(bar.overlaps)) {
+        expect(overlaps, `the ${name} exists on the page`).not.toBeNull();
+        expect(overlaps, `the open bar does not overlap the ${name}`).toBe(false);
+      }
+      for (const control of bar.controls) {
+        expect(control.width, `${control.id}: 44px wide`).toBeGreaterThanOrEqual(44);
+        expect(control.height, `${control.id}: 44px tall`).toBeGreaterThanOrEqual(44);
+        expect(control.hit, `${control.id}: owns its centre; hit ${control.hitName}`).toBe(true);
+      }
+      expectNoErrors(errors);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('desktop forced colours keep native controls at 24px with hit ownership', async ({ page }) => {
+    skipUnlessWebgl2();
+    test.setTimeout(120_000);
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.emulateMedia({ forcedColors: 'active' });
+    await openScene(page);
+    await page.locator('#shell-light-toggle').click();
+    const panel = page.locator('#shell-light-panel');
+    await expect(panel).toBeVisible();
+    const appearances = await panel.evaluate((node) =>
+      [...node.querySelectorAll<HTMLInputElement>('.lightpanel__switch, .lightpanel__range')].map(
+        (input) => getComputedStyle(input).appearance,
+      ),
+    );
+    expect(appearances.length).toBe(7);
+    for (const appearance of appearances) expect(appearance, 'native drawing returns').toBe('auto');
+    const bar = await readDesktopBar(page);
+    expect(bar.scroll.height, 'no internal vertical scroll').toBeLessThanOrEqual(bar.scroll.clientHeight);
+    for (const control of bar.controls) {
+      expect(control.width, `${control.id}: 24px wide`).toBeGreaterThanOrEqual(24);
+      expect(control.height, `${control.id}: 24px tall`).toBeGreaterThanOrEqual(24);
+      expect(control.hit, `${control.id}: owns its centre; hit ${control.hitName}`).toBe(true);
+    }
+    expectNoErrors(errors);
+  });
+
+  // Opening the bar moves focus to its first control. Keyboard opening shows that control's
+  // tooltip; a mouse click must not, or the tooltip covers the KeyLight title every time.
+  test('desktop bar shows the focus tooltip after keyboard opening only', async ({ page }) => {
+    skipUnlessWebgl2();
+    test.setTimeout(120_000);
+    const errors = watchErrors(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openScene(page);
+    const toggle = page.locator('#shell-light-toggle');
+    const panel = page.locator('#shell-light-panel');
+    const keySwitch = panel.locator('[data-light="key"] .lightpanel__switch');
+    const tooltip = page.locator('#a11y-tooltip[role="tooltip"]');
+
+    await toggle.click();
+    await expect(panel).toBeVisible();
+    await expect(keySwitch).toBeFocused();
+    await page.waitForTimeout(300);
+    await expect(tooltip, 'mouse opening shows no focus tooltip').toBeHidden();
+    expect(await keySwitch.getAttribute('aria-describedby')).toBeNull();
+    await toggle.click();
+    await expect(panel).toBeHidden();
+
+    await toggle.focus();
+    await page.keyboard.press('Enter');
+    await expect(panel).toBeVisible();
+    await expect(keySwitch).toBeFocused();
+    await expect(tooltip, 'keyboard opening shows the focus tooltip').toBeVisible();
+    await expect(tooltip).toHaveText('Toggle KeyLight on or off');
+    expect(await keySwitch.getAttribute('aria-describedby')).toBe('a11y-tooltip');
+    await page.keyboard.press('Escape');
+    await expect(tooltip).toBeHidden();
+    expectNoErrors(errors);
+  });
 
   for (const viewport of VIEWPORTS.filter((entry) => entry.sheet)) {
     test(`sheet modal semantics preserve rail, Look, and proof hit ownership at ${viewport.width}x${viewport.height}`, async ({

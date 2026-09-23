@@ -116,3 +116,11 @@
     }
   }
 }
+
+/* On the desktop the row runs sideways (styles.css): the launcher sits at the bar's bottom edge,
+   so opening the bar beside it never lifts the button the visitor pressed. */
+@media (min-width: 1200px) and (min-height: 600px) {
+  .shell-light-toggle {
+    align-self: flex-end;
+  }
+}

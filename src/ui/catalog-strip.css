@@ -48,6 +48,16 @@
     opacity var(--dur-fast) ease;
 }
 
+/* Desktop: every thumbnail at --rail-thumb, the size the rail works out so all the looks fit its
+   height (chrome.css). It is 48px until the window is too short for that. This block follows the
+   base rule above so it wins at the same specificity. */
+@media (min-width: 1200px) {
+  .catalog-strip__button {
+    width: var(--rail-thumb);
+    height: var(--rail-thumb);
+  }
+}
+
 .catalog-strip__button:hover:not([aria-current='true']) {
   border-color: var(--text-muted);
   background: var(--surface-raised);

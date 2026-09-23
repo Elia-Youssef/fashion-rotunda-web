@@ -62,6 +62,20 @@ function element<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+/** Text only assistive technology reads: the light's name in front of a control's own label. */
+function hiddenPrefix(text: string): HTMLSpanElement {
+  const span = element('span', 'lightpanel__sr');
+  span.textContent = `${text} `;
+  return span;
+}
+
+/** A label word that shows in one layout only: `sheet` below the desktop bar, `bar` in it. */
+function layoutText(text: string, layout: 'sheet' | 'bar'): HTMLSpanElement {
+  const span = element('span', `lightpanel__label-text lightpanel__label-text--${layout}`);
+  span.textContent = text;
+  return span;
+}
+
 function addStudioRow(panel: HTMLElement, entry: RigLight, idPrefix: string): StudioRowControls {
   const row = element('fieldset', 'lightpanel__row');
   row.dataset.light = entry.id;
@@ -73,9 +87,11 @@ function addStudioRow(panel: HTMLElement, entry: RigLight, idPrefix: string): St
   // 1. Native Enabled Checkbox
   const onGroup = element('div', 'lightpanel__control-group lightpanel__control-group--switch');
   const onId = `${idPrefix}-${entry.id}-on`;
-  const onLabel = element('label', 'lightpanel__label');
+  // The sheets keep their short "On"; the desktop bar reads "Enabled" beside the box, as the
+  // Unreal panel does. CSS shows one word; the hidden one leaves the accessible name.
+  const onLabel = element('label', 'lightpanel__label lightpanel__label--switch');
   onLabel.htmlFor = onId;
-  onLabel.textContent = 'On';
+  onLabel.append(hiddenPrefix(entry.label), layoutText('On', 'sheet'), layoutText('Enabled', 'bar'));
   const on = element('input', 'lightpanel__switch');
   on.type = 'checkbox';
   on.id = onId;
@@ -86,9 +102,9 @@ function addStudioRow(panel: HTMLElement, entry: RigLight, idPrefix: string): St
   // 2. Labelled Intensity Range with Candela Readout
   const intensityGroup = element('div', 'lightpanel__control-group lightpanel__control-group--range');
   const intensityId = `${idPrefix}-${entry.id}-intensity`;
-  const intensityLabel = element('label', 'lightpanel__label');
+  const intensityLabel = element('label', 'lightpanel__label lightpanel__label--quiet');
   intensityLabel.htmlFor = intensityId;
-  intensityLabel.textContent = 'Intensity';
+  intensityLabel.append(hiddenPrefix(entry.label), 'Intensity');
   const intensity = element('input', 'lightpanel__range');
   intensity.type = 'range';
   intensity.id = intensityId;
@@ -106,9 +122,9 @@ function addStudioRow(panel: HTMLElement, entry: RigLight, idPrefix: string): St
   // 3. Labelled Native Colour Input with Normalized #RRGGBB Readout
   const colorGroup = element('div', 'lightpanel__control-group lightpanel__control-group--color');
   const colorId = `${idPrefix}-${entry.id}-color`;
-  const colorLabel = element('label', 'lightpanel__label');
+  const colorLabel = element('label', 'lightpanel__label lightpanel__label--quiet');
   colorLabel.htmlFor = colorId;
-  colorLabel.textContent = 'Color';
+  colorLabel.append(hiddenPrefix(entry.label), 'Color');
   const color = element('input', 'lightpanel__color');
   color.type = 'color';
   color.id = colorId;
@@ -148,7 +164,7 @@ function addDaylightRow(panel: HTMLElement, daylight: number, idPrefix: string):
 
   const label = element('label', 'lightpanel__label');
   label.htmlFor = rangeId;
-  label.textContent = 'Atmosphere';
+  label.append(hiddenPrefix('Daylight'), 'Atmosphere');
 
   const trackWrap = element('div', 'lightpanel__daylight-track');
 
