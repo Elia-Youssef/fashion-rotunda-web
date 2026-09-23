@@ -49,7 +49,7 @@ describe('TIERS table matches Appendix D', () => {
   it('pins ssgi', () => {
     expect(TIERS.base.ssgi).toBe('off');
     expect(TIERS.mid.ssgi).toBe('off');
-    expect(TIERS.high.ssgi).toBe('half-moving-full-at-rest');
+    expect(TIERS.high.ssgi).toBe('off');
   });
 
   it('pins ssr', () => {

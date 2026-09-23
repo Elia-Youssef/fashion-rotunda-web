@@ -141,8 +141,9 @@ test('the governor degrades, holds its cooldown, and recovers on headed webgpu',
   );
   await page.evaluate(() => window.archvizE2E?.governor.setDeterministic(true));
 
-  // 3. Two complete over-budget windows (60 samples each) downgrade exactly one level. The
-  // synthetic clock advances only inside drive(), so gaps and cooldown boundaries are exact.
+  // 3. Two complete over-budget windows (60 samples each) drop the normal High SSR-only graph
+  // straight to no-ssr. The synthetic clock advances only inside drive(), so gaps and cooldown
+  // boundaries are exact.
   let t = 1_000;
   const drive = async (
     count: number,
@@ -168,22 +169,25 @@ test('the governor degrades, holds its cooldown, and recovers on headed webgpu',
   };
 
   const downgraded = await drive(120, 40, 100, true);
-  expect(downgraded?.level, 'two over-budget windows step down one level').toBe('ssgi-half');
+  expect(downgraded?.level, 'two over-budget windows remove SSR in one level').toBe('no-ssr');
 
   // 4. The rendered state reflects the level: data-governor is published from the committed
   // chain, one requested frame after the decision.
   await expect
     .poll(async () => (await canvas.getAttribute('data-governor')) ?? '', {
       timeout: POLL_TIMEOUT,
-      message: 'data-governor carries the committed ssgi-half level',
+      message: 'data-governor carries the committed no-ssr level',
     })
-    .toContain('level=ssgi-half');
+    .toContain('level=no-ssr');
   await expect
-    .poll(async () => (await canvas.getAttribute('data-post')) ?? '', {
+    .poll(async () => {
+      const post = (await canvas.getAttribute('data-post')) ?? '';
+      return post.includes('traa') && !post.includes('ssgi') && !post.includes('ssr');
+    }, {
       timeout: POLL_TIMEOUT,
-      message: 'data-post carries the half-resolution ssgi token after the step down',
+      message: 'the applied no-ssr graph keeps TRAA and omits both SSR and SSGI',
     })
-    .toContain('ssgi-half');
+    .toBe(true);
   const rigAfterDowngrade = await rigState(page);
   expect(
     rigAfterDowngrade,
@@ -193,22 +197,22 @@ test('the governor degrades, holds its cooldown, and recovers on headed webgpu',
   await expect
     .poll(async () => (await page.locator('.proof-panel').textContent()) ?? '', {
       timeout: POLL_TIMEOUT,
-      message: 'proof panel text reflects ssgi-half downgrade',
+      message: 'proof panel text reflects no-ssr downgrade',
     })
-    .toContain('ssgi-half');
+    .toContain('no-ssr');
   await captureProofPanel(page, `${EVIDENCE_DIR}/proof-panel-after-downgrade.png`);
 
   // 5. Another immediate overload is blocked by the cooldown: two more complete over-budget
   // windows arrive 1.2 s after the decision, inside the 10 s cooldown.
   const blocked = await drive(120, 40, 10, true);
-  expect(blocked?.level, 'cooldown blocks a second downgrade').toBe('ssgi-half');
+  expect(blocked?.level, 'cooldown blocks the next SSR-only downgrade').toBe('no-ssr');
   expect(blocked?.consecutiveOverBudget).toBeGreaterThanOrEqual(2);
   expect(blocked?.cooldownRemainingMs).toBeGreaterThan(0);
 
   // 6. Comfortably-under-budget windows for less than ten seconds do not recover. The first
   // complete window ends 5.9 s into the run (and the cooldown is still running besides).
   const shortGood = await drive(60, 8, 100, true);
-  expect(shortGood?.level, 'under ten seconds of good frames: no recovery').toBe('ssgi-half');
+  expect(shortGood?.level, 'under ten seconds of good frames: no recovery').toBe('no-ssr');
   expect(shortGood?.recoveryElapsedMs).toBeGreaterThan(5_000);
   expect(shortGood?.recoveryElapsedMs).toBeLessThan(10_000);
 
@@ -218,9 +222,9 @@ test('the governor degrades, holds its cooldown, and recovers on headed webgpu',
   await page.setViewportSize({ width: 1000, height: 700 });
   await expect
     .poll(async () => (await canvas.getAttribute('data-governor')) ?? '', { timeout: POLL_TIMEOUT })
-    .toContain('level=ssgi-half');
+    .toContain('level=no-ssr');
   const afterResize = await drive(1, 8, 100, true);
-  expect(afterResize?.level, 'resize does not change the level').toBe('ssgi-half');
+  expect(afterResize?.level, 'resize does not change the level').toBe('no-ssr');
   expect(
     afterResize?.recoveryElapsedMs ?? 0,
     'resize preserves the accumulated qualification (a restart would read ~100 ms)',
@@ -233,7 +237,7 @@ test('the governor degrades, holds its cooldown, and recovers on headed webgpu',
   expect(recovered?.level, 'ten seconds of good frames recover one level').toBe('full');
   const upEvents = recovered?.events.filter((event) => event.direction === 'up') ?? [];
   expect(upEvents.length, 'exactly one recovery').toBe(1);
-  expect(upEvents[0]?.from).toBe('ssgi-half');
+  expect(upEvents[0]?.from).toBe('no-ssr');
   expect(upEvents[0]?.to).toBe('full');
   expect(upEvents[0]?.reason).toContain('after');
   await expect
@@ -259,7 +263,7 @@ test('the governor degrades, holds its cooldown, and recovers on headed webgpu',
       timeout: POLL_TIMEOUT,
       message: 'the proof panel reflects the committed recovery before it is captured',
     })
-    .toContain('up ssgi-half → full');
+    .toContain('up no-ssr → full');
   const rigAfterRecovery = await rigState(page);
   expect(
     rigAfterRecovery,
@@ -351,8 +355,8 @@ test('the governor degrades, holds its cooldown, and recovers on headed webgpu',
     })
     .toContain('"direction":"up"');
   const panelText = (await page.locator('.proof-panel').textContent()) ?? '';
-  const downIndex = panelText.indexOf('down full → ssgi-half');
-  const upIndex = panelText.indexOf('up ssgi-half → full');
+  const downIndex = panelText.indexOf('down full → no-ssr');
+  const upIndex = panelText.indexOf('up no-ssr → full');
   expect(downIndex, 'the panel shows the downgrade').toBeGreaterThan(-1);
   expect(upIndex, 'the panel shows the recovery').toBeGreaterThan(-1);
   expect(downIndex, 'the panel shows the downgrade before the recovery').toBeLessThan(upIndex);

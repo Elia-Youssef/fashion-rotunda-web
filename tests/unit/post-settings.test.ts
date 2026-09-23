@@ -7,8 +7,9 @@ import type { TierSettings } from '../../src/tiers/table';
 // The decision the chain follows, pinned against TIERS itself so the table stays the one source:
 // every tier x touch x backend combination, plus the invariants the chain relies on.
 // The rows come from Appendix D: antialiasing 'msaa' on base, 'traa' on mid and high; ao
-// 'gtao-half-desktop-only' on base, 'gtao-half' on mid and high; ssgi and ssr on high for webgpu
-// only, and never on webgl2.
+// 'gtao-half-desktop-only' on base, 'gtao-half' on mid and high; SSR on high WebGPU while raw SSGI
+// remains available only through the explicit ?post=gi diagnostic slice. Neither compute effect
+// runs on WebGL 2.
 
 interface Row {
   tier: TierSettings;
@@ -19,7 +20,7 @@ interface Row {
   traa: boolean;
   msaa: boolean;
   samples: number;
-  ssgi: 'off' | 'half-moving-full-at-rest';
+  ssgi: 'off' | 'full-with-half-fallback';
   ssr: boolean;
   bloom: boolean;
   lut: boolean;
@@ -162,7 +163,7 @@ describe('postSettingsFor pinned against TIERS', () => {
       vignette: true,
       dof: 'off',
     },
-    // high carries AO, TRAA, SSGI/SSR and dof on WebGPU only; WebGL 2 turns SSGI, SSR and dof off.
+    // High carries AO, TRAA, SSR and DoF on WebGPU; raw SSGI is off in the normal preset.
     {
       tier: TIERS.high,
       isTouch: true,
@@ -172,7 +173,7 @@ describe('postSettingsFor pinned against TIERS', () => {
       traa: true,
       msaa: false,
       samples: 0,
-      ssgi: 'half-moving-full-at-rest',
+      ssgi: 'off',
       ssr: true,
       bloom: true,
       lut: true,
@@ -188,7 +189,7 @@ describe('postSettingsFor pinned against TIERS', () => {
       traa: true,
       msaa: false,
       samples: 0,
-      ssgi: 'half-moving-full-at-rest',
+      ssgi: 'off',
       ssr: true,
       bloom: true,
       lut: true,
@@ -293,11 +294,7 @@ describe('postSettingsFor pinned against TIERS', () => {
     }
   });
 
-  /**
-   * The chain's `?post=gi`, `?post=ssr` and `?post=max` slices read ssgi and ssr back off this
-   * result rather than off the tier table, so the two have to agree row for row: a slice that
-   * consulted the backend on its own would turn SSGI on for a tier whose row says 'off'.
-   */
+  /** Normal settings follow the table; the explicit ?post=gi diagnostic overrides SSGI in chain.ts. */
   it('mirrors the tier row verbatim on webgpu and blanks it on webgl2', () => {
     for (const name of TIER_ORDER) {
       for (const isTouch of [false, true]) {
@@ -311,14 +308,12 @@ describe('postSettingsFor pinned against TIERS', () => {
     }
   });
 
-  it('enables SSGI and SSR on webgpu for the high tier only', () => {
+  it('keeps raw SSGI off and enables SSR only on WebGPU High', () => {
     for (const name of TIER_ORDER) {
       for (const isTouch of [false, true]) {
         const settings = postSettingsFor(TIERS[name], isTouch, 'webgpu');
         if (name === 'high') {
-          expect(settings.ssgi, `${name} touch=${isTouch} webgpu ssgi`).toBe(
-            'half-moving-full-at-rest',
-          );
+          expect(settings.ssgi, `${name} touch=${isTouch} webgpu ssgi`).toBe('off');
           expect(settings.ssr, `${name} touch=${isTouch} webgpu ssr`).toBe(true);
         } else {
           expect(settings.ssgi, `${name} touch=${isTouch} webgpu ssgi`).toBe('off');

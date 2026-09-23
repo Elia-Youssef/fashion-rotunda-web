@@ -120,12 +120,12 @@ describe('materials tuning table', () => {
   });
 
   it('no entry sets a property that the extension it names does not own', () => {
-    // KHR_materials_transmission / volume / ior: transmission, thickness, ior, roughness
+    // The exported dome glass also needs metallic=0 to reveal the sky through transmission.
     // KHR_materials_clearcoat: clearcoat, clearcoatRoughness
     // KHR_materials_anisotropy: anisotropy, anisotropyRotation
     // KHR_materials_sheen: sheen, sheenRoughness, sheenColor
     const allowedKeysPerMaterial: Record<string, (keyof MaterialTuning)[]> = {
-      [DOME_GLASS_MATERIAL]: ['transmission', 'thickness', 'ior', 'roughness'],
+      [DOME_GLASS_MATERIAL]: ['transmission', 'thickness', 'ior', 'metalness', 'roughness'],
       MI_Marble_Nero_Base: ['clearcoat', 'clearcoatRoughness'],
       MI_Marble_Nero_Vert: ['clearcoat', 'clearcoatRoughness'],
       MI_Quartzite_BlueFusion: ['clearcoat', 'clearcoatRoughness'],
@@ -191,7 +191,7 @@ describe('applyTuning', () => {
   });
 
   it('preserves existing MeshPhysicalMaterial instance when tuning in place', () => {
-    const physical = new MeshPhysicalMaterial({ roughness: 0.2 });
+    const physical = new MeshPhysicalMaterial({ roughness: 0.2, metalness: 1 });
     physical.name = DOME_GLASS_MATERIAL;
     const mesh = new Mesh(undefined, physical);
 
@@ -202,6 +202,7 @@ describe('applyTuning', () => {
     expect(physical.thickness).toBe(0.02);
     expect(physical.ior).toBe(1.0);
     expect(physical.roughness).toBe(0.05);
+    expect(physical.metalness).toBe(0);
     expect(physical.transparent).toBe(false);
     expect(physical.depthWrite).toBe(true);
     expect(physical.opacity).toBe(1.0);

@@ -127,7 +127,7 @@ export interface PostChain {
   };
   /** Feeds the loop's frame work time to the governor; the composition root calls it from onFrameTime. */
   observeFrame(workMs: number): void;
-  /** TRAA and SSGI need to know when the camera or look moved, to reset history or switch resolution. */
+  /** Camera motion gates depth of field while TRAA maintains the moving frame history. */
   notifyMotion(): void;
   /** False in walkthrough mode; main.ts wires the camera's mode callback to it. */
   setDepthOfFieldAllowed(allowed: boolean): void;
@@ -226,7 +226,9 @@ function applyDevSwitch(
         // TRAA downstream to resolve its jittered slices, so the slice keeps the tier's TRAA
         // instead of showing SSGI without the filter it was written against.
         traa: tier.traa,
-        ssgi: backend === 'webgpu' ? tier.ssgi : 'off',
+        // Explicit diagnostic override. The normal High preset disables the raw SSGI result
+        // until it can be denoised without visible wall/fabric grain.
+        ssgi: backend === 'webgpu' ? 'full-with-half-fallback' : 'off',
       },
       governorEnabled: false,
     };
@@ -357,6 +359,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
       budgetMs: options.tier.frameBudgetMs,
       windowFrames: 60,
       patience: 2,
+      ssgiEnabled: settings.ssgi !== 'off',
       ...(options.governorState === undefined ? {} : { initialState: options.governorState }),
     });
   }
@@ -398,14 +401,9 @@ export function createPostChain(options: PostChainOptions): PostChain {
     return governor?.level ?? 'full';
   }
 
-  /**
-   * The resolution scale the SSGI target is asked for: full only at the top of the ladder with
-   * the camera at rest, half everywhere else. Once the governor has stepped past 'ssgi-half' the
-   * node is out of the graph entirely, so this answers for the frames in which it still exists.
-   */
+  /** Full SSGI at the top of the ladder; half only after a frame-budget downgrade. */
   function wantedSSGIScale(): number {
-    const isMoving = performance.now() - lastMotionTimestamp < MOTION_MS;
-    return currentLevel() === 'full' && !isMoving ? 1.0 : 0.5;
+    return currentLevel() === 'full' ? 1.0 : 0.5;
   }
 
   function scenePassFor(wanted: PostSettings): PassNode {
@@ -466,6 +464,11 @@ export function createPostChain(options: PostChainOptions): PostChain {
         prePass.getTextureNode(),
         camera,
       ) as SSGINodeWithSize;
+      // The diagnostic keeps Three's medium temporal preset and reduced strength for later
+      // denoising work. It still grains walls at client resolution, so normal High leaves it off.
+      rawSSGI.sliceCount.value = 2;
+      rawSSGI.stepCount.value = 8;
+      rawSSGI.giIntensity.value = 3;
       // SSGINode.updateBefore (SSGINode.js line 357) calls this.setSize with the full drawing
       // buffer on every frame, so the resolution switch has to live in the instance's own setSize
       // rather than in a field the node would overwrite.
@@ -904,12 +907,9 @@ export function createPostChain(options: PostChainOptions): PostChain {
         }
         motionTimer = window.setTimeout(() => {
           motionTimer = null;
-          // Rest puts the SSGI target back to full resolution, which only happens inside render().
-          // Without this the loop idles and no full-resolution frame is ever drawn.
-          const ssgiNeedsRedraw = graph.ssgiNode !== null && wantedSSGIScale() !== currentSSGIScale;
-          // Rest also switches DoF from 'ready' to 'on', which is applied inside render().
+          // Rest switches DoF from 'ready' to 'on', which is applied inside render().
           const dofNeedsRedraw = graph.dofNode !== null && depthOfFieldAllowed;
-          if (ssgiNeedsRedraw || dofNeedsRedraw) {
+          if (dofNeedsRedraw) {
             requestFrame?.();
           }
         }, MOTION_MS + 10);

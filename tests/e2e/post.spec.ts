@@ -248,12 +248,22 @@ test('max slice on webgl2 retains ao and traa without ssgi or ssr', async ({ pag
 });
 
 /**
- * G3.1 and G3.5, on the WebGPU backend: SSGI runs at half resolution while the camera
- * moves and at full resolution once it has rested, which is the one behaviour of these goals that
- * the webgl2 project structurally cannot see. The project is headed and local only, so this test
- * runs on the developer's machine and never in CI.
+ * Raw SSGI is kept as an explicit diagnostic slice. Its normal High preset is disabled because
+ * its undenoised GI texture produced visible grain on the wall and garments at client resolution.
+ * The project is headed and local only, so this test runs on the developer's machine.
  */
-test('ssgi drops to half resolution while the pointer drags on webgpu', async ({ page }) => {
+test('normal WebGPU High stays free of raw SSGI', async ({ page }) => {
+  test.skip(test.info().project.name !== 'webgpu', 'High WebGPU preset only');
+  await page.goto('/?e2e=1&tier=high&gate=off');
+  const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+  await expect.poll(async () => {
+    const post = (await canvas.getAttribute('data-post')) ?? '';
+    return post.includes('traa') && post.includes('ssr') && !post.includes('ssgi');
+  }).toBe(true);
+});
+
+test('diagnostic SSGI remains full resolution while the pointer drags on WebGPU', async ({ page }) => {
   test.skip(
     test.info().project.name !== 'webgpu',
     'SSGI exists on the WebGPU backend only; the webgl2 project publishes no ssgi token',
@@ -262,16 +272,17 @@ test('ssgi drops to half resolution while the pointer drags on webgpu', async ({
   const errors: string[] = [];
   watchConsoleErrors(page, errors);
 
-  await page.goto('/?e2e=1');
+  await page.goto('/?e2e=1&tier=high&gate=off&post=gi');
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
-  // At rest on the high tier the chain publishes the full-resolution SSGI token.
+  // The explicit diagnostic slice publishes the full-resolution SSGI token.
   await expect
     .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'ssgi'), {
       timeout: POST_ATTRIBUTE_TIMEOUT,
       message: 'data-post carries the full-resolution ssgi token at rest',
     })
     .toBe(true);
+  const positionBefore = await page.evaluate(() => [...window.archvizCamera!.orbit.position]);
 
   const box = await canvas.boundingBox();
   expect(box, 'the canvas has a box to drag inside').not.toBeNull();
@@ -281,20 +292,22 @@ test('ssgi drops to half resolution while the pointer drags on webgpu', async ({
   const originX = box.x + box.width / 2;
   const originY = box.y + box.height / 2;
 
-  // The drag is read between the moves rather than after them: the chain counts the camera as
-  // moving for 500 ms after the last notification, and a drag that ended first would be at rest
-  // again by the time a single assertion ran.
+  // Read during the drag to establish that the drawn moving frames retain the full target.
   await page.mouse.move(originX, originY);
   await page.mouse.down();
-  let sawHalf = false;
-  for (let step = 1; step <= 24 && !sawHalf; step += 1) {
+  let sawFull = false;
+  for (let step = 1; step <= 24; step += 1) {
     await page.mouse.move(originX + step * 6, originY + (step % 2 === 0 ? 4 : -4));
-    sawHalf = hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'ssgi-half');
+    const post = (await canvas.getAttribute('data-post')) ?? '';
+    sawFull ||= hasPostToken(post, 'ssgi');
+    expect(hasPostToken(post, 'ssgi-half'), 'moving frame does not lower SSGI').toBe(false);
   }
+  const positionDuring = await page.evaluate(() => [...window.archvizCamera!.orbit.position]);
   await page.mouse.up();
-  expect(sawHalf, 'data-post carried the ssgi-half token during the drag').toBe(true);
+  expect(positionDuring, 'the drag moved the actual camera').not.toEqual(positionBefore);
+  expect(sawFull, 'data-post carried the full-resolution SSGI token during the drag').toBe(true);
 
-  // Back to full within the rest window plus the frame the chain asks the loop for.
+  // Rest retains full resolution.
   await expect
     .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'ssgi'), {
       timeout: 3000,

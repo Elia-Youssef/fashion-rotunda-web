@@ -77,6 +77,42 @@ describe('post governor: preserved G3.5 downgrade behaviour', () => {
     expect(gov.ladder).toEqual(['full', 'ssgi-half', 'no-ssgi', 'no-ssr', 'base']);
   });
 
+  it('uses direct SSR degradation and recovery when the graph has no SSGI', () => {
+    const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const gov = createGovernor({
+      budgetMs: BUDGET_MS,
+      windowFrames: 2,
+      patience: 1,
+      ssgiEnabled: false,
+    });
+
+    expect(gov.ladder).toEqual(['full', 'no-ssr', 'base']);
+    feed(gov, span(2, 40, 10, 10));
+    expect(gov.level).toBe('no-ssr');
+    expect(gov.state.events[0]).toMatchObject({ direction: 'down', from: 'full', to: 'no-ssr' });
+
+    // The stream remains eligible through the initial cooldown. Its final complete window is
+    // after that cooldown and has accrued more than the required ten seconds, so recovery makes
+    // exactly the inverse one-step transition.
+    feed(gov, span(22, COMFORTABLE_MS, 30, 500));
+    expect(gov.level).toBe('full');
+    expect(gov.state.events[1]).toMatchObject({ direction: 'up', from: 'no-ssr', to: 'full' });
+
+    // A snapshot from the SSGI profile cannot be restored into this shorter feature-aware ladder.
+    const wrongProfile = structuredClone(gov.state) as GovernorState;
+    wrongProfile.level = 'ssgi-half';
+    expect(() =>
+      createGovernor({
+        budgetMs: BUDGET_MS,
+        windowFrames: 2,
+        patience: 1,
+        ssgiEnabled: false,
+        initialState: wrongProfile,
+      }),
+    ).toThrow('unknown governor level: ssgi-half');
+    consoleSpy.mockRestore();
+  });
+
   it('does not step down while frame work times remain under budget', () => {
     const gov = createGovernor(defaultOptions);
     const clock: Clock = { t: 0 };
@@ -904,7 +940,7 @@ describe('post governor: where a governor exists at all (matrix 25)', () => {
   // The chain builds no governor for the WebGL 2 backend, for any forced `?post=` slice, or on
   // the pass-through fallback path, so those modes can neither degrade nor recover; the pure
   // rule below is the one the chain reads (chain.ts applyDevSwitch) so it cannot drift.
-  const enhancedHigh = { ssgi: 'half-moving-full-at-rest' as const, ssr: true };
+  const enhancedHigh = { ssgi: 'full-with-half-fallback' as const, ssr: true };
   const midWithoutCompute = { ssgi: 'off' as const, ssr: false };
 
   it('operates only on the unforced enhanced WebGPU path', () => {

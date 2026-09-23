@@ -13,7 +13,7 @@ export interface TierSettings {
   shadowMapSize: number;
   antialiasing: 'msaa' | 'traa';
   ao: 'gtao-half-desktop-only' | 'gtao-half';
-  ssgi: 'off' | 'half-moving-full-at-rest';
+  ssgi: 'off' | 'full-with-half-fallback';
   ssr: boolean;
   bloom: boolean;
   lut: boolean;
@@ -60,7 +60,9 @@ export const TIERS: Readonly<Record<TierName, TierSettings>> = {
     shadowMapSize: 2048,
     antialiasing: 'traa',
     ao: 'gtao-half',
-    ssgi: 'half-moving-full-at-rest',
+    // The r186 raw SSGI output visibly grains walls and garments at client-sized viewports.
+    // Keep its implementation available through ?post=gi while the normal High view stays clean.
+    ssgi: 'off',
     ssr: true,
     bloom: true,
     lut: true,

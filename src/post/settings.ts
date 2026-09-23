@@ -16,8 +16,8 @@ export interface PostSettings {
   msaa: boolean;
   /** MSAA sample count; 4 when msaa is on, 0 otherwise. */
   samples: number;
-  /** 'off', or 'half-moving-full-at-rest' straight from the tier row; never on for webgl2. */
-  ssgi: 'off' | 'half-moving-full-at-rest';
+  /** 'off', or full resolution with a half-resolution governor fallback; never on for webgl2. */
+  ssgi: 'off' | 'full-with-half-fallback';
   ssr: boolean;
   bloom: boolean;
   lut: boolean;
@@ -33,9 +33,10 @@ export interface PostSettings {
  * use"); ao 'gtao-half-desktop-only' means the AO exists on desktop only, 'gtao-half' means every
  * device. Touch means no pointer, which the caller reads from matchMedia.
  *
- * SSGI and SSR are applied on webgpu directly from the tier row and forced off on webgl2, because
- * compute shaders have no WebGL fallback. Bloom, LUT and vignette run on both backends. Depth of
- * field runs on webgpu at rest and is forced off on webgl2.
+ * SSGI and SSR follow the tier row on WebGPU and are forced off on WebGL 2, because compute
+ * shaders have no WebGL fallback. The current High row keeps raw SSGI off for image quality;
+ * chain.ts exposes it only through ?post=gi for diagnosis. Bloom, LUT and vignette run on both
+ * backends. Depth of field runs on WebGPU at rest and is forced off on WebGL 2.
  */
 export function postSettingsFor(tier: TierSettings, isTouch: boolean, backend: Backend): PostSettings {
   const aoEnabled = tier.ao === 'gtao-half' || (tier.ao === 'gtao-half-desktop-only' && !isTouch);

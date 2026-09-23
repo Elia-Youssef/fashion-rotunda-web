@@ -24,6 +24,7 @@ export interface MaterialTuning {
   transmission?: number;
   thickness?: number;
   ior?: number;
+  metalness?: number;
   roughness?: number;
   clearcoat?: number;
   clearcoatRoughness?: number;
@@ -37,11 +38,13 @@ export interface MaterialTuning {
 
 /** Pure tuning dictionary indexed by material name as exported in glTF. */
 const TUNING_TABLE: Readonly<Record<string, MaterialTuning>> = {
-  // Stills show a glazed dome revealing the sky; runtime physical transmission over exported KHR ior.
+  // The exported glass has metalness=1, which reflects the HDR's field/trees across the dome.
+  // Transmission needs dielectric metalness=0 so the visible sky can actually show through.
   [DOME_GLASS_MATERIAL]: {
     transmission: 1.0,
     thickness: 0.02,
     ior: 1.0,
+    metalness: 0,
     roughness: 0.05,
   },
   // Unreal Nero Base and Vert use clearcoat; restore its scalar lobe when the half GLB strips it.
@@ -213,6 +216,10 @@ export function applyTuning(mesh: Mesh, tuning: MaterialTuning): Material {
 
   if (tuning.roughness !== undefined) {
     material.roughness = tuning.roughness;
+  }
+
+  if (tuning.metalness !== undefined) {
+    material.metalness = tuning.metalness;
   }
 
   if (tuning.clearcoat !== undefined) {

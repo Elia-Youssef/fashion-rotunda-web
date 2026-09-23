@@ -31,6 +31,12 @@ export interface GovernorOptions {
   /** Consecutive windows over budget before stepping down; 2. */
   patience: number;
   /**
+   * False when the active graph has SSR but no SSGI. The shorter ladder then avoids consuming a
+   * cooldown on the otherwise no-op `full` -> `ssgi-half` transition. Omitted preserves the
+   * full SSGI + SSR ladder used by the established High profile.
+   */
+  ssgiEnabled?: boolean;
+  /**
    * Snapshot carried across an internal post-graph rebuild. It preserves the level, the incomplete
    * p95/patience window, the cooldown and the recovery qualification; a resize must not make the
    * governor start over.
@@ -130,7 +136,8 @@ export interface Governor {
   resetSamplingState(): void;
 }
 
-const LADDER: readonly EnhancedLevel[] = ['full', 'ssgi-half', 'no-ssgi', 'no-ssr', 'base'];
+const SSGI_LADDER: readonly EnhancedLevel[] = ['full', 'ssgi-half', 'no-ssgi', 'no-ssr', 'base'];
+const SSR_ONLY_LADDER: readonly EnhancedLevel[] = ['full', 'no-ssr', 'base'];
 
 /**
  * Computes nearest-rank 95th percentile on a sorted copy of the window samples.
@@ -149,13 +156,17 @@ function isFiniteNonNegative(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
-function levelIndex(level: EnhancedLevel): number {
-  return LADDER.indexOf(level);
+function levelIndex(level: EnhancedLevel, ladder: readonly EnhancedLevel[]): number {
+  return ladder.indexOf(level);
 }
 
 /** Restoration fails closed: one impossible field rejects the whole snapshot. */
-function validateState(state: GovernorState, windowFrames: number): void {
-  if (!LADDER.includes(state.level)) {
+function validateState(
+  state: GovernorState,
+  windowFrames: number,
+  ladder: readonly EnhancedLevel[],
+): void {
+  if (!ladder.includes(state.level)) {
     throw new Error(`unknown governor level: ${state.level}`);
   }
   if (
@@ -216,10 +227,13 @@ function validateState(state: GovernorState, windowFrames: number): void {
     if (event.direction !== 'down' && event.direction !== 'up') {
       throw new Error('invalid governor event direction');
     }
-    if (!LADDER.includes(event.from) || !LADDER.includes(event.to)) {
+    if (!ladder.includes(event.from) || !ladder.includes(event.to)) {
       throw new Error('invalid governor event level');
     }
-    if (levelIndex(event.to) - levelIndex(event.from) !== (event.direction === 'down' ? 1 : -1)) {
+    if (
+      levelIndex(event.to, ladder) - levelIndex(event.from, ladder) !==
+      (event.direction === 'down' ? 1 : -1)
+    ) {
       throw new Error('invalid governor event transition');
     }
     if (
@@ -242,7 +256,7 @@ function validateState(state: GovernorState, windowFrames: number): void {
  */
 export function governorOperates(
   backend: 'webgpu' | 'webgl2',
-  heavy: { ssgi: 'off' | 'half-moving-full-at-rest'; ssr: boolean },
+  heavy: { ssgi: 'off' | 'full-with-half-fallback'; ssr: boolean },
   forcedSlice: boolean,
 ): boolean {
   return backend === 'webgpu' && !forcedSlice && (heavy.ssgi !== 'off' || heavy.ssr);
@@ -250,12 +264,13 @@ export function governorOperates(
 
 export function createGovernor(options: GovernorOptions): Governor {
   const { budgetMs, windowFrames, patience, initialState } = options;
+  const ladder = options.ssgiEnabled === false ? SSR_ONLY_LADDER : SSGI_LADDER;
   const recoveryThresholdMs = budgetMs * RECOVERY_THRESHOLD_RATIO;
   if (initialState !== undefined) {
-    validateState(initialState, windowFrames);
+    validateState(initialState, windowFrames, ladder);
   }
   const samples = initialState === undefined ? [] : [...initialState.samples];
-  let currentIndex = initialState === undefined ? 0 : levelIndex(initialState.level);
+  let currentIndex = initialState === undefined ? 0 : levelIndex(initialState.level, ladder);
   let consecutiveOverBudget = initialState?.consecutiveOverBudget ?? 0;
   let cooldownUntilMs = initialState?.cooldownUntilMs ?? 0;
   let recoveryStartedAtMs = initialState?.recoveryStartedAtMs ?? null;
@@ -280,14 +295,14 @@ export function createGovernor(options: GovernorOptions): Governor {
     nowMs: number,
     reason: string,
   ): void {
-    const from = LADDER[currentIndex];
+    const from = ladder[currentIndex];
     currentIndex += direction === 'down' ? 1 : -1;
     samples.length = 0;
     consecutiveOverBudget = 0;
     recoveryStartedAtMs = null;
     windowAllEligible = true;
     cooldownUntilMs = nowMs + LEVEL_CHANGE_COOLDOWN_MS;
-    pushEvent({ direction, from, to: LADDER[currentIndex], p95Ms: p95, budgetMs, atMs: nowMs, reason });
+    pushEvent({ direction, from, to: ladder[currentIndex], p95Ms: p95, budgetMs, atMs: nowMs, reason });
   }
 
   return {
@@ -307,7 +322,7 @@ export function createGovernor(options: GovernorOptions): Governor {
         lastEligibleSampleAtMs = null;
         windowAllEligible = true;
         lastEligible = false;
-        return LADDER[currentIndex];
+        return ladder[currentIndex];
       }
       lastObservedAtMs = nowMs;
       lastEligible = recoveryEligible;
@@ -343,7 +358,7 @@ export function createGovernor(options: GovernorOptions): Governor {
           recoveryStartedAtMs = null;
           consecutiveOverBudget += 1;
           if (consecutiveOverBudget >= patience) {
-            if (!cooldownActive && currentIndex < LADDER.length - 1) {
+            if (!cooldownActive && currentIndex < ladder.length - 1) {
               changeLevel(
                 'down',
                 p95,
@@ -351,7 +366,7 @@ export function createGovernor(options: GovernorOptions): Governor {
                 `p95 ${p95.toFixed(1)} ms > ${budgetMs.toFixed(1)} ms`,
               );
               console.info(
-                `[archviz] post governor stepped down to ${LADDER[currentIndex]} (p95 was ${p95.toFixed(1)} ms)`,
+                `[archviz] post governor stepped down to ${ladder[currentIndex]} (p95 was ${p95.toFixed(1)} ms)`,
               );
             } else if (!cooldownActive) {
               // The decision point was reached but the ladder is exhausted at base.
@@ -378,7 +393,7 @@ export function createGovernor(options: GovernorOptions): Governor {
               `p95 ${p95.toFixed(1)} ms <= ${recoveryThresholdMs.toFixed(2)} ms after ${(qualifiedFor / 1000).toFixed(1)} s`,
             );
             console.info(
-              `[archviz] post governor recovered to ${LADDER[currentIndex]} (p95 was ${p95.toFixed(1)} ms)`,
+              `[archviz] post governor recovered to ${ladder[currentIndex]} (p95 was ${p95.toFixed(1)} ms)`,
             );
           }
         } else {
@@ -387,20 +402,20 @@ export function createGovernor(options: GovernorOptions): Governor {
           recoveryStartedAtMs = null;
         }
       }
-      return LADDER[currentIndex];
+      return ladder[currentIndex];
     },
 
     get level(): EnhancedLevel {
-      return LADDER[currentIndex];
+      return ladder[currentIndex];
     },
 
     get ladder(): readonly EnhancedLevel[] {
-      return LADDER;
+      return ladder;
     },
 
     get state(): GovernorState {
       return {
-        level: LADDER[currentIndex],
+        level: ladder[currentIndex],
         samples: [...samples],
         consecutiveOverBudget,
         cooldownUntilMs,
@@ -428,7 +443,7 @@ export function createGovernor(options: GovernorOptions): Governor {
         activity = 'recovery-qualifying';
       }
       return {
-        level: LADDER[currentIndex],
+        level: ladder[currentIndex],
         recoveryEligible: lastEligible,
         activity,
         consecutiveOverBudget,

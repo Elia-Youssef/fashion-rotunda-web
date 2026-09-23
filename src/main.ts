@@ -279,6 +279,8 @@ async function main(): Promise<void> {
   let chain: PostChain | null = null;
   /** True once the renderer or GPU device reported an error or loss; recovery never requalifies. */
   let rendererError = false;
+  /** Pagehide remains in force until pageshow, including across a post-graph resize rebuild. */
+  let pageActive = true;
   /** True once ENTRY-3 reached 'revealed', or once loading settled on the no-lobby path. */
   let revealSettled = false;
   /** True once a look stands on the plinth, which is what makes a frame worth marking. */
@@ -297,6 +299,7 @@ async function main(): Promise<void> {
       contentOnScreen &&
       tierSettled &&
       revealSettled &&
+      pageActive &&
       !document.hidden &&
       !rendererError
     );
@@ -577,9 +580,11 @@ async function main(): Promise<void> {
     updateRecoveryEligibility();
   });
   window.addEventListener('pagehide', () => {
-    chain?.setRecoveryEligible(false);
+    pageActive = false;
+    updateRecoveryEligibility();
   });
   window.addEventListener('pageshow', () => {
+    pageActive = true;
     updateRecoveryEligibility();
   });
 
