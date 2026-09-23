@@ -189,6 +189,17 @@ const PASS_THROUGH: PostSettings = {
 const MOTION_MS = 500;
 
 /**
+ * The depth-of-field bokeh scale while the camera rests. Halved from 2.5 on 2026-09-23 at the
+ * client's request that the at-rest view blur half as much. In DepthOfFieldNode.js the scale only
+ * multiplies the blur taps' step (`invSize * bokehScale * CoC`, lines 405 and 437); the CoC
+ * (line 376) and the composite blend `min(CoC, 0.5) * 2` (lines 471-472) do not read it, so the
+ * sampling disc and the 16-tap max filter's reach halve while where the blur begins stays the same.
+ * Both blur passes run at half resolution and are upsampled (lines 251-257), which adds a fixed
+ * softening of about 1 px the scale does not control, so the result is less than twice as sharp.
+ */
+export const DOF_BOKEH_SCALE = 1.25;
+
+/**
  * `?post=` forces a slice of the chain for development: off, ao, aa, gi, ssr, finish or max.
  * `finish` enables bloom, lut, vignette and dof allowed without heavy compute passes.
  * `max` enables everything the tier allows on this backend with the governor disabled.
@@ -552,7 +563,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
     if (wanted.dof !== 'off' && backend === 'webgpu') {
       const viewZ = scenePass.getViewZNode();
       focusDistanceUniform = uniform(focusDistance());
-      bokehScaleUniform = uniform(2.5);
+      bokehScaleUniform = uniform(DOF_BOKEH_SCALE);
       dofActiveUniform = uniform(0.0);
 
       dofNode = dof(
@@ -749,7 +760,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
             graph.dofActiveUniform.value = isDofOn ? 1.0 : 0.0;
           }
           if (graph.bokehScaleUniform !== null) {
-            graph.bokehScaleUniform.value = isDofOn ? 2.5 : 0.0;
+            graph.bokehScaleUniform.value = isDofOn ? DOF_BOKEH_SCALE : 0.0;
           }
           if (graph.focusDistanceUniform !== null) {
             graph.focusDistanceUniform.value = focusDistance();
