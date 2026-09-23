@@ -1,10 +1,12 @@
 // The environment light: what comes through the dome. Thin on purpose, because none of it can be unit
-// tested without a GPU, so every line here is either an API call or a disposal.
+// tested without a GPU, so every line here is either an API call or a disposal. The default sky is the
+// runtime gradient from sky.ts; the School Field HDR is kept only as the ?sky=hdr diagnostic, and
+// three's RoomEnvironment only as the failure fallback.
 //
-// Both factories go through the WebGPU PMREMGenerator, which three exports from 'three/webgpu'
+// Every factory goes through the WebGPU PMREMGenerator, which three exports from 'three/webgpu'
 // (node_modules/three/src/Three.WebGPU.js line 13 re-exports renderers/common/extras/PMREMGenerator.js).
 // It throws if the backend is not up yet (PMREMGenerator.js lines 145 and 217 name the cure,
-// "await renderer.init()"), so both factories await it first. Renderer.init() caches its promise
+// "await renderer.init()"), so each factory awaits it first. Renderer.init() caches its promise
 // (src/renderers/common/Renderer.js lines 784 to 849), so awaiting it again costs nothing.
 //
 // This is the only module in src/lighting that imports from 'three/webgpu'. Everything the tests read
@@ -23,6 +25,8 @@ import type { WebGPURenderer } from 'three/webgpu';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import type { RenderTarget } from 'three';
+
+import { createGradientSkyTexture, environmentSkyPalette, visibleSkyPalette } from './sky';
 
 export interface Environment {
   texture: Texture;
@@ -150,15 +154,15 @@ export function createSkyOnlyBackground(source: Texture): Texture {
 }
 
 /**
- * The authored panorama has sky in its first scanlines, but HDRLoader's default flipY=true puts
- * the ground at the dome zenith after three r186's PMREM/background conversion. Clear that flag
- * before either PMREM path sees the source. The manual environment target used for lighting and
- * the blur-triggered background target then keep the same upright orientation. The up/horizon/
- * down browser captures in both backends verify this renderer-specific choice.
+ * Sets the equirectangular mapping and keeps HDRLoader's flipY = true. The file's first scanlines
+ * are sky; both backends upload the first row at v = 0 unless flipY is set, and three r186
+ * equirectUV maps v = 0 to straight down, so flipY = false (177c727 to the 2026-09-23 sky change)
+ * put the field overhead and tinted the lit room olive. The dome "terrain" that once looked like an
+ * upside-down HDR was the then-metallic dome glass mirroring the lower hemisphere.
+ * A probe build (green zenith, red ground, rows written top-down) showed a red dome on both backends.
  */
 export function orientHdrEquirectangular(texture: Texture): void {
   texture.mapping = EquirectangularReflectionMapping;
-  texture.flipY = false;
 }
 
 export function fromRenderTarget(
@@ -172,13 +176,14 @@ export function fromRenderTarget(
       scene.environment = target.texture;
       scene.environmentIntensity = intensity;
       if (background !== null) {
-        // The PMREM uses the complete source for material lighting; the derived sky texture is
-        // what visitors see through the glazed dome. A little blur hides its 512-wide sampling
-        // without turning the sky back into the featureless RoomEnvironment stand-in.
+        // The PMREM carries the lighting sky; the separate background texture is what visitors see
+        // through the glazed dome. Any blurriness above 0 sends an equirectangular background
+        // through pmremTexture rather than cubeMapNode (three r186 src/renderers/common/nodes/
+        // NodeManager.js lines 713 to 727), so the background and the lighting share one PMREM
+        // orientation (first uploaded row at the nadir); on the smooth gradient the blur is invisible.
         scene.background = background;
-        // The source sky contains values far above display white. Keeping the visible copy below
-        // the lighting strength preserves cloud detail through the dome instead of clipping it
-        // into a flat white ceiling; the PMREM still receives the source at full range.
+        // Both skies' visible copies are authored in HDR radiance units; the rig's background
+        // curve keeps them below the lighting strength so the dome does not clip to a flat white.
         scene.backgroundIntensity = backgroundIntensity;
         scene.backgroundBlurriness = 0.08;
       }
@@ -193,8 +198,9 @@ export function fromRenderTarget(
 }
 
 /**
- * The no-download fallback sky: three's own RoomEnvironment, prefiltered. Production supplies an HDR,
- * but this keeps local experiments and content-load failures lit instead of aborting the showroom.
+ * The fallback sky: three's own RoomEnvironment, prefiltered. Production generates its sky (sky.ts)
+ * and loads the HDR only under ?sky=hdr; this keeps a failed environment build lit instead of
+ * aborting the showroom.
  */
 export async function createRoomEnvironment(renderer: WebGPURenderer): Promise<Environment> {
   await renderer.init();
@@ -207,7 +213,29 @@ export async function createRoomEnvironment(renderer: WebGPURenderer): Promise<E
 }
 
 /**
- * The shipped sky. HDRLoader is the current name for the Radiance .hdr reader: r186 marks
+ * The default sky: two gradient textures generated in memory (sky.ts), no network request. The
+ * lighting copy goes through the same PMREMGenerator.fromEquirectangular path the HDR used; the
+ * visible copy, bluer and with a pale horizon, becomes scene.background.
+ */
+export async function createProceduralEnvironment(renderer: WebGPURenderer): Promise<Environment> {
+  await renderer.init();
+  const source = createGradientSkyTexture(environmentSkyPalette(), 'procedural sky lighting');
+  const background = createGradientSkyTexture(visibleSkyPalette(), 'procedural sky visible');
+  const generator = new PMREMGenerator(renderer);
+  const target = generator.fromEquirectangular(source);
+  generator.dispose();
+  // fromEquirectangular renders the cube faces inside this call once the backend is up, so the
+  // upload of the lighting copy has already been issued (WebGL texImage2D and WebGPU writeTexture
+  // copy the data when called). Only the PMREM target is sampled afterwards: release the source
+  // and its 1 MB CPU array now rather than holding both for the page's life. The visible copy
+  // stays, because the background samples it every frame.
+  source.dispose();
+  return fromRenderTarget(target, background);
+}
+
+/**
+ * The ?sky=hdr diagnostic: the School Field HDR the default sky replaced. HDRLoader is the current
+ * name for the Radiance .hdr reader: r186 marks
  * RGBELoader deprecated in favour of it (@types/three/examples/jsm/loaders/RGBELoader.d.ts says so, and
  * RGBELoader.js is a two line subclass of HDRLoader.js), so the planned RGBELoader would have shipped a
  * deprecation. UltraHDRLoader was the other candidate and is not used: the authored asset is a linear

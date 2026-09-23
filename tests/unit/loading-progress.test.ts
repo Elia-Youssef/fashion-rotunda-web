@@ -28,7 +28,13 @@ function entry(name: string, transferSize: number, responseEnd = 0): ResourceEnt
 }
 
 describe('expectedBytes', () => {
-  it('sums the environment, rotunda, plinth and first look from the manifest set', () => {
+  it('counts no environment bytes for the default sky, which is generated in memory', () => {
+    expect(expectedBytes(manifest, 'looks/wallis-dress.glb', null)).toBe(
+      7095496 + 1126464 + 3250932,
+    );
+  });
+
+  it('sums the environment, rotunda, plinth and first look under the ?sky=hdr diagnostic', () => {
     expect(
       expectedBytes(manifest, 'looks/wallis-dress.glb', 'env/school-field-cloudy-1k.hdr'),
     ).toBe(1678323 + 7095496 + 1126464 + 3250932);
@@ -121,7 +127,13 @@ describe('formatProgress', () => {
     expect(formatProgress(1_050_000, 2_000_000)).toBe('1.1 MB of 2.0 MB');
   });
 
-  it('shows the room the manifest on main describes', () => {
+  it('shows the default room without the environment file', () => {
+    expect(formatProgress(0, expectedBytes(manifest, 'looks/wallis-dress.glb', null))).toBe(
+      '0.0 MB of 11.5 MB',
+    );
+  });
+
+  it('shows the ?sky=hdr room the manifest on main describes', () => {
     expect(
       formatProgress(
         0,
@@ -189,6 +201,9 @@ describe('the shipped documents', () => {
     }
     expect(expectedBytes(real, String(firstLook), String(environment))).toBe(
       bytes(environment) + bytes(rotunda) + bytes(plinth) + bytes(firstLook),
+    );
+    expect(expectedBytes(real, String(firstLook), null)).toBe(
+      bytes(rotunda) + bytes(plinth) + bytes(firstLook),
     );
   });
 });

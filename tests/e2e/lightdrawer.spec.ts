@@ -432,7 +432,7 @@ test.describe('UI-5: simplified Light Control drawer and rig', () => {
 
     const changedRig = await page.evaluate(() => window.archvizE2E?.rigState() ?? null);
     expect(changedRig).not.toBe(initialRig);
-    expect(changedRig).toContain('key,0,15.5,bcc8bd');
+    expect(changedRig).toContain('key,0,15.5,ffffff');
     expect(changedRig).toContain('fill,0,7,123456');
     expect(changedRig).toContain('day,0.2');
     await expect.poll(() => new URL(page.url()).searchParams.get('rig')).toBe(changedRig);
@@ -469,7 +469,7 @@ test.describe('UI-5: simplified Light Control drawer and rig', () => {
     let canvas = await openScene(page, scenePath);
     await expect(canvas).toHaveAttribute('data-backend', backend);
 
-    const defaults = { key: '#bcc8bd', fill: '#b3dbff', back: '#bce1ff' };
+    const defaults = { key: '#ffffff', fill: '#ffffff', back: '#ffffff' };
     const colors = { ...defaults };
     const expectedRig = () =>
       `v2;key,1,15,${colors.key.slice(1)};fill,0,7,${colors.fill.slice(1)};back,0,7,${colors.back.slice(1)};day,0.5`;
@@ -543,7 +543,7 @@ test.describe('UI-5: simplified Light Control drawer and rig', () => {
     await expect(readout).toHaveText('Dawn');
     await expectRigAndUrl(
       page,
-      'v2;key,1,15,bcc8bd;fill,0,7,b3dbff;back,0,7,bce1ff;day,0.2;e,1.06',
+      'v2;key,1,15,ffffff;fill,0,7,ffffff;back,0,7,ffffff;day,0.2;e,1.06',
     );
 
     await setNativeInput(daylight, '0.85');
@@ -551,7 +551,7 @@ test.describe('UI-5: simplified Light Control drawer and rig', () => {
     await expect(readout).toHaveText('Dusk');
     await expectRigAndUrl(
       page,
-      'v2;key,1,15,bcc8bd;fill,0,7,b3dbff;back,0,7,bce1ff;day,0.85;e,0.93',
+      'v2;key,1,15,ffffff;fill,0,7,ffffff;back,0,7,ffffff;day,0.85;e,0.93',
     );
     await waitForIdle(page, canvas);
     expectNoErrors(errors);
@@ -574,7 +574,7 @@ test.describe('UI-5: simplified Light Control drawer and rig', () => {
     const enabled = { key: true, fill: false, back: false };
     const intensities = { key: 15, fill: 7, back: 7 };
     const expectedRig = () =>
-      `v2;key,${enabled.key ? 1 : 0},${intensities.key},bcc8bd;fill,${enabled.fill ? 1 : 0},${intensities.fill},b3dbff;back,${enabled.back ? 1 : 0},${intensities.back},bce1ff;day,0.5`;
+      `v2;key,${enabled.key ? 1 : 0},${intensities.key},ffffff;fill,${enabled.fill ? 1 : 0},${intensities.fill},ffffff;back,${enabled.back ? 1 : 0},${intensities.back},ffffff;day,0.5`;
 
     await expectDefaultRigWithoutUrl(page, expectedRig());
     await expect.poll(() => proofDrawCalls(page), { timeout: 30_000 }).toBeGreaterThan(0);

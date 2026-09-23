@@ -7,10 +7,11 @@
 // - TopLight and the 8-point IndirectLight ring are removed from the active rig.
 // - Separate sun angle, elevation, kelvin, exposure, and sky controls are replaced by
 //   the single continuous Daylight/Atmosphere control.
-// - RectAreaLights use native color inputs (#RRGGBB) derived from authored defaults. Unreal combines
-//   each light's Kelvin temperature with the authored sRGB tint (188, 225, 255) by multiplication;
-//   kelvinTintToHex carries both into the defaults: Key at #bcc8bd (4500 K), Fill at #b3dbff
-//   (7000 K), Back at #bce1ff (6500 K, exactly the authored gel because 6500 K is the white balance).
+// - RectAreaLights use native color inputs (#RRGGBB). By client decision on 2026-09-23 every light
+//   defaults to neutral white at 6500 K (#ffffff) so the scene can be tested cleanly. The
+//   Unreal-authored values remain in UNREAL, and UNREAL_COLORS computes their colours: Unreal
+//   combines each light's Kelvin temperature with the authored sRGB tint (188, 225, 255) by
+//   multiplication, giving Key #bcc8bd (4500 K), Fill #b3dbff (7000 K), Back #bce1ff (6500 K).
 // - Only the Daylight sun casts shadows; Key, Fill, and Back remain shadowless.
 
 import {
@@ -150,7 +151,11 @@ export function hexToLinearRgb(hex: string): [number, number, number] {
   return [srgbToLinear(r), srgbToLinear(g), srgbToLinear(b)];
 }
 
-/** Unreal values verbatim from assets-src/source/unreal/lights.json. */
+/**
+ * Unreal values verbatim from assets-src/source/unreal/lights.json. The kelvin and tint entries are
+ * the record of the Unreal-authored colours; the web defaults use neutral white 6500 K instead
+ * (client decision 2026-09-23).
+ */
 const UNREAL = {
   key: {
     intensity: 15,
@@ -186,6 +191,19 @@ const UNREAL = {
     forward: [0.6387413386906354, -0.11617802907643715, -0.7605998736573714] as [number, number, number],
   },
 };
+
+/**
+ * The Unreal-authored light colours, computed from UNREAL: each studio light is its Kelvin
+ * temperature times its authored tint, the sun is its Kelvin temperature alone. A read-only record
+ * for restoring or comparing; the web defaults do not use it (neutral white 6500 K, client decision
+ * 2026-09-23).
+ */
+export const UNREAL_COLORS: Readonly<Record<RigStudioLightId | 'sun', string>> = Object.freeze({
+  key: kelvinTintToHex(UNREAL.key.kelvin, UNREAL.key.tint),
+  fill: kelvinTintToHex(UNREAL.fill.kelvin, UNREAL.fill.tint),
+  back: kelvinTintToHex(UNREAL.back.kelvin, UNREAL.back.tint),
+  sun: kelvinToHex(UNREAL.sun.kelvin),
+});
 
 /**
  * The sun's arc across the Rotunda.
@@ -241,7 +259,8 @@ export interface DaylightParameters {
 /**
  * Evaluates the coordinated daylight parameters from the single continuous daylight input:
  * 0.0: Minimum Daylight (navigable, warm 4000 K sun, gentle ambient, conservative exposure)
- * 0.5: Reference Daylight (authoritative Unreal reference: 7.0 lux, 7000 K #f3f8ff, sky 2.0, exposure 1.0)
+ * 0.5: Reference Daylight (Unreal reference 7.0 lux, sky 2.0, exposure 1.0; neutral white 6500 K #ffffff
+ *      by client decision on 2026-09-23, where Unreal authors 7000 K #f3f8ff, UNREAL_COLORS.sun)
  * 1.0: Maximum Daylight (bright 12.0 lux, crisp 7500 K, sky 2.6, stopped-down exposure to prevent clipping)
  */
 export function daylightParameters(daylight: number): DaylightParameters {
@@ -255,11 +274,12 @@ export function daylightParameters(daylight: number): DaylightParameters {
   // Directional sun intensity increases smoothly: 2.0 at d=0, 7.0 at d=0.5 (Unreal reference), 12.0 at d=1
   const intensity = round(2.0 + 10.0 * d, SERIALIZED_DECIMALS);
 
-  // Color temperature: warm low daylight (4000 K) -> Unreal reference white-tinted (7000 K) -> crisp (7500 K)
+  // Color temperature: warm low daylight (4000 K) -> neutral white (6500 K, client decision
+  // 2026-09-23; Unreal authors 7000 K) -> crisp (7500 K)
   const kelvin = Math.round(
     d <= 0.5
-      ? 4000 + (7000 - 4000) * (d / 0.5)
-      : 7000 + (7500 - 7000) * ((d - 0.5) / 0.5),
+      ? 4000 + (6500 - 4000) * (d / 0.5)
+      : 6500 + (7500 - 6500) * ((d - 0.5) / 0.5),
   );
   const color = kelvinToHex(kelvin);
 
@@ -311,6 +331,12 @@ function freezeRig(rig: Rig): Rig {
   return rig;
 }
 
+/**
+ * Default studio light colour: neutral white, 6500 K with a white tint, by client decision on
+ * 2026-09-23. The Unreal-authored colours are in UNREAL_COLORS; the tests pin them.
+ */
+const STUDIO_DEFAULT_COLOR = '#ffffff';
+
 function buildDefaultRig(): Rig {
   const lights: RigLight[] = [
     {
@@ -319,7 +345,7 @@ function buildDefaultRig(): Rig {
       kind: 'rect',
       on: UNREAL.key.visible,
       intensity: UNREAL.key.intensity,
-      color: kelvinTintToHex(UNREAL.key.kelvin, UNREAL.key.tint), // #bcc8bd
+      color: STUDIO_DEFAULT_COLOR, // Unreal: UNREAL_COLORS.key, #bcc8bd
       position: unrealToThreePosition(UNREAL.key.locationCm),
       direction: unrealToThreeDirection(UNREAL.key.forward),
       size: [UNREAL.key.sizeCm[0] / 100, UNREAL.key.sizeCm[1] / 100],
@@ -331,7 +357,7 @@ function buildDefaultRig(): Rig {
       kind: 'rect',
       on: UNREAL.fill.visible,
       intensity: UNREAL.fill.intensity,
-      color: kelvinTintToHex(UNREAL.fill.kelvin, UNREAL.fill.tint), // #b3dbff
+      color: STUDIO_DEFAULT_COLOR, // Unreal: UNREAL_COLORS.fill, #b3dbff
       position: unrealToThreePosition(UNREAL.fill.locationCm),
       direction: unrealToThreeDirection(UNREAL.fill.forward),
       size: [UNREAL.fill.sizeCm[0] / 100, UNREAL.fill.sizeCm[1] / 100],
@@ -343,7 +369,7 @@ function buildDefaultRig(): Rig {
       kind: 'rect',
       on: UNREAL.back.visible,
       intensity: UNREAL.back.intensity,
-      color: kelvinTintToHex(UNREAL.back.kelvin, UNREAL.back.tint), // #bce1ff
+      color: STUDIO_DEFAULT_COLOR, // Unreal: UNREAL_COLORS.back, #bce1ff
       position: unrealToThreePosition(UNREAL.back.locationCm),
       direction: unrealToThreeDirection(UNREAL.back.forward),
       size: [UNREAL.back.sizeCm[0] / 100, UNREAL.back.sizeCm[1] / 100],
@@ -415,7 +441,7 @@ function formatNumber(value: number): string {
  * Serializes the rig into a compact URL-safe string (v2).
  * Hex colors are written without leading '#' so no percent-encoding is required in URLs.
  * Exposure is omitted when equal to default (DEFAULT_RIG.exposure = 1) to keep links byte-identical.
- * Example: v2;key,1,15,bcc8bd;fill,0,7,b3dbff;back,0,7,bce1ff;day,0.5
+ * Example (the default rig): v2;key,1,15,ffffff;fill,0,7,ffffff;back,0,7,ffffff;day,0.5
  */
 export function serializeRig(rig: Rig): string {
   const parts = [RIG_FORMAT];

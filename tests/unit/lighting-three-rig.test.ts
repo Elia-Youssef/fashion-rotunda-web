@@ -67,12 +67,14 @@ describe('createThreeRig', () => {
   it('sets initial colors correctly on Three.js light objects', () => {
     const rig = build();
     const key = rect(rig, 'key');
-    // Key color is #bcc8bd: kelvinToRgb(4500) x the authored sRGB tint (188, 225, 255)
-    expect('#' + key.color.getHexString()).toBe('#bcc8bd');
+    // Every default is neutral white 6500 K (client decision 2026-09-23); the Unreal-authored
+    // Kelvin x tint colours (#bcc8bd, #b3dbff, #bce1ff) remain recorded in rig.ts.
+    expect('#' + key.color.getHexString()).toBe('#ffffff');
     const fill = rect(rig, 'fill');
-    expect('#' + fill.color.getHexString()).toBe('#b3dbff');
+    expect('#' + fill.color.getHexString()).toBe('#ffffff');
     const back = rect(rig, 'back');
-    expect('#' + back.color.getHexString()).toBe('#bce1ff');
+    expect('#' + back.color.getHexString()).toBe('#ffffff');
+    expect('#' + sunOf(rig).color.getHexString()).toBe('#ffffff');
   });
 
   it('enforces one-shadow policy: only the Daylight sun casts shadows', () => {
@@ -124,8 +126,9 @@ describe('createThreeRig', () => {
     expect(rig.group.children).toHaveLength(5);
     expect(rig.group.children.filter((child) => child.type === 'RectAreaLight')).toHaveLength(3);
 
-    // Restoring the defaults lands back on the combined Kelvin x tint colors
-    expect('#' + keyBefore.color.getHexString()).toBe('#bcc8bd');
+    // Restoring the defaults lands back on the neutral white default colors
+    expect('#' + keyBefore.color.getHexString()).toBe('#ffffff');
+    expect('#' + backBefore.color.getHexString()).toBe('#ffffff');
     expect(keyBefore.visible).toBe(true);
     expect(fillBefore.visible).toBe(false);
     expect(backBefore.visible).toBe(false);
@@ -150,7 +153,7 @@ describe('createThreeRig', () => {
     const refRig = updateDaylight(DEFAULT_RIG, 0.5);
     rig.apply(refRig);
     expect(sun.intensity).toBeCloseTo(7.0, 1);
-    expect('#' + sun.color.getHexString()).toBe('#f3f8ff');
+    expect('#' + sun.color.getHexString()).toBe('#ffffff');
 
     const maxRig = updateDaylight(DEFAULT_RIG, 1.0);
     rig.apply(maxRig);

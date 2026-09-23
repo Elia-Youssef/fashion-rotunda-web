@@ -85,7 +85,9 @@ const BYTE_ROWS = new Set(['gpuTextureBytes', 'firstFrameBytes', 'furtherLookByt
  * @param set 'full' or 'half'.
  * @param files the manifest's `sets[set].files` object.
  * @param firstLook the catalogue's first look file, for the payload row.
- * @param environment the catalogue's environment file, for the payload row.
+ * @param environment the catalogue's environment file. The page generates its default sky in memory
+ *   and fetches this file only under the ?sky=hdr diagnostic, so it is reported in `info` and printed
+ *   as a separate diagnostic line, never added to the first-frame payload row.
  * @returns `{ rows, info }`, rows carrying `{ key, label, actual, target, unit, pass }`.
  */
 export function budgetRows(set, files, firstLook, environment) {
@@ -102,7 +104,8 @@ export function budgetRows(set, files, firstLook, environment) {
 
   const sceneTriangles = num(rotunda?.triangles) + num(plinth?.triangles);
   const resident = [rotunda, plinth, heaviestGpu(lookEntries)];
-  const firstFrame = [entry(environment), rotunda, plinth, entry(firstLook)];
+  const firstFrame = [rotunda, plinth, entry(firstLook)];
+  const environmentEntry = environment ? entry(environment) : null;
   const further = lookEntries.filter((look) => look.name !== firstLook);
 
   const actual = {
@@ -130,6 +133,8 @@ export function budgetRows(set, files, firstLook, environment) {
     allFilesBytes: sum(Object.values(files), (file) => num(file.bytes)),
     heaviestLookByGpu: heaviestGpu(lookEntries)?.name ?? null,
     heaviestLookByTriangles: heaviestTriangles?.name ?? null,
+    environmentFile: environmentEntry === null ? null : environment,
+    environmentBytes: environmentEntry === null ? 0 : num(environmentEntry.bytes),
   };
   return { rows, info };
 }
@@ -151,6 +156,10 @@ export function formatBudgetTable(set, rows, info) {
       `${formatMb(info.allFilesBytes)} on disk`);
     lines.push(`  note: heaviest look by GPU bytes ${info.heaviestLookByGpu ?? '-'}, ` +
       `by triangles ${info.heaviestLookByTriangles ?? '-'}`);
+    if (info.environmentFile) {
+      lines.push(`  note: ${info.environmentFile} ${formatMb(info.environmentBytes)}, ?sky=hdr diagnostic ` +
+        'only, not in the first-frame payload (the default sky is generated in memory)');
+    }
   }
   return lines.join('\n');
 }

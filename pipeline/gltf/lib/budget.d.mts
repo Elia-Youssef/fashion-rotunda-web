@@ -17,6 +17,9 @@ export interface BudgetInfo {
   allFilesBytes: number;
   heaviestLookByGpu: string | null;
   heaviestLookByTriangles: string | null;
+  /** The ?sky=hdr diagnostic environment, reported apart from the first-frame payload row. */
+  environmentFile: string | null;
+  environmentBytes: number;
 }
 
 export declare const MIP_FACTOR: number;
@@ -27,7 +30,7 @@ export declare function budgetRows(
   set: AssetSet,
   files: Record<string, ManifestFile>,
   firstLook: string,
-  environment: string,
+  environment: string | null,
 ): { rows: BudgetRow[]; info: BudgetInfo };
 export declare function formatBudgetTable(set: AssetSet, rows: BudgetRow[], info?: BudgetInfo): string;
 export declare function formatMb(bytes: number): string;

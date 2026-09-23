@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import {
   APPROVED_FACTS,
   lobbyWanted,
   mountEntryLobby,
+  trackFirstFrameProgress,
 } from '../../src/ui/entry-lobby';
 import type { EntryLobby, ProgressReading } from '../../src/ui/entry-lobby';
 
@@ -446,5 +451,58 @@ describe('ENTRY-3 transition handshake additions', () => {
     const { lobby, element } = mountLobby();
     lobby.prepareForReveal();
     expect(element.style.pointerEvents).toBe('');
+  });
+});
+
+describe('first-frame byte total and the sky source', () => {
+  // The shipped catalog and manifest, served through a stubbed fetch, so the totals below are the
+  // real first-frame files of the full set. jsdom's URL is not the one node:fs accepts, hence paths.
+  const contentDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../public/content');
+  const catalogText = readFileSync(path.join(contentDir, 'catalog.json'), 'utf8');
+  const manifestText = readFileSync(path.join(contentDir, 'manifest.json'), 'utf8');
+  const catalog = JSON.parse(catalogText) as {
+    environment: { file: string };
+    rotunda: { file: string };
+    plinth: { file: string };
+    looks: { file: string }[];
+  };
+  const manifest = JSON.parse(manifestText) as {
+    sets: { full: { files: Record<string, { bytes: number }> } };
+  };
+  const bytes = (file: string): number => manifest.sets.full.files[file].bytes;
+  const withoutEnvironment =
+    bytes(catalog.rotunda.file) + bytes(catalog.plinth.file) + bytes(catalog.looks[0].file);
+
+  async function firstReading(countEnvironment: boolean | undefined): Promise<ProgressReading> {
+    vi.stubGlobal('fetch', (url: string) =>
+      Promise.resolve(new Response(url.endsWith('manifest.json') ? manifestText : catalogText)),
+    );
+    const readings: ProgressReading[] = [];
+    let stop: (() => void) | null = null;
+    try {
+      stop =
+        countEnvironment === undefined
+          ? trackFirstFrameProgress('/content', (reading) => readings.push(reading))
+          : trackFirstFrameProgress('/content', (reading) => readings.push(reading), countEnvironment);
+      await vi.waitFor(() => {
+        expect(readings.some((reading) => reading.expected > 0)).toBe(true);
+      });
+    } finally {
+      stop?.();
+      vi.unstubAllGlobals();
+    }
+    return readings.find((reading) => reading.expected > 0)!;
+  }
+
+  it('waits for no environment bytes by default: the procedural sky is not fetched', async () => {
+    const reading = await firstReading(undefined);
+    expect(reading.expected).toBe(withoutEnvironment);
+    expect(reading.totalFiles).toBe(3);
+  });
+
+  it('counts the HDR only under the ?sky=hdr diagnostic', async () => {
+    const reading = await firstReading(true);
+    expect(reading.expected).toBe(withoutEnvironment + bytes(catalog.environment.file));
+    expect(reading.totalFiles).toBe(4);
   });
 });

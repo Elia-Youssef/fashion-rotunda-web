@@ -137,7 +137,7 @@ test('the governor degrades, holds its cooldown, and recovers on headed webgpu',
   const gpuName = (await page.locator('.proof-panel').textContent()) ?? '';
   const rigBeforeGovernor = await rigState(page);
   expect(rigBeforeGovernor, 'the controlled page begins with the complete default lighting rig').toBe(
-    'v2;key,1,15,bcc8bd;fill,0,7,b3dbff;back,0,7,bce1ff;day,0.5',
+    'v2;key,1,15,ffffff;fill,0,7,ffffff;back,0,7,ffffff;day,0.5',
   );
   await page.evaluate(() => window.archvizE2E?.governor.setDeterministic(true));
 

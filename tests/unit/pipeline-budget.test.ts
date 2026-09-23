@@ -186,7 +186,8 @@ describe('budgetRows', () => {
   });
 
   it('adds the first look, not the heaviest, for the payload row', () => {
-    expect(row('firstFrameBytes').actual).toBe(10 * MB);
+    // Rotunda 6 + plinth 2 + first look 1. The environment file is not fetched by default.
+    expect(row('firstFrameBytes').actual).toBe(9 * MB);
     expect(row('firstFrameBytes').pass).toBe(true);
     expect(row('furtherLookBytes').actual).toBe(9 * MB);
     expect(row('furtherLookBytes').pass).toBe(false);
@@ -201,6 +202,15 @@ describe('budgetRows', () => {
     );
     expect(half.rows.find((entry) => entry.key === 'lookTriangles')!.pass).toBe(false);
     expect(half.rows.find((entry) => entry.key === 'drawCalls')!.target).toBe(80);
+  });
+
+  it('keeps the ?sky=hdr environment out of the payload row and reports it apart', () => {
+    expect(info.environmentFile).toBe('env/school-field-cloudy-1k.hdr');
+    expect(info.environmentBytes).toBe(1 * MB);
+    const without = budgetRows('full', files(), 'looks/wallis-dress.glb', null);
+    expect(without.rows.find((entry) => entry.key === 'firstFrameBytes')!.actual).toBe(9 * MB);
+    expect(without.info.environmentFile).toBeNull();
+    expect(without.info.environmentBytes).toBe(0);
   });
 
   it('refuses a set it does not know', () => {
@@ -230,7 +240,15 @@ describe('formatBudgetTable', () => {
     expect(text.split('\n').filter((line) => line.includes('MISS'))).toHaveLength(1);
   });
 
+  it('prints the environment as a diagnostic-only line, not a budget row', () => {
+    const line = text.split('\n').find((entry) => entry.includes('env/school-field-cloudy-1k.hdr'));
+    expect(line).toContain('1.00 MB');
+    expect(line).toContain('?sky=hdr diagnostic only');
+    expect(line).toContain('note:');
+  });
+
   it('prints byte rows in MB and count rows as counts', () => {
+    expect(text).toContain('9.00 MB');
     expect(text).toContain('10.00 MB');
     expect(text).toContain('69546');
   });

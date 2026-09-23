@@ -104,13 +104,13 @@ describe('mountLightPanel', () => {
   it('initializes default readouts matching authored values', () => {
     mount();
     expect(studioReadout('key', 'intensity')).toBe('15.0 cd');
-    expect(studioReadout('key', 'color')).toBe('#bcc8bd');
+    expect(studioReadout('key', 'color')).toBe('#ffffff');
 
     expect(studioReadout('fill', 'intensity')).toBe('7.0 cd');
-    expect(studioReadout('fill', 'color')).toBe('#b3dbff');
+    expect(studioReadout('fill', 'color')).toBe('#ffffff');
 
     expect(studioReadout('back', 'intensity')).toBe('7.0 cd');
-    expect(studioReadout('back', 'color')).toBe('#bce1ff');
+    expect(studioReadout('back', 'color')).toBe('#ffffff');
   });
 
   it('provides a continuous Daylight range with Dawn/Day/Dusk guidance', () => {

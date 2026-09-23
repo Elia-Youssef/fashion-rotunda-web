@@ -6,6 +6,12 @@ test('gates the experience until the visitor activates Load Experience', async (
   test.skip(test.info().project.name !== 'webgl2', 'runs headless, where no pointer can enter the gate');
   const messages: ConsoleMessage[] = [];
   page.on('console', (message) => messages.push(message));
+  // The default sky is generated in memory: the page must never fetch the diagnostic HDR, and the
+  // bar reaching 1 below proves the byte total does not wait for it either.
+  const hdrRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.endsWith('.hdr')) hdrRequests.push(request.url());
+  });
 
   // Delay the rotunda slightly so the in-flight loading state is observable
   await page.route('**/content/rotunda.glb', async (route) => {
@@ -62,6 +68,30 @@ test('gates the experience until the visitor activates Load Experience', async (
 
   const errors = messages.filter((message) => message.type() === 'error');
   expect(errors, 'no console messages of type error').toHaveLength(0);
+  expect(hdrRequests, 'the default sky requests no .hdr file').toHaveLength(0);
+});
+
+// ?sky=hdr: the School Field HDR diagnostic is fetched exactly once and counted in the byte total,
+// so the bar still reaches the end.
+test('counts and fetches the HDR once under the ?sky=hdr diagnostic', async ({ page }) => {
+  test.skip(test.info().project.name !== 'webgl2', 'runs headless, where no pointer can enter the gate');
+  const hdrRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.endsWith('.hdr')) hdrRequests.push(request.url());
+  });
+
+  await page.goto('/?webgl=1&sky=hdr');
+  const lobby = page.locator('#entry-lobby');
+  await lobby.locator('#lobby-load-btn').click();
+  await expect
+    .poll(async () => Number((await lobby.locator('progress').getAttribute('value')) ?? '0'), {
+      message: 'the bar reaches the end of the load, HDR included',
+      timeout: 60_000,
+    })
+    .toBe(1);
+  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  expect(hdrRequests).toHaveLength(1);
+  expect(new URL(hdrRequests[0]).pathname).toBe('/content/env/school-field-cloudy-1k.hdr');
 });
 
 // Keyboard Enter activation on the focused Load button

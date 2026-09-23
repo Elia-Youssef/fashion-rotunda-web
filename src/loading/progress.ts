@@ -10,16 +10,23 @@ export interface ManifestFile {
 const STATIC_FILES = ['rotunda.glb', 'plinth.glb'];
 
 /**
- * The bytes the first frame needs: environment, rotunda, plinth and the first look's file.
- * A missing entry counts 0: the total is advisory for the readout, never a reason to fail boot.
+ * The bytes the first frame needs: rotunda, plinth, the first look's file and, only when the page
+ * fetches it, the environment file. The default sky is generated in memory, so the environment is
+ * null except under the ?sky=hdr diagnostic; counting bytes that are never fetched would hold the
+ * readout short of full. A missing entry counts 0: the total is advisory for the readout, never a
+ * reason to fail boot.
  */
 export function expectedBytes(
   files: Record<string, ManifestFile>,
   firstLookFile: string,
-  environmentFile: string,
+  environmentFile: string | null,
 ): number {
   let total = 0;
-  for (const name of [...STATIC_FILES, environmentFile, firstLookFile]) {
+  const names = [...STATIC_FILES, firstLookFile];
+  if (environmentFile !== null) {
+    names.push(environmentFile);
+  }
+  for (const name of names) {
     total += files[name]?.bytes ?? 0;
   }
   return total;

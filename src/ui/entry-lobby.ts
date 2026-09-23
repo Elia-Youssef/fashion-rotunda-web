@@ -10,6 +10,7 @@ import { resolveMusicPreference, storeMusicPreference } from '../audio/preferenc
 import type { KeyValueStore } from '../audio/preference';
 import { contentUrl, loadCatalog } from '../catalog/catalog';
 import { expectedBytes, formatProgress, progressRatio, receivedBytes } from '../loading/progress';
+import { skySourceFromSearch } from '../lighting/sky';
 import type { ManifestFile, ResourceEntry } from '../loading/progress';
 
 export type LobbyState =
@@ -162,9 +163,14 @@ function prefersReducedMotion(): boolean {
   );
 }
 
+/**
+ * `countEnvironment` is true only under the ?sky=hdr diagnostic: the default sky is generated in
+ * memory and requests no environment file.
+ */
 export function trackFirstFrameProgress(
   contentBase: string,
   onProgress: (reading: ProgressReading) => void,
+  countEnvironment = false,
 ): () => void {
   let expected = 0;
   let expectedPaths: string[] = [];
@@ -246,9 +252,10 @@ export function trackFirstFrameProgress(
         const setName = contentBase.endsWith('/half') ? 'half' : 'full';
         const files = readManifestFiles(await manifestResponse.json(), setName);
         const firstLook = catalog.looks[0]?.file ?? '';
-        expected = files === null ? 0 : expectedBytes(files, firstLook, catalog.environment.file);
+        const environmentFile = countEnvironment ? catalog.environment.file : null;
+        expected = files === null ? 0 : expectedBytes(files, firstLook, environmentFile);
         expectedPaths = [
-          catalog.environment.file,
+          ...(environmentFile === null ? [] : [environmentFile]),
           catalog.rotunda.file,
           catalog.plinth.file,
           firstLook,
@@ -637,9 +644,13 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       if (stopProgressTrackingFn !== null) {
         stopProgressTrackingFn();
       }
-      stopProgressTrackingFn = trackFirstFrameProgress(contentBase, (reading) => {
-        lobbyHandle.setProgress(reading);
-      });
+      stopProgressTrackingFn = trackFirstFrameProgress(
+        contentBase,
+        (reading) => {
+          lobbyHandle.setProgress(reading);
+        },
+        skySourceFromSearch(options.search) === 'hdr',
+      );
       return () => {
         if (stopProgressTrackingFn !== null) {
           stopProgressTrackingFn();

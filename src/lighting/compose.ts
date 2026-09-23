@@ -6,9 +6,10 @@ import type { WebGPURenderer } from 'three/webgpu';
 
 import { mountLightPanel } from '../ui/lightpanel';
 import type { LightPanelHandle } from '../ui/lightpanel';
-import { createHdrEnvironment, createRoomEnvironment } from './environment';
+import { createHdrEnvironment, createProceduralEnvironment, createRoomEnvironment } from './environment';
 import type { Environment } from './environment';
 import { registerRectAreaLights } from './rect-area-ltc';
+import { skySourceFromParam } from './sky';
 import { DEFAULT_RIG, daylightParameters, parseRig, serializeRig } from './rig';
 import type { Rig } from './rig';
 import { createThreeRig } from './three-rig';
@@ -22,8 +23,10 @@ export interface LightingOptions {
   /** From the tier table: the sun's shadow map edge in pixels. */
   shadowMapSize: number;
   sunShadow: boolean;
-  /** The shipped equirectangular Radiance HDR; absent keeps the no-download development fallback. */
+  /** The School Field Radiance HDR, fetched only when `sky` selects the ?sky=hdr diagnostic. */
   environmentUrl?: string;
+  /** The raw ?sky= value; only 'hdr' (with environmentUrl) replaces the default procedural sky. */
+  sky?: string | null;
   /** A serialized rig (serializeRig) to boot with, for example from the URL; absent means the level's. */
   initial?: string;
   /** Called after every change so the on-demand loop draws a frame. */
@@ -74,9 +77,21 @@ export function enableShadows(root: { traverse(callback: (object: unknown) => vo
  * floods the marble. These factors map the panel's sky value to scene.environmentIntensity: the room
  * keeps its original fallback tuning and the real outdoor HDR uses the reviewed lower contribution.
  */
-const ROOM_ENVIRONMENT_SCALE = 0.35;
+export const ROOM_ENVIRONMENT_SCALE = 0.35;
 /** A real outdoor HDR carries broader fill than the old synthetic room, so keep its contribution lower. */
-const HDR_ENVIRONMENT_SCALE = 0.2;
+export const HDR_ENVIRONMENT_SCALE = 0.2;
+/**
+ * The procedural lighting sky is authored at zenith luminance 1. The reference is the upright HDR at
+ * HDR_ENVIRONMENT_SCALE (the Goal 5 state) as the renderer receives it: HDRLoader clamps every channel
+ * to the float16 maximum 65504, which cuts the file's baked sun disc to about a third. 0.927 is the
+ * geometric mean of the scale matching its cosine up irradiance and the scale matching a narrow-lobe
+ * stand-in for three's roughness-1 PMREM lookup. Against the reference it gives cosine irradiance
+ * 6 percent lower facing up and 8 percent lower averaged over the four horizontal directions, and
+ * 1.4 times the 0 to 15 degree band a glossy floor mirrors. Only these hemisphere averages are
+ * matched: the gradient has no azimuth, so the
+ * HDR's lopsided side lighting (one side about four times the others) is not reproduced.
+ */
+export const PROCEDURAL_ENVIRONMENT_SCALE = 0.927;
 
 export async function composeLighting(options: LightingOptions): Promise<Lighting> {
   // Before the first frame that draws a rect light, or its shader build throws (rect-area-ltc.ts).
@@ -85,18 +100,19 @@ export async function composeLighting(options: LightingOptions): Promise<Lightin
 
   let environment: Environment;
   let environmentScale: number;
-  if (options.environmentUrl === undefined) {
+  const hdrUrl = skySourceFromParam(options.sky ?? null) === 'hdr' ? options.environmentUrl : undefined;
+  try {
+    if (hdrUrl === undefined) {
+      environment = await createProceduralEnvironment(options.renderer);
+      environmentScale = PROCEDURAL_ENVIRONMENT_SCALE;
+    } else {
+      environment = await createHdrEnvironment(options.renderer, hdrUrl);
+      environmentScale = HDR_ENVIRONMENT_SCALE;
+    }
+  } catch (error) {
+    console.warn('[archviz] sky environment failed; using the room fallback', error);
     environment = await createRoomEnvironment(options.renderer);
     environmentScale = ROOM_ENVIRONMENT_SCALE;
-  } else {
-    try {
-      environment = await createHdrEnvironment(options.renderer, options.environmentUrl);
-      environmentScale = HDR_ENVIRONMENT_SCALE;
-    } catch (error) {
-      console.warn('[archviz] HDR environment failed; using the room fallback', error);
-      environment = await createRoomEnvironment(options.renderer);
-      environmentScale = ROOM_ENVIRONMENT_SCALE;
-    }
   }
 
   let rig: Rig = options.initial === undefined ? DEFAULT_RIG : parseRig(options.initial, DEFAULT_RIG);

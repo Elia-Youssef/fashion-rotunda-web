@@ -4,6 +4,7 @@ import {
   DAYLIGHT_RANGE,
   DEFAULT_RIG,
   EXPOSURE_RANGE,
+  UNREAL_COLORS,
   daylightParameters,
   daylightSun,
   hexToLinearRgb,
@@ -51,12 +52,12 @@ describe('DEFAULT_RIG', () => {
     expect(intensityScale('rect')).toEqual({ range: CANDELA_RANGE, step: 0.5, unit: 'cd' });
   });
 
-  it('puts KeyLight at [2, 2.8, -2] metres: 15 cd, #bcc8bd, aimed down and inward', () => {
+  it('puts KeyLight at [2, 2.8, -2] metres: 15 cd, #ffffff, aimed down and inward', () => {
     const key = studioLight(DEFAULT_RIG, 'key');
     expect(key.kind).toBe('rect');
     expect(key.on).toBe(true);
     expect(key.intensity).toBe(15);
-    expect(key.color).toBe('#bcc8bd');
+    expect(key.color).toBe('#ffffff');
     expect(key.position?.[0]).toBeCloseTo(2, 6);
     expect(key.position?.[1]).toBeCloseTo(2.8, 6);
     expect(key.position?.[2]).toBeCloseTo(-2, 6);
@@ -68,12 +69,12 @@ describe('DEFAULT_RIG', () => {
     expect(key.castShadow).toBe(false);
   });
 
-  it('puts FillLight at [-2.15, 2.8, -2.3] metres: 7 cd, #b3dbff, starting off', () => {
+  it('puts FillLight at [-2.15, 2.8, -2.3] metres: 7 cd, #ffffff, starting off', () => {
     const fill = studioLight(DEFAULT_RIG, 'fill');
     expect(fill.kind).toBe('rect');
     expect(fill.on).toBe(false);
     expect(fill.intensity).toBe(7);
-    expect(fill.color).toBe('#b3dbff');
+    expect(fill.color).toBe('#ffffff');
     expect(fill.position?.[0]).toBeCloseTo(-2.15, 6);
     expect(fill.position?.[1]).toBeCloseTo(2.8, 6);
     expect(fill.position?.[2]).toBeCloseTo(-2.3, 6);
@@ -81,12 +82,12 @@ describe('DEFAULT_RIG', () => {
     expect(fill.castShadow).toBe(false);
   });
 
-  it('puts BackLight at [0.05, 3, 3.3] metres: 7 cd, #bce1ff, starting off', () => {
+  it('puts BackLight at [0.05, 3, 3.3] metres: 7 cd, #ffffff, starting off', () => {
     const back = studioLight(DEFAULT_RIG, 'back');
     expect(back.kind).toBe('rect');
     expect(back.on).toBe(false);
     expect(back.intensity).toBe(7);
-    expect(back.color).toBe('#bce1ff');
+    expect(back.color).toBe('#ffffff');
     expect(back.position?.[0]).toBeCloseTo(0.05, 6);
     expect(back.position?.[1]).toBeCloseTo(3, 6);
     expect(back.position?.[2]).toBeCloseTo(3.3, 6);
@@ -96,12 +97,14 @@ describe('DEFAULT_RIG', () => {
 });
 
 describe('Daylight and Atmosphere Coordination', () => {
-  it('reproduces authoritative Unreal reference values at the default reference anchor (d = 0.5)', () => {
+  it('reproduces the Unreal reference values at d = 0.5, with a neutral white 6500 K sun', () => {
+    // Unreal authors the sun at 7000 K (#f3f8ff); the web default is 6500 K white by client decision
+    // on 2026-09-23.
     const ref = daylightParameters(0.5);
     expect(ref.angleDeg).toBeCloseTo(130.4829, 3);
     expect(ref.intensity).toBe(7.0);
-    expect(ref.kelvin).toBe(7000);
-    expect(ref.color).toBe('#f3f8ff');
+    expect(ref.kelvin).toBe(6500);
+    expect(ref.color).toBe('#ffffff');
     expect(ref.skyIntensity).toBe(2.0);
     expect(ref.backgroundIntensity).toBe(0.25);
     expect(ref.exposure).toBe(1.0);
@@ -122,11 +125,13 @@ describe('Daylight and Atmosphere Coordination', () => {
     expect(ref.intensity).toBe(7.0);
     expect(max.intensity).toBe(12.0);
 
-    // Color temperature: warm 4000 K -> neutral 7000 K -> crisp 7500 K
+    // Color temperature: warm 4000 K -> neutral white 6500 K -> crisp 7500 K, piecewise linear
     expect(min.kelvin).toBe(4000);
     expect(min.color).toBe('#ffd9a6');
-    expect(ref.kelvin).toBe(7000);
-    expect(ref.color).toBe('#f3f8ff');
+    expect(daylightParameters(0.25).kelvin).toBe(5250);
+    expect(ref.kelvin).toBe(6500);
+    expect(ref.color).toBe('#ffffff');
+    expect(daylightParameters(0.75).kelvin).toBe(7000);
     expect(max.kelvin).toBe(7500);
     expect(max.color).toBe('#eaf2ff');
 
@@ -296,21 +301,21 @@ describe('Immutable Rig Operations', () => {
   });
 
   it('keeps disabled lights retaining their configured intensity and color', () => {
-    // Fill and Back default off but hold authored intensity and color in state
+    // Fill and Back default off but hold their default intensity and color in state
     const fill = studioLight(DEFAULT_RIG, 'fill');
     expect(fill.on).toBe(false);
     expect(fill.intensity).toBe(7);
-    expect(fill.color).toBe('#b3dbff');
+    expect(fill.color).toBe('#ffffff');
     const back = studioLight(DEFAULT_RIG, 'back');
     expect(back.on).toBe(false);
     expect(back.intensity).toBe(7);
-    expect(back.color).toBe('#bce1ff');
+    expect(back.color).toBe('#ffffff');
 
     // Toggling does not destructively reset anything: enabling restores retained values
     const fillOn = updateLight(DEFAULT_RIG, 'fill', { on: true });
     expect(studioLight(fillOn, 'fill').on).toBe(true);
     expect(studioLight(fillOn, 'fill').intensity).toBe(7);
-    expect(studioLight(fillOn, 'fill').color).toBe('#b3dbff');
+    expect(studioLight(fillOn, 'fill').color).toBe('#ffffff');
 
     // Customized values survive an off/on round trip
     let rig = updateLight(DEFAULT_RIG, 'back', { on: true, intensity: 12.5, color: '#123456' });
@@ -364,13 +369,11 @@ describe('Authored tint combination (Kelvin x RGB 188,225,255)', () => {
   // The authored sRGB gel every studio rect light carries in the Unreal level.
   const TINT = [188 / 255, 225 / 255, 255 / 255] as const;
 
-  it('stores kelvinToRgb(K) x srgbToLinear(tint) for each studio light, read back through hexToLinearRgb', () => {
-    for (const [id, kelvin] of [
-      ['key', 4500],
-      ['fill', 7000],
-      ['back', 6500],
-    ] as const) {
-      const stored = studioLight(DEFAULT_RIG, id).color;
+  // The Unreal-authored colours stay reproducible from the UNREAL record (Key 4500 K, Fill 7000 K,
+  // Back 6500 K) although the web defaults are neutral white 6500 K by client decision on 2026-09-23.
+  it('stores kelvinToRgb(K) x srgbToLinear(tint) for each Unreal light, read back through hexToLinearRgb', () => {
+    for (const kelvin of [4500, 7000, 6500]) {
+      const stored = kelvinTintToHex(kelvin);
       const expectedLinear = [
         kelvinToRgb(kelvin)[0] * srgbToLinear(TINT[0]),
         kelvinToRgb(kelvin)[1] * srgbToLinear(TINT[1]),
@@ -386,10 +389,34 @@ describe('Authored tint combination (Kelvin x RGB 188,225,255)', () => {
     }
   });
 
-  it('pins all three combined default hex values', () => {
-    expect(studioLight(DEFAULT_RIG, 'key').color).toBe('#bcc8bd');
-    expect(studioLight(DEFAULT_RIG, 'fill').color).toBe('#b3dbff');
-    expect(studioLight(DEFAULT_RIG, 'back').color).toBe('#bce1ff');
+  it('pins the UNREAL_COLORS record computed from the Unreal table, frozen', () => {
+    expect(UNREAL_COLORS).toEqual({
+      key: '#bcc8bd',
+      fill: '#b3dbff',
+      back: '#bce1ff',
+      sun: '#f3f8ff',
+    });
+    expect(Object.isFrozen(UNREAL_COLORS)).toBe(true);
+    // The record is not the default: defaults stay neutral white 6500 K.
+    for (const id of ['key', 'fill', 'back'] as const) {
+      expect(studioLight(DEFAULT_RIG, id).color).not.toBe(UNREAL_COLORS[id]);
+    }
+    expect(daylightParameters(DEFAULT_RIG.daylight).color).not.toBe(UNREAL_COLORS.sun);
+  });
+
+  it('pins all three Unreal-authored combined hex values', () => {
+    expect(kelvinTintToHex(4500)).toBe('#bcc8bd');
+    expect(kelvinTintToHex(7000)).toBe('#b3dbff');
+    expect(kelvinTintToHex(6500)).toBe('#bce1ff');
+  });
+
+  it('defaults every studio light to neutral white 6500 K, not the Unreal-authored colours', () => {
+    for (const id of ['key', 'fill', 'back'] as const) {
+      expect(studioLight(DEFAULT_RIG, id).color).toBe('#ffffff');
+      expect(studioLight(DEFAULT_RIG, id).color).toBe(kelvinToHex(6500));
+      expect(studioLight(DEFAULT_RIG, id).color).toBe(kelvinTintToHex(6500, [255, 255, 255]));
+    }
+    expect(daylightParameters(DEFAULT_RIG.daylight).color).toBe('#ffffff');
   });
 
   it('makes Back exactly the authored gel because 6500 K is the white balance', () => {
@@ -399,13 +426,9 @@ describe('Authored tint combination (Kelvin x RGB 188,225,255)', () => {
   });
 
   it('differs from kelvin-only colors: the tint is applied, and only once', () => {
-    for (const [id, kelvin] of [
-      ['key', 4500],
-      ['fill', 7000],
-    ] as const) {
-      const combined = studioLight(DEFAULT_RIG, id).color;
+    for (const kelvin of [4500, 7000]) {
+      const combined = kelvinTintToHex(kelvin);
       expect(combined).not.toBe(kelvinToHex(kelvin));
-      expect(combined).toBe(kelvinTintToHex(kelvin));
       // Applying the tint a second time on top of the stored color must be a different
       // color, so a compounded double application would be detectable.
       const twice = linearRgbToHex([
@@ -443,14 +466,21 @@ describe('Serialization and Backward Compatibility Migration', () => {
   it('serializes to v2 format with hex without #', () => {
     const text = serializeRig(DEFAULT_RIG);
     expect(text.startsWith('v2;')).toBe(true);
-    expect(text).toContain('key,1,15,bcc8bd');
-    expect(text).toContain('fill,0,7,b3dbff');
-    expect(text).toContain('back,0,7,bce1ff');
-    expect(text).toContain('day,0.5');
+    expect(text).toBe('v2;key,1,15,ffffff;fill,0,7,ffffff;back,0,7,ffffff;day,0.5');
     // Exposure is omitted when equal to default
     expect(text).not.toContain(';e,');
     // Ensure no '#' in serialized rig for safe query string usage
     expect(text).not.toContain('#');
+  });
+
+  it('restores the explicit colours of an old share link written with the Unreal-authored defaults', () => {
+    const old = parseRig('v2;key,1,15,bcc8bd;fill,0,7,b3dbff;back,0,7,bce1ff;day,0.5', DEFAULT_RIG);
+    expect(studioLight(old, 'key').color).toBe('#bcc8bd');
+    expect(studioLight(old, 'fill').color).toBe('#b3dbff');
+    expect(studioLight(old, 'back').color).toBe('#bce1ff');
+    expect(old.daylight).toBe(0.5);
+    expect(old.exposure).toBe(1);
+    expect(serializeRig(old)).toBe('v2;key,1,15,bcc8bd;fill,0,7,b3dbff;back,0,7,bce1ff;day,0.5');
   });
 
   it('omits exposure e on DEFAULT_RIG but includes e when exposure differs from default', () => {
