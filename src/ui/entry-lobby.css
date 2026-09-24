@@ -418,12 +418,6 @@
   margin: 0 0 var(--space-1) 0;
 }
 
-.entry-lobby__fact-source {
-  font-family: var(--font-mono);
-  font-size: var(--type-fact-source);
-  color: var(--border-strong);
-}
-
 /* Error State Card */
 .entry-lobby__card[data-view='error'] {
   border-color: var(--brand-error);

@@ -52,7 +52,6 @@ function mountLobby(options: {
           <div class="entry-lobby__fact-container">
             <span class="entry-lobby__fact-heading"></span>
             <p class="entry-lobby__fact-text"></p>
-            <span class="entry-lobby__fact-source"></span>
           </div>
         </div>
         <div class="entry-lobby__error-pane" hidden>

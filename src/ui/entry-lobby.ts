@@ -60,36 +60,30 @@ export interface EntryLobby {
   dispose(): void;
 }
 
-export const APPROVED_FACTS: Array<{ heading: string; text: string; source: string }> = [
+export const APPROVED_FACTS: Array<{ heading: string; text: string }> = [
   {
     heading: 'ARCHITECTURAL & GRAPHICS PROVENANCE',
     text: 'Built on WebGPU for next-generation hardware rasterization, with seamless automatic fallback to WebGL 2.',
-    source: 'Source: src/renderer/create.ts',
   },
   {
     heading: 'SPATIAL GEOMETRY RECONSTRUCTION',
     text: 'Architectural rotunda, dome framing, and interior surfaces reconstructed from original Unreal Engine assets.',
-    source: 'Source: pipeline/unreal/export.py',
   },
   {
     heading: 'ASSET & TEXTURE OPTIMIZATION',
     text: 'High-efficiency asset streaming utilizing glTF 2.0 binary geometry and KTX2 supercompressed GPU textures.',
-    source: 'Source: pipeline/gltf/optimize.mjs',
   },
   {
     heading: 'ADAPTIVE QUALITY TIERING',
     text: 'Automated hardware capability profiling allocating dynamic quality tiers for shadows, resolution, and post-processing.',
-    source: 'Source: src/tiers/table.ts',
   },
   {
     heading: 'ACCESSIBLE DOM OVERLAY',
     text: 'Semantic, accessible HTML/CSS interface layer decoupled from the 3D canvas, guaranteeing full keyboard navigation.',
-    source: 'Source: src/styles.css',
   },
   {
     heading: 'CURATORIAL LIGHTING RIG',
     text: 'Tri-point studio lighting rig combined with architectural daylight dome illumination.',
-    source: 'Source: src/lighting/rig.ts',
   },
 ];
 
@@ -374,7 +368,6 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
               <div class="entry-lobby__fact-diamond" aria-hidden="true"></div>
               <span class="entry-lobby__fact-heading">ARCHITECTURAL &amp; GRAPHICS PROVENANCE</span>
               <p class="entry-lobby__fact-text">"Built on WebGPU for next-generation hardware rasterization, with seamless automatic fallback to WebGL 2."</p>
-              <span class="entry-lobby__fact-source">Source: src/renderer/create.ts</span>
             </div>
           </div>
 
@@ -410,7 +403,6 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
   const readoutElement = lobby.querySelector<HTMLElement>('.entry-lobby__progress-readout');
   const factHeading = lobby.querySelector<HTMLElement>('.entry-lobby__fact-heading');
   const factText = lobby.querySelector<HTMLElement>('.entry-lobby__fact-text');
-  const factSource = lobby.querySelector<HTMLElement>('.entry-lobby__fact-source');
   const retryBtn = lobby.querySelector<HTMLButtonElement>('#lobby-retry-btn');
   const errorMessage = lobby.querySelector<HTMLElement>('.entry-lobby__error-message');
 
@@ -467,9 +459,6 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
     }
     if (factText !== null) {
       factText.textContent = `"${fact.text}"`;
-    }
-    if (factSource !== null) {
-      factSource.textContent = fact.source;
     }
   }
 
