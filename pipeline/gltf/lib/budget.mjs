@@ -39,6 +39,10 @@ const MB = 1_000_000;
  * "resident" is the set actually on the GPU at one time: the rotunda, the plinth and one look. The
  * page disposes a look's GPU resources when it is replaced, so seven looks never coexist. The
  * all-files total is printed beside it as information, not as a gate.
+ *
+ * "triangles in view" is the main scene pass. renderer.info also counts the shadow and AO passes, so
+ * its per-frame number is not this row. The main pass draws at most the rotunda, the plinth and one
+ * look, all in view, so the heaviest look gives the upper bound the row checks.
  */
 export const BUDGETS = {
   full: {
@@ -47,6 +51,7 @@ export const BUDGETS = {
     // source resolution, because any decimation of one against the other lets the mannequin through
     // the fabric (user diagnosis). The heaviest authored look is 336,973 triangles.
     lookTriangles: 340000,
+    trianglesInView: 450000,
     drawCalls: 150,
     gpuTextureBytes: 400 * MB,
     largestTexture: 4096,
@@ -57,6 +62,7 @@ export const BUDGETS = {
   half: {
     sceneTriangles: 200000,
     lookTriangles: 120000,
+    trianglesInView: 300000,
     drawCalls: 80,
     gpuTextureBytes: 150 * MB,
     largestTexture: 2048,
@@ -70,6 +76,7 @@ export const BUDGETS = {
 const ROW_LABELS = {
   sceneTriangles: 'rotunda plus plinth, triangles',
   lookTriangles: 'heaviest look incl. mannequin, triangles',
+  trianglesInView: 'triangles in view, main pass (upper bound)',
   drawCalls: 'draw calls, rotunda + plinth + one look',
   gpuTextureBytes: 'texture memory on the GPU, resident',
   largestTexture: `largest texture (${FLOOR_MESH_NAME} allowed the wider cap)`,
@@ -112,6 +119,7 @@ export function budgetRows(set, files, firstLook, environment) {
   const actual = {
     sceneTriangles,
     lookTriangles: num(heaviestTriangles?.triangles),
+    trianglesInView: sceneTriangles + num(heaviestTriangles?.triangles),
     drawCalls: sum(resident, (file) => num(file?.drawCalls)),
     gpuTextureBytes: sum(resident, (file) => num(file?.gpuBytes)),
     largestTexture: max(Object.values(files), (file) => num(file.largestTexture)),

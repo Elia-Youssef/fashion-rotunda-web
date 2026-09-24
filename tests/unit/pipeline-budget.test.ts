@@ -54,6 +54,7 @@ describe('BUDGETS', () => {
     expect(BUDGETS.full).toEqual({
       sceneTriangles: 200000,
       lookTriangles: 340000,
+      trianglesInView: 450000,
       drawCalls: 150,
       gpuTextureBytes: 400 * MB,
       largestTexture: 4096,
@@ -67,6 +68,7 @@ describe('BUDGETS', () => {
     expect(BUDGETS.half).toEqual({
       sceneTriangles: 200000,
       lookTriangles: 120000,
+      trianglesInView: 300000,
       drawCalls: 80,
       gpuTextureBytes: 150 * MB,
       largestTexture: 2048,
@@ -152,6 +154,7 @@ describe('budgetRows', () => {
     expect(rows.map((entry) => entry.key)).toEqual([
       'sceneTriangles',
       'lookTriangles',
+      'trianglesInView',
       'drawCalls',
       'gpuTextureBytes',
       'largestTexture',
@@ -169,6 +172,12 @@ describe('budgetRows', () => {
   it('takes the heaviest look, not the sum of the looks', () => {
     expect(row('lookTriangles').actual).toBe(127170);
     expect(info.heaviestLookByTriangles).toBe('looks/geoffrey-beene.glb');
+  });
+
+  it('bounds the triangles in view by the rotunda, the plinth and the heaviest look', () => {
+    expect(row('trianglesInView').actual).toBe(69124 + 422 + 127170);
+    expect(row('trianglesInView').target).toBe(450000);
+    expect(row('trianglesInView').pass).toBe(true);
   });
 
   it('counts texture memory as the resident set: rotunda, plinth and one look', () => {
