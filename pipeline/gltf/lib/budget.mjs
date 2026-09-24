@@ -30,7 +30,8 @@ export function gpuBytes(width, height, format) {
   return Math.round(width * height * perPixel * MIP_FACTOR);
 }
 
-const MB = 1048576;
+/** Decimal megabytes, 1,000,000 bytes: the unit the loading screen shows the visitor. */
+const MB = 1_000_000;
 
 /**
  * One row per budget, per set. `target` is the number the budget table states; `unit` says how to print it.

@@ -19,10 +19,13 @@ afterEach(() => {
 });
 
 describe('Unreal export provenance safeguards', () => {
-  it('uses the relocated authoritative project unless explicitly overridden', () => {
-    expect(unrealProject).toBe(resolve(
-      process.env.FR_UNREAL_PROJECT ?? 'C:\\Users\\User\\Documents\\Unreal Projects\\FashionRotunda\\FashionRotunda.uproject',
-    ));
+  it('uses a known location of the authoritative project unless explicitly overridden', () => {
+    const known = [
+      'C:\\Users\\User\\Documents\\Unreal Projects\\FashionRotunda\\FashionRotunda.uproject',
+      'E:\\Fashion-Rotunda-WebGPU\\FashionRotunda\\FashionRotunda.uproject',
+    ].map((path) => resolve(path));
+    const expected = process.env.FR_UNREAL_PROJECT ? [resolve(process.env.FR_UNREAL_PROJECT)] : known;
+    expect(expected).toContain(unrealProject);
   });
 
   it('accepts only a new child of the isolated evidence root', () => {

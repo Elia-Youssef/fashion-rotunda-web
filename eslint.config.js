@@ -14,8 +14,11 @@ export default tseslint.config(
       '.worktrees/**',
       'public/**',
       'assets-src/**',
-      // Evidence runner utilities are archived/generated Node verification artifacts, not product source.
-      'briefs/reports/**/*.mjs',
+      // Local planning and evidence: archived verification scripts in any module format, not product source.
+      'briefs/**',
+      // Browser runs rewrite these folders while they work; linting them races the run.
+      'test-results/**',
+      'playwright-report/**',
     ],
   },
   js.configs.recommended,

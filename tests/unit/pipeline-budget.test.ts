@@ -14,7 +14,8 @@ import { fileEntry, textureEntry } from '../../pipeline/gltf/lib/manifest.mjs';
 // reports texture counts, not bytes. The proof panel and the budget report both print this, so the
 // formula is pinned digit by digit against the worked example in the manifest data contract.
 
-const MB = 1048576;
+// Decimal megabytes, the unit budget.mjs uses for its targets and its printout.
+const MB = 1_000_000;
 
 describe('gpuBytes', () => {
   it('pins the mip factor and the bytes per pixel of each format', () => {

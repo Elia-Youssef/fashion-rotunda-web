@@ -187,8 +187,8 @@ if (asJson) {
       console.log(`${result.file}: ERROR ${result.error}`);
       continue;
     }
-    const mb = (result.bytes / 1048576).toFixed(2);
-    const textureMb = (result.textureBytes / 1048576).toFixed(2);
+    const mb = (result.bytes / 1_000_000).toFixed(2);
+    const textureMb = (result.textureBytes / 1_000_000).toFixed(2);
     console.log(
       `${result.file}: ${mb} MB, ${result.nodes} nodes, ${result.meshes} meshes, ` +
         `${result.primitives} primitives, ` +
