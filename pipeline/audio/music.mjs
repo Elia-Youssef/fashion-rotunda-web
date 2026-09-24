@@ -23,6 +23,7 @@ import { copyFileSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { contentDir, ffmpegExe, ffprobeExe, sourceDir, workDir } from '../config.mjs';
+import { shippedJson } from '../gltf/lib/manifest.mjs';
 
 // The intro slice carried across the seam. Long enough that the crossfade lands in music rather
 // than in a track's very first attack, short enough that nothing the visitor hears as "the start"
@@ -403,5 +404,5 @@ const manifest = {
   default: SHIPPED[0],
   tracks: shippedTracks,
 };
-writeFileSync(resolve(contentMusic, 'music.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+writeFileSync(resolve(contentMusic, 'music.json'), shippedJson(manifest), 'utf8');
 console.log(`music: wrote ${shippedTracks.length} track(s) to ${resolve(contentMusic, 'music.json')}`);

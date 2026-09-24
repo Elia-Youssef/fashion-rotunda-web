@@ -11,7 +11,7 @@ Output layout (all paths relative to FR_EXPORT_OUT):
   rotunda.glb                 Lvl_Construction without the pedestal, baked materials, metres
   plinth.glb                  SM_Pedestal_A
   level-main.glb              Lvl_Main with every sublevel, for the light rig and the layout reference
-  looks/<slug>/<Mesh>.glb     each garment mesh of a look (LOD chosen to fit the look budget)
+  looks/<slug>/<Mesh>.glb     each garment mesh of a look (its LOD 0 source model, as authored)
   looks/<slug>/mannequin.glb  the look's mannequin with its base material
   looks/<slug>/swatch-*.glb   the base, light and dark mannequin materials as glTF materials
   looks/<slug>/thumbnail.png  the catalogue thumbnail
@@ -53,8 +53,10 @@ AUDIO = "/Game/Audio"
 DRESSES_TABLE = "/Game/DataTables/DT_Dresses"
 LIGHTS_TABLE = "/Game/DataTables/DT_StudioLights"
 PLINTH_MESH_NAME = "SM_Pedestal_A"
-# Budget: one look including its mannequin is 160,000 triangles on desktop. The garment gets
-# most of it; the mannequins are 1,500 to 5,000 triangles each.
+# The garment's share of the first look budget (160,000 triangles with the mannequin). Since
+# 2026-09-19 a look ships as authored within 340,000 triangles (pipeline/gltf/lib/budget.mjs) and
+# every garment exports its LOD 0 source model; the value is only recorded per garment, unchanged so
+# that a new export stays comparable with the known-good one.
 GARMENT_BUDGET = 150_000
 
 EAL = unreal.EditorAssetLibrary

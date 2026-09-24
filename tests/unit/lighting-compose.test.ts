@@ -123,8 +123,8 @@ describe('visible HDR background', () => {
 describe('HDR equirectangular orientation', () => {
   it('keeps the loader vertical flip, so the first (sky) scanline uploads at the zenith', async () => {
     // Both backends put the first uploaded row at v = 0, which equirectUV maps to straight down;
-    // HDRLoader's flipY = true is what turns its top-down scanlines upright. Clearing it (177c727)
-    // put the field overhead and tinted the room olive.
+    // HDRLoader's flipY = true is what turns its top-down scanlines upright. Clearing it (the
+    // 2026-09-23 integration) put the field overhead and tinted the room olive.
     const { orientHdrEquirectangular } = await import('../../src/lighting/environment');
     const { EquirectangularReflectionMapping, Texture } = await import('three');
 

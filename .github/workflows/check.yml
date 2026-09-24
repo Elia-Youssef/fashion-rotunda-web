@@ -1,5 +1,4 @@
-# G0.8: the gate on every push and pull request to main. The file stays inert until the
-# repository is pushed, which is a later decision. No secrets and no deploy step: deploying stays
+# The gate on every push and pull request to main. No secrets and no deploy step: deploying stays
 # with the release process. CI runs only the webgl2 project; the webgpu project needs a headed browser
 # with a real adapter and runs locally.
 name: check

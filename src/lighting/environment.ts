@@ -156,9 +156,10 @@ export function createSkyOnlyBackground(source: Texture): Texture {
 /**
  * Sets the equirectangular mapping and keeps HDRLoader's flipY = true. The file's first scanlines
  * are sky; both backends upload the first row at v = 0 unless flipY is set, and three r186
- * equirectUV maps v = 0 to straight down, so flipY = false (177c727 to the 2026-09-23 sky change)
- * put the field overhead and tinted the lit room olive. The dome "terrain" that once looked like an
- * upside-down HDR was the then-metallic dome glass mirroring the lower hemisphere.
+ * equirectUV maps v = 0 to straight down, so flipY = false (from the 2026-09-23 integration until
+ * that day's sky change) put the field overhead and tinted the lit room olive. The dome "terrain"
+ * that once looked like an upside-down HDR was the then-metallic dome glass mirroring the lower
+ * hemisphere.
  * A probe build (green zenith, red ground, rows written top-down) showed a red dome on both backends.
  */
 export function orientHdrEquirectangular(texture: Texture): void {

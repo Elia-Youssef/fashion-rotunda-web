@@ -210,7 +210,7 @@ if (asJson) {
     );
     for (const texture of result.detail.textures) {
       const size = texture.size ? `${texture.size.width}x${texture.size.height}` : '?';
-      console.log(`    texture ${texture.name || '(unnamed)'} ${texture.mime} ${size} ${(texture.bytes / 1024).toFixed(0)} KB`);
+      console.log(`    texture ${texture.name || '(unnamed)'} ${texture.mime} ${size} ${(texture.bytes / 1000).toFixed(0)} KB`);
     }
     for (const material of result.detail.materials) {
       console.log(

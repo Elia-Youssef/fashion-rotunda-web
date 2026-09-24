@@ -146,7 +146,7 @@ export async function writeCollision(out = contentDir) {
   }
 
   console.log(
-    `collision: ${finalTriangles} triangles, ${(glbBytes.byteLength / 1024).toFixed(1)} KB ` +
+    `collision: ${finalTriangles} triangles, ${(glbBytes.byteLength / 1000).toFixed(1)} KB ` +
       `(${glbBytes.byteLength} bytes) written to ${targets.join(', ')}`,
   );
 
