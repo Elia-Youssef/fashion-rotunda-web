@@ -155,8 +155,8 @@ export function mountShell(doc: Document): ShellHandle {
   function sheetMode(): boolean {
     return breakpoint === 'phone' || shortViewport;
   }
-  // The defaults, never persisted: the Light Control drawer starts closed on every breakpoint —
-  // the hero reference ships it shut — and the card sheet starts closed where sheets exist at
+  // The defaults, never persisted: the Light Control drawer starts closed on every breakpoint
+  // (the hero reference ships it shut), and the card sheet starts closed where sheets exist at
   // all. Opening is always the visitor's explicit act, through the toggle or setLightPanelOpen.
   let lightOpen = false;
   let cardSheetOpen = false;

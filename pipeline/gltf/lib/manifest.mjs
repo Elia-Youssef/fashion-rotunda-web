@@ -81,6 +81,19 @@ export function buildManifest(generated, sets, errors = []) {
   return out;
 }
 
+/**
+ * The text of a shipped JSON file: two-space indented with a final newline, and every character
+ * outside printable ASCII written as a backslash-u escape, so the file stays ASCII while its parsed
+ * value is unchanged. Catalogue descriptions come from the Unreal data and can carry typographic dashes.
+ */
+export function shippedJson(value) {
+  const text = JSON.stringify(value, null, 2).replace(
+    /[^\n\x20-\x7e]/g,
+    (ch) => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'),
+  );
+  return `${text}\n`;
+}
+
 /** Key order is part of byte-identical output, so the files map is always sorted. */
 function sortedByKey(files) {
   const sorted = {};

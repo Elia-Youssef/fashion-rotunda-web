@@ -85,8 +85,8 @@ describe('mountProofPanel', () => {
     expect(text).toContain('budget=16.7');
     expect(text).toContain('threshold=13.36');
     expect(text).toContain('governor log');
-    expect(text.indexOf('down full → ssgi-half')).toBeGreaterThan(-1);
-    expect(text.indexOf('up no-ssgi → ssgi-half')).toBeGreaterThan(-1);
+    expect(text.indexOf('down full \u2192 ssgi-half')).toBeGreaterThan(-1);
+    expect(text.indexOf('up no-ssgi \u2192 ssgi-half')).toBeGreaterThan(-1);
     expect(text).toContain('p95 19.4 ms > 16.7 ms');
     expect(text).toContain('p95 12.7 ms <= 13.36 ms after 10.0 s');
     expect(text).toContain('cache');

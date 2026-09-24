@@ -43,7 +43,7 @@ import { ENVIRONMENT_FILE } from '../environment.mjs';
 import { assemble, assembledDir } from './assemble.mjs';
 import { writeCollision } from './collision.mjs';
 import { budgetRows, formatBudgetTable, formatMb } from './lib/budget.mjs';
-import { buildManifest, fileEntry, textureEntry } from './lib/manifest.mjs';
+import { buildManifest, fileEntry, shippedJson, textureEntry } from './lib/manifest.mjs';
 import { colorSpaceOfSlots, encodingOfSlots, isMannequinMaterial, ktx2Format } from './lib/naming.mjs';
 import { validateOutputContract } from './lib/output-contract.mjs';
 import { planFactorResets, planRepairs } from './lib/repairs.mjs';
@@ -161,12 +161,12 @@ async function main() {
 
   await writeThumbnails(catalog, out);
   const shipped = shippedCatalog(catalog);
-  writeFileSync(resolve(out, 'catalog.json'), JSON.stringify(shipped, null, 2) + '\n');
-  writeFileSync(resolve(out, 'half', 'catalog.json'), JSON.stringify(shipped, null, 2) + '\n');
+  writeFileSync(resolve(out, 'catalog.json'), shippedJson(shipped));
+  writeFileSync(resolve(out, 'half', 'catalog.json'), shippedJson(shipped));
   copyBasisTranscoder(out);
 
   const manifest = buildManifest(new Date().toISOString().replace(/\.\d+Z$/, 'Z'), sets, errors);
-  writeFileSync(resolve(out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+  writeFileSync(resolve(out, 'manifest.json'), shippedJson(manifest));
 
   console.log('');
   if (repairsMade.length === 0) console.log('repairs: none');

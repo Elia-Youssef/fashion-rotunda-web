@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
 // UI-2: the overlay shell contract. The canvas is the full scene field beneath the chrome, so
-// opening or closing the Light Control drawer must not move it — or anything else. The drawer
+// opening or closing the Light Control drawer must not move it, or anything else. The drawer
 // starts closed on every review viewport, with ARIA, hidden and the visible state in agreement.
 // webgl2 project only, like the chrome suite: the checks read the DOM, not the backend.
 

@@ -68,3 +68,4 @@ export declare function buildManifest(
   sets: Record<string, Record<string, ManifestFile>>,
   errors?: ManifestError[],
 ): Manifest;
+export declare function shippedJson(value: unknown): string;

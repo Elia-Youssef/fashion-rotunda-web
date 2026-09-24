@@ -490,13 +490,13 @@
 
 /* ==========================================================================
    Responsive Adaptations across 4 Target Viewports
-   - 1440 × 900 (Desktop default)
-   - 820 × 1180 (Tablet Portrait)
-   - 390 × 844 (Phone Portrait)
-   - 844 × 390 (Mobile Short Landscape)
+   - 1440 x900 (Desktop default)
+   - 820 x1180 (Tablet Portrait)
+   - 390 x844 (Phone Portrait)
+   - 844 x390 (Mobile Short Landscape)
    ========================================================================== */
 
-/* Tablet Portrait: 820 × 1180 */
+/* Tablet Portrait: 820 x1180 */
 @media (max-width: 900px) and (min-height: 900px) {
   .entry-lobby__card {
     max-width: var(--lobby-card-max-width-tablet);
@@ -504,7 +504,7 @@
   }
 }
 
-/* Phone Portrait: 390 × 844 */
+/* Phone Portrait: 390 x844 */
 @media (max-width: 480px) {
   .entry-lobby__header {
     padding: calc(var(--space-2) + var(--safe-area-top))
@@ -555,7 +555,7 @@
   }
 }
 
-/* Mobile Short Landscape: 844 × 390 */
+/* Mobile Short Landscape: 844 x390 */
 @media (max-height: 480px) {
   .entry-lobby__header {
     padding: calc(var(--space-1) + var(--safe-area-top))

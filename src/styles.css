@@ -1,5 +1,5 @@
 /* The page is one screen that never scrolls: the stage is the whole viewport and every chrome
-   region — header, rail, card, light control, badge — floats over it as an overlay, so opening or
+   region (header, rail, card, light control, badge) floats over it as an overlay, so opening or
    closing any of them never resizes the canvas. The :root block is the one token sheet: every
    colour, size, duration and z-order the components use is named here, so a rebrand edits this
    block and nothing else. */

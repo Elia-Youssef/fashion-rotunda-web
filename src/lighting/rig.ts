@@ -107,8 +107,8 @@ function tintChannelToLinear(value: number): number {
 
 /**
  * The effective color of a studio light: Unreal combines the Kelvin temperature with the authored
- * sRGB tint by multiplication, so the two combine once in linear space — kelvinToRgb is already
- * linear and the tint crosses srgbToLinear exactly once — and linearRgbToHex stores the result as
+ * sRGB tint by multiplication, so the two combine once in linear space (kelvinToRgb is already
+ * linear and the tint crosses srgbToLinear exactly once), and linearRgbToHex stores the result as
  * sRGB hex. Every channel stays in [0, 1], so no NaN or out-of-range value can reach a light.
  */
 export function kelvinTintToHex(

@@ -360,7 +360,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
                 LOAD EXPERIENCE
               </button>
             </div>
-            <p class="entry-lobby__telemetry" aria-hidden="true">WEBGPU NATIVE • WEBGL 2 FALLBACK • THREE-LIGHT STUDIO RIG • KTX2</p>
+            <p class="entry-lobby__telemetry" aria-hidden="true">WEBGPU NATIVE &bull; WEBGL 2 FALLBACK &bull; THREE-LIGHT STUDIO RIG &bull; KTX2</p>
           </div>
 
           <div class="entry-lobby__loading-pane" hidden>

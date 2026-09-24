@@ -263,7 +263,7 @@ test('the governor degrades, holds its cooldown, and recovers on headed webgpu',
       timeout: POLL_TIMEOUT,
       message: 'the proof panel reflects the committed recovery before it is captured',
     })
-    .toContain('up no-ssr → full');
+    .toContain('up no-ssr \u2192 full');
   const rigAfterRecovery = await rigState(page);
   expect(
     rigAfterRecovery,
@@ -355,8 +355,8 @@ test('the governor degrades, holds its cooldown, and recovers on headed webgpu',
     })
     .toContain('"direction":"up"');
   const panelText = (await page.locator('.proof-panel').textContent()) ?? '';
-  const downIndex = panelText.indexOf('down full → no-ssr');
-  const upIndex = panelText.indexOf('up no-ssr → full');
+  const downIndex = panelText.indexOf('down full \u2192 no-ssr');
+  const upIndex = panelText.indexOf('up no-ssr \u2192 full');
   expect(downIndex, 'the panel shows the downgrade').toBeGreaterThan(-1);
   expect(upIndex, 'the panel shows the recovery').toBeGreaterThan(-1);
   expect(downIndex, 'the panel shows the downgrade before the recovery').toBeLessThan(upIndex);

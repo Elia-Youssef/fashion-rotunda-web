@@ -91,7 +91,7 @@ function formatGovernorLog(raw: string | undefined): string {
     ) {
       return 'unreadable governor log';
     }
-    lines.push(`${event.direction} ${event.from} → ${event.to}; ${event.reason}`);
+    lines.push(`${event.direction} ${event.from} \u2192 ${event.to}; ${event.reason}`);
   }
   return lines.join(' | ');
 }

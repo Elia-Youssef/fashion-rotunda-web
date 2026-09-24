@@ -3,6 +3,7 @@ import {
   buildManifest,
   fileEntry,
   SET_NAMES,
+  shippedJson,
   textureEntry,
   totalsOf,
 } from '../../pipeline/gltf/lib/manifest.mjs';
@@ -22,6 +23,22 @@ function texture(name: string, width: number, format: 'ktx2-uastc' | 'ktx2-etc1s
     floor,
   });
 }
+
+describe('shippedJson', () => {
+  it('matches JSON.stringify for ASCII content, two-space indented with a final newline', () => {
+    const value = { name: 'Wallis Dress', sizes: [1, 2], nested: { ok: true } };
+    expect(shippedJson(value)).toBe(`${JSON.stringify(value, null, 2)}\n`);
+  });
+
+  it('writes every character outside ASCII as an escape and keeps the parsed value', () => {
+    const dash = String.fromCharCode(0x2013);
+    const value = { description: `a different shape ${dash} had an influence`, mark: String.fromCodePoint(0x1f600) };
+    const text = shippedJson(value);
+    expect(text).toMatch(/^[\n\x20-\x7e]*$/);
+    expect(text).toContain('\\u2013');
+    expect(JSON.parse(text)).toEqual(value);
+  });
+});
 
 describe('textureEntry', () => {
   it('carries the contract fields and derives gpuBytes rather than trusting a caller', () => {
