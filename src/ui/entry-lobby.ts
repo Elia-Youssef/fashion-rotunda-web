@@ -64,7 +64,7 @@ export const APPROVED_FACTS: Array<{ heading: string; text: string; source: stri
   {
     heading: 'ARCHITECTURAL & GRAPHICS PROVENANCE',
     text: 'Built on WebGPU for next-generation hardware rasterization, with seamless automatic fallback to WebGL 2.',
-    source: 'Source: src/main.ts, lines 189–196',
+    source: 'Source: src/renderer/create.ts',
   },
   {
     heading: 'SPATIAL GEOMETRY RECONSTRUCTION',
@@ -374,7 +374,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
               <div class="entry-lobby__fact-diamond" aria-hidden="true"></div>
               <span class="entry-lobby__fact-heading">ARCHITECTURAL &amp; GRAPHICS PROVENANCE</span>
               <p class="entry-lobby__fact-text">"Built on WebGPU for next-generation hardware rasterization, with seamless automatic fallback to WebGL 2."</p>
-              <span class="entry-lobby__fact-source">Source: src/main.ts, lines 189–196</span>
+              <span class="entry-lobby__fact-source">Source: src/renderer/create.ts</span>
             </div>
           </div>
 
