@@ -5,9 +5,9 @@
 // The dome glass refracts the room through a ViewportTextureNode (nodes/functions/
 // PhysicalLightingModel.js lines 70-71). The node keeps one framebuffer texture per render target, made
 // with Texture.clone() (nodes/display/ViewportTextureNode.js line 135), and a clone shares the
-// original's Source (textures/Texture.js line 478), so every per-target texture reads and writes one
-// image size. updateBefore (ViewportTextureNode.js lines 159-198) flags a texture for reallocation only
-// when that shared size differs from its own target's size.
+// original's TextureSource (textures/Texture.js line 478), so every per-target texture reads and writes
+// one image size. updateBefore (ViewportTextureNode.js lines 159-198) flags a texture for reallocation
+// only when that shared size differs from its own target's size.
 //
 // The post chain draws the scene twice per frame at the same size: the pre-pass, then the scene pass.
 // After a pixel-ratio step of the resolution scaler, the pre-pass resizes the shared image and its
@@ -15,10 +15,11 @@
 // at the previous size, so WebGPU rejects the copy into it as out of bounds, every frame until the
 // next step.
 //
-// A Source of its own gives each per-target texture its own size, so each one is reallocated when its
-// own target changes. The default framebuffer texture, used with no render target, is left as it is.
+// A TextureSource of its own (the r186 name; the old `Source` alias logs a deprecation warning) gives
+// each per-target texture its own size, so each one is reallocated when its own target changes. The
+// default framebuffer texture, used with no render target, is left as it is.
 
-import { Source, ViewportTextureNode } from 'three/webgpu';
+import { TextureSource, ViewportTextureNode } from 'three/webgpu';
 import type { Texture } from 'three/webgpu';
 
 type Reference = Parameters<ViewportTextureNode['getTextureForReference']>[0];
@@ -45,7 +46,7 @@ export function separateViewportTextureSizes(): void {
     if (reference !== null && !separated.has(texture)) {
       separated.add(texture);
       const { width, height } = texture.image as { width: number; height: number };
-      texture.source = new Source({ width, height });
+      texture.source = new TextureSource({ width, height });
     }
     return texture;
   };

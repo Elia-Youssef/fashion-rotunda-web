@@ -44,6 +44,9 @@ describe('ViewportTextureNode with two render targets of the same size', () => {
   });
 
   it('flags every target texture for reallocation when its own target changes size', () => {
+    // The first per-target texture is separated in this test, so a deprecated three name used for it
+    // (the r186 `Source` alias warns once per page) would show up here.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     separateViewportTextureSizes();
     const node = new ViewportTextureNode();
     const prePass = new RenderTarget(1440, 900);
@@ -63,6 +66,8 @@ describe('ViewportTextureNode with two render targets of the same size', () => {
     expect(sceneTexture.version).toBeGreaterThan(sceneVersion);
     expect(sceneTexture.image).toMatchObject({ width: 1224, height: 765 });
     expect(preTexture.image).toMatchObject({ width: 1224, height: 765 });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('keeps one texture per target across frames and leaves the default framebuffer alone', () => {
