@@ -1,6 +1,75 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PROOF_POSITION, PROOF_TARGET, runProofOrbit } from '../../src/proof/orbit-run';
+
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe.each(['raf', 'timeout'] as const)('orbit lifetime with %s scheduling', (kind) => {
+  it.each(['before', 'during', 'after'] as const)('retires work when aborted %s the run', async (stage) => {
+    vi.useFakeTimers();
+    const queued = new Map<number, () => void>();
+    let nextId = 0;
+    const request = vi.fn((callback: () => void) => {
+      queued.set(++nextId, callback);
+      return nextId;
+    });
+    const cancel = vi.fn((handle: number) => { queued.delete(handle); });
+    vi.stubGlobal('requestAnimationFrame', kind === 'raf' ? request : undefined);
+    vi.stubGlobal('cancelAnimationFrame', cancel);
+    const controller = new AbortController();
+    const remove = vi.spyOn(controller.signal, 'removeEventListener');
+    if (stage === 'before') controller.abort();
+    let clock = 0;
+    const setPose = vi.fn();
+    const onFrame = vi.fn();
+    let outcome = 'pending';
+    const finished = runProofOrbit({
+      setPose, onFrame, proofPosition: PROOF_POSITION, proofTarget: PROOF_TARGET,
+      durationMs: 100, now: () => clock, signal: controller.signal,
+    }).then(() => { outcome = 'completed'; }, (error: unknown) => {
+      expect(error).toBeInstanceOf(DOMException);
+      expect((error as DOMException).name).toBe('AbortError');
+      outcome = 'aborted';
+    });
+    const advance = async (time: number) => {
+      clock = time;
+      if (kind === 'raf') {
+        const entry = queued.entries().next().value;
+        if (entry !== undefined) {
+          queued.delete(entry[0]);
+          entry[1]();
+        }
+      } else {
+        await vi.advanceTimersByTimeAsync(16);
+      }
+    };
+    if (stage !== 'before') await advance(stage === 'after' ? 100 : 50);
+    const staleCallback = queued.values().next().value;
+    controller.abort();
+    await Promise.resolve();
+    expect(outcome).toBe(stage === 'after' ? 'completed' : 'aborted');
+    expect(queued.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+    if (stage === 'before') {
+      expect(setPose).not.toHaveBeenCalled();
+      expect(onFrame).not.toHaveBeenCalled();
+    } else {
+      expect(remove).toHaveBeenCalledWith('abort', expect.any(Function));
+    }
+    const poses = setPose.mock.calls.length;
+    const frames = onFrame.mock.calls.length;
+    // Even a callback already dispatched by the scheduler must be inert after retirement.
+    staleCallback?.();
+    await advance(200);
+    expect(setPose).toHaveBeenCalledTimes(poses);
+    expect(onFrame).toHaveBeenCalledTimes(frames);
+    await finished;
+  });
+});
 
 /** Narrows the parsed catalogue down to views.proof through `in` checks, with no cast anywhere. */
 function readProofView(json: string): unknown {
@@ -35,8 +104,9 @@ describe('runProofOrbit', () => {
     let currentTime = 0;
     const callbacks: (() => void)[] = [];
 
-    const raf = (cb: () => void): void => {
+    const raf = (cb: () => void): number => {
       callbacks.push(cb);
+      return callbacks.length;
     };
 
     const promise = runProofOrbit({
@@ -51,7 +121,7 @@ describe('runProofOrbit', () => {
         frameCalls += 1;
       },
       now: () => currentTime,
-      raf,
+      scheduler: { request: raf, cancel: () => {} },
     });
 
     // First frame is synchronously recorded before the first tick.

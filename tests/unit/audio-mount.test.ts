@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mountMusic } from '../../src/audio/mount';
 import type { MusicMount } from '../../src/audio/mount';
+import type { AudioBuses, AudioEngine } from '../../src/audio/engine';
 
 // The mount is driven through the same kind of fakes the player test uses, one level lower: the
 // engine is the real one and the AudioContext under it is the fake, so the state listener the
@@ -176,6 +177,93 @@ afterEach(() => {
   mounted = null;
   header.remove();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe('music mount lifetime', () => {
+  it.each([
+    ['pause', 'suspended', 'refused'],
+    ['pause', 'interrupted', 'running'],
+    ['play', 'suspended', 'refused'],
+    ['play', 'interrupted', 'running'],
+  ] as const)('retires recovery during %s after %s with %s unlock', async (stage, state, outcome) => {
+    let stateChanged!: Parameters<AudioEngine['onStateChange']>[0];
+    let finishFirst!: (buses: AudioBuses | null) => void;
+    let finishRecovery!: (buses: AudioBuses | null) => void;
+    const first = new Promise<AudioBuses | null>((resolve) => { finishFirst = resolve; });
+    const recovery = new Promise<AudioBuses | null>((resolve) => { finishRecovery = resolve; });
+    const unlock = vi.fn().mockReturnValueOnce(first).mockReturnValueOnce(recovery).mockResolvedValue(null);
+    const release = vi.fn();
+    const engine: AudioEngine = {
+      buses: null, unlock, dispose: vi.fn(),
+      onStateChange: (listener) => { stateChanged = listener; return release; },
+    };
+    mounted = mountMusic({ headerRoot: header, search: '?music=off', baseUrl: '/content/music', engine });
+    const starting = mounted.player.play();
+    expect(mounted.player.state).toBe('loading');
+    const play = vi.spyOn(mounted.player, 'play');
+    const realPause = mounted.player.pause;
+    let finishPause!: () => void;
+    const pauseGate = new Promise<void>((resolve) => { finishPause = resolve; });
+    const pause = vi.spyOn(mounted.player, 'pause').mockImplementation(async () => {
+      await realPause();
+      if (stage === 'pause') await pauseGate;
+    });
+    stateChanged('running');
+    stateChanged(state);
+    if (stage === 'play') await settle();
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(unlock).toHaveBeenCalledTimes(stage === 'play' ? 2 : 1);
+    mounted.dispose();
+    expect(release).toHaveBeenCalledTimes(1);
+    const registrations = vi.spyOn(window, 'addEventListener');
+    const plays = play.mock.calls.length;
+    const unlocks = unlock.mock.calls.length;
+    finishPause();
+    const fakeContext = new FakeAudioContext();
+    const buses: AudioBuses = {
+      context: fakeContext as unknown as AudioContext,
+      music: new FakeGain() as unknown as GainNode,
+    };
+    finishRecovery(outcome === 'running' ? buses : null);
+    finishFirst(null);
+    await starting;
+    await settle();
+    // A callback dispatched before the subscription was released also belongs to the retired mount.
+    stateChanged('running');
+    stateChanged(state);
+    window.dispatchEvent(new Event('pointerdown'));
+    window.dispatchEvent(new Event('keydown'));
+    await mounted.startDeferred();
+    await settle();
+    expect(registrations.mock.calls.filter(([type]) => type === 'pointerdown' || type === 'keydown')).toEqual([]);
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(play).toHaveBeenCalledTimes(plays);
+    expect(unlock).toHaveBeenCalledTimes(unlocks);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('retires deferred start and armed gestures before playback starts', async () => {
+    activation.hasBeenActive = false;
+    mounted = mountMusic({
+      headerRoot: header, search: '?music=on', baseUrl: '/content/music', deferPlay: true,
+    });
+    const unlock = vi.spyOn(mounted.engine, 'unlock');
+    const play = vi.spyOn(mounted.player, 'play');
+    const retained = button();
+    mounted.dispose();
+    const registrations = vi.spyOn(window, 'addEventListener');
+    await mounted.startDeferred();
+    activation.hasBeenActive = true;
+    retained.click();
+    window.dispatchEvent(new Event('pointerdown'));
+    window.dispatchEvent(new Event('keydown'));
+    await settle();
+    expect(registrations.mock.calls.filter(([type]) => type === 'pointerdown' || type === 'keydown')).toEqual([]);
+    expect(play).not.toHaveBeenCalled();
+    expect(unlock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('mountMusic and an interrupted context', () => {

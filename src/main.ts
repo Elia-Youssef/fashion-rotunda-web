@@ -24,6 +24,7 @@ import { latestLookSwitchMs, markFirstFrame, snapshot } from './proof/marks';
 import { PROOF_POSITION, PROOF_TARGET, runProofOrbit } from './proof/orbit-run';
 import { mountProofPanel, overlayWanted } from './proof/panel';
 import { createRenderer, describeRendererError } from './renderer/create';
+import { withCompilationDeadline } from './renderer/compile-deadline';
 import { showLossNotice, showPoster } from './renderer/notices';
 import { detectSupport } from './renderer/support';
 import { SCENE_BACKGROUND, createShowroom } from './scene/showroom';
@@ -651,7 +652,7 @@ async function main(): Promise<void> {
           governor: canvas.dataset.governor ?? 'off',
           governorLog: canvas.dataset.governorLog ?? '',
         }),
-      measure: async () => {
+      measure: async (signal) => {
         if (cameraMount === null) {
           throw new Error('camera not mounted yet');
         }
@@ -670,6 +671,7 @@ async function main(): Promise<void> {
           durationMs: 10_000,
           onFrame: () => loop.invalidate(),
           now: () => performance.now(),
+          signal,
         });
       },
     });
@@ -908,11 +910,7 @@ async function main(): Promise<void> {
     const room = showroom;
     let shadersCompiled = false;
     try {
-      const compilePromise = renderer.compileAsync(room.scene, room.camera);
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Shader compilation timed out')), 15000);
-      });
-      await Promise.race([compilePromise, timeoutPromise]);
+      await withCompilationDeadline(renderer.compileAsync(room.scene, room.camera));
       shadersCompiled = true;
     } catch (compileError) {
       canvas.dataset.scene = 'error';

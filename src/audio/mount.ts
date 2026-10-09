@@ -57,6 +57,7 @@ function readStore(): KeyValueStore | null {
 const SWITCH_SELECTOR = '.music-switch';
 
 export function mountMusic(options: MusicMountOptions): MusicMount {
+  const lifetime = new AbortController();
   const engine = options.engine ?? createAudioEngine();
   const store = readStore();
   const preference = resolveMusicPreference(options.search, store);
@@ -79,6 +80,7 @@ export function mountMusic(options: MusicMountOptions): MusicMount {
     level: 0.5,
     fadeMs: 400,
     onStateChange: (state, detail) => {
+      if (lifetime.signal.aborted) return;
       switchHandle?.setState(state, detail);
       if (state === 'armed') {
         // Armed at boot, or armed again after a context that will not run: either way the next
@@ -94,12 +96,13 @@ export function mountMusic(options: MusicMountOptions): MusicMount {
 
   /** Idempotent: called at boot, on every armed state, and by the interruption recovery. */
   function listenForGesture(): void {
-    if (gestures !== null) {
+    if (lifetime.signal.aborted || gestures !== null) {
       return;
     }
     const controller = new AbortController();
     gestures = controller;
     const onFirstGesture = (event: Event): void => {
+      if (lifetime.signal.aborted) return;
       // A press on the switch is the switch's own business: its click decides what the press
       // means, and answering the capture-phase pointerdown here would start a fetch that the
       // click that follows immediately aborts.
@@ -125,6 +128,7 @@ export function mountMusic(options: MusicMountOptions): MusicMount {
   switchHandle = mountMusicSwitch(options.headerRoot, {
     state: player.state,
     onToggle: () => {
+      if (lifetime.signal.aborted) return;
       const before = player.state;
       void player.toggle();
       storeMusicPreference(store, before === 'off' || before === 'error' ? 'on' : 'off');
@@ -138,6 +142,7 @@ export function mountMusic(options: MusicMountOptions): MusicMount {
   // and on error where it refuses, and both leave the next gesture able to bring the loop back at
   // the position it kept.
   const releaseEngineWatch = engine.onStateChange((state) => {
+    if (lifetime.signal.aborted) return;
     if (state === 'running') {
       contextRan = true;
       return;
@@ -150,7 +155,9 @@ export function mountMusic(options: MusicMountOptions): MusicMount {
     }
     void (async () => {
       await player.pause();
+      if (lifetime.signal.aborted) return;
       await player.play();
+      if (lifetime.signal.aborted) return;
       if (player.state !== 'playing') {
         listenForGesture();
       }
@@ -180,11 +187,15 @@ export function mountMusic(options: MusicMountOptions): MusicMount {
     engine,
     player,
     async startDeferred(): Promise<void> {
+      if (lifetime.signal.aborted) return;
       if (preference === 'on' && player.state !== 'playing' && player.state !== 'loading') {
         await player.play();
       }
     },
     dispose(): void {
+      if (lifetime.signal.aborted) return;
+      // Retire the lifetime before child teardown can report another state or resume recovery.
+      lifetime.abort();
       stopListeningForGesture();
       releaseEngineWatch();
       switchHandle?.dispose();

@@ -12,7 +12,7 @@ export { overlayWanted } from './overlay';
 
 export interface PanelOptions {
   read: () => ProofSnapshot;
-  measure: () => Promise<void>; // runs the orbit; the panel disables its button meanwhile
+  measure: (signal: AbortSignal) => Promise<void>; // disables its button while the orbit runs
   intervalMs?: number | undefined;
 }
 
@@ -97,6 +97,7 @@ function formatGovernorLog(raw: string | undefined): string {
 }
 
 export function mountProofPanel(root: HTMLElement, options: PanelOptions): PanelHandle {
+  const lifetime = new AbortController();
   const section = document.createElement('section');
   section.className = 'proof-panel';
   section.setAttribute('aria-label', 'Proof');
@@ -135,6 +136,7 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
   }
 
   function refresh(): void {
+    if (lifetime.signal.aborted) return;
     const snap = options.read();
     dl.replaceChildren();
 
@@ -174,10 +176,12 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
   }
 
   button.addEventListener('click', async () => {
+    if (lifetime.signal.aborted || button.disabled) return;
     button.disabled = true;
     status.textContent = 'measuring...';
     try {
-      await options.measure();
+      await options.measure(lifetime.signal);
+      if (lifetime.signal.aborted) return;
       const snap = options.read();
       const budget = tierBudgetMs(snap.tier);
       const check = snap.frameP95Ms <= budget ? 'inside' : 'over';
@@ -193,11 +197,12 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
       status.textContent = '';
       refresh();
     } catch (error: unknown) {
+      if (lifetime.signal.aborted) return;
       status.textContent = error instanceof Error ? error.message : 'measure failed';
     } finally {
-      button.disabled = false;
+      if (!lifetime.signal.aborted) button.disabled = false;
     }
-  });
+  }, { signal: lifetime.signal });
 
   refresh();
   const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
@@ -206,6 +211,7 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
   return {
     refresh,
     dispose(): void {
+      lifetime.abort();
       window.clearInterval(timer);
       section.remove();
     },

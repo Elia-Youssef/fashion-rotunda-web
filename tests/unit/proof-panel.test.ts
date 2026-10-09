@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mountProofPanel, overlayWanted } from '../../src/proof/panel';
 import type { ProofSnapshot } from '../../src/proof/marks';
+import { PROOF_POSITION, PROOF_TARGET, runProofOrbit } from '../../src/proof/orbit-run';
 
 function sampleSnapshot(): ProofSnapshot {
   return {
@@ -34,6 +35,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('overlayWanted', () => {
@@ -46,6 +49,94 @@ describe('overlayWanted', () => {
 });
 
 describe('mountProofPanel', () => {
+  it.each(['raf', 'timeout'] as const)('disposal retires the active %s orbit and retained button', async (kind) => {
+    const pending = new Map<number, () => void>();
+    let id = 0;
+    vi.stubGlobal('requestAnimationFrame', kind === 'raf' ? (cb: () => void) => {
+      pending.set(++id, cb);
+      return id;
+    } : undefined);
+    vi.stubGlobal('cancelAnimationFrame', (handle: number) => { pending.delete(handle); });
+    const root = document.createElement('div');
+    const read = vi.fn(sampleSnapshot);
+    const setPose = vi.fn();
+    const onFrame = vi.fn();
+    let clock = 0;
+    const measure = vi.fn((signal: AbortSignal) => runProofOrbit({
+      setPose, onFrame, proofPosition: PROOF_POSITION, proofTarget: PROOF_TARGET,
+      durationMs: 100, now: () => clock, signal,
+    }));
+    const handle = mountProofPanel(root, { read, measure });
+    const section = root.querySelector<HTMLElement>('.proof-panel')!;
+    const button = root.querySelector<HTMLButtonElement>('.proof-panel__measure')!;
+    button.click();
+    expect(setPose).toHaveBeenCalledTimes(1);
+    handle.dispose();
+    const detachedText = section.textContent;
+    const reads = read.mock.calls.length;
+    clock = 100;
+    for (const callback of [...pending.values()]) callback();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(setPose).toHaveBeenCalledTimes(1);
+    expect(onFrame).toHaveBeenCalledTimes(1);
+    expect(pending.size).toBe(0);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(read).toHaveBeenCalledTimes(reads);
+    expect(section.textContent).toBe(detachedText);
+    expect(button.disabled).toBe(true);
+    button.disabled = false;
+    button.click();
+    handle.refresh();
+    expect(measure).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledTimes(reads);
+  });
+
+  it.each(['before', 'after'] as const)('retained Measure is inert when disposed %s a completed run', async (stage) => {
+    const root = document.createElement('div');
+    const read = vi.fn(sampleSnapshot);
+    const measure = vi.fn(async () => {});
+    const handle = mountProofPanel(root, { read, measure });
+    const button = root.querySelector<HTMLButtonElement>('.proof-panel__measure')!;
+    if (stage === 'after') {
+      button.click();
+      await Promise.resolve();
+      expect(button.disabled).toBe(false);
+      expect(root.textContent).toContain('budget: 16.7 ms (inside)');
+    }
+    handle.dispose();
+    const reads = read.mock.calls.length;
+    button.click();
+    handle.refresh();
+    await Promise.resolve();
+    expect(measure).toHaveBeenCalledTimes(stage === 'after' ? 1 : 0);
+    expect(read).toHaveBeenCalledTimes(reads);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['resolve', 'reject'] as const)('ignores a late measurement %s after disposal', async (outcome) => {
+    const root = document.createElement('div');
+    const read = vi.fn(sampleSnapshot);
+    let resolve!: () => void;
+    let reject!: (error: Error) => void;
+    const handle = mountProofPanel(root, { read, measure: () => new Promise<void>((yes, no) => {
+      resolve = yes;
+      reject = no;
+    }) });
+    const section = root.querySelector<HTMLElement>('.proof-panel')!;
+    const button = root.querySelector<HTMLButtonElement>('.proof-panel__measure')!;
+    button.click();
+    handle.dispose();
+    const text = section.textContent;
+    const reads = read.mock.calls.length;
+    if (outcome === 'resolve') resolve();
+    else reject(new Error('late failure'));
+    await Promise.resolve();
+    expect(read).toHaveBeenCalledTimes(reads);
+    expect(section.textContent).toBe(text);
+    expect(button.disabled).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('mounts section.proof-panel with definition list rows and units', () => {
     const root = document.createElement('div');
     document.body.appendChild(root);
