@@ -58,6 +58,45 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
     }
   }
 
+  function startTransit(): void {
+    // Moving outside both surfaces must not keep restarting the grace period.
+    if (transitTimer !== null) {
+      return;
+    }
+    transitTimer = window.setTimeout(() => {
+      transitTimer = null;
+      hoveredAnchor = null;
+      reconcile();
+    }, HOVER_TRANSIT_DELAY_MS);
+  }
+
+  function containsPointer(rect: DOMRect, event: PointerEvent): boolean {
+    return event.clientX >= rect.left && event.clientX <= rect.right
+      && event.clientY >= rect.top && event.clientY <= rect.bottom;
+  }
+
+  function onPointerMove(event: PointerEvent): void {
+    if (activeAnchor === null) {
+      return;
+    }
+    const anchor = findAnchor(event.target);
+    // The control under the pointer wins even where the non-interactive tooltip overlaps it.
+    if (anchor !== null && root.contains(anchor) && anchor !== activeAnchor) {
+      cancelTransit();
+      dismissedAnchor = null;
+      hoveredAnchor = anchor;
+      reconcile(anchor);
+      return;
+    }
+    if (containsPointer(activeAnchor.getBoundingClientRect(), event)
+      || containsPointer(tooltip.getBoundingClientRect(), event)) {
+      cancelTransit();
+      hoveredAnchor = activeAnchor;
+    } else {
+      startTransit();
+    }
+  }
+
   function reconcile(preferredAnchor?: HTMLElement): void {
     // The latest deliberate entry wins when hover and focus belong to different controls.
     const activeOwned = activeAnchor !== null && (activeAnchor === hoveredAnchor || activeAnchor === focusedAnchor);
@@ -118,6 +157,7 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
     tooltip.textContent = text;
     tooltip.hidden = false;
     updatePosition(anchor);
+    document.addEventListener('pointermove', onPointerMove);
   }
 
   function hide(): void {
@@ -125,6 +165,8 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
       return;
     }
 
+    document.removeEventListener('pointermove', onPointerMove);
+    cancelTransit();
     if (previousDescribedBy === null) {
       activeAnchor.removeAttribute('aria-describedby');
     } else {
@@ -150,13 +192,6 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
   root.addEventListener(
     'pointerover',
     (event) => {
-      const tooltipAnchor = activeAnchor ?? hoveredAnchor;
-      if (event.target instanceof Node && tooltip.contains(event.target) && tooltipAnchor !== null) {
-        cancelTransit();
-        hoveredAnchor = tooltipAnchor;
-        reconcile(tooltipAnchor);
-        return;
-      }
       const anchor = findAnchor(event.target);
       if (anchor !== null) {
         cancelTransit();
@@ -177,19 +212,14 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
         return;
       }
       const source = event.target;
-      if (!(source instanceof Node) || (!hoveredAnchor.contains(source) && !tooltip.contains(source))) {
+      if (!(source instanceof Node) || !hoveredAnchor.contains(source)) {
         return;
       }
       const related = event.relatedTarget;
-      if (related instanceof Node && (hoveredAnchor.contains(related) || tooltip.contains(related))) {
+      if (related instanceof Node && hoveredAnchor.contains(related)) {
         return;
       }
-      cancelTransit();
-      transitTimer = window.setTimeout(() => {
-        transitTimer = null;
-        hoveredAnchor = null;
-        reconcile();
-      }, HOVER_TRANSIT_DELAY_MS);
+      startTransit();
     },
     { signal },
   );

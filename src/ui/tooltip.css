@@ -8,7 +8,7 @@
   left: var(--tooltip-x, 0);
   top: var(--tooltip-y, 0);
   z-index: var(--z-gate);
-  pointer-events: auto;
+  pointer-events: none;
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-1);

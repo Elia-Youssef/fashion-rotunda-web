@@ -33,6 +33,7 @@ afterEach(() => {
   handle?.dispose();
   handle = null;
   root.remove();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -180,14 +181,49 @@ describe('installTooltips', () => {
 });
 
 describe('tooltip accessibility contract', () => {
-  function pointer(type: string, target: Element, relatedTarget: EventTarget | null = null): void {
-    target.dispatchEvent(new MouseEvent(type, { bubbles: true, relatedTarget }));
+  // The tooltip sits six pixels above the trigger and overlaps the neighbouring trigger.
+  const TRIGGER_RECT = { left: 100, top: 100, right: 140, bottom: 140 };
+  const TOOLTIP_RECT = { left: 80, top: 64, right: 160, bottom: 94 };
+  const NEXT_TRIGGER_RECT = { left: 100, top: 64, right: 140, bottom: 88 };
+  const TRANSIT_LIMIT_MS = 150; // The existing grace period across the six-pixel gap.
+
+  function rect(element: HTMLElement, bounds: typeof TRIGGER_RECT): void {
+    vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({
+      ...bounds,
+      x: bounds.left,
+      y: bounds.top,
+      width: bounds.right - bounds.left,
+      height: bounds.bottom - bounds.top,
+      toJSON: () => bounds,
+    });
+  }
+
+  function pointer(
+    type: string,
+    target: Element,
+    relatedTarget: EventTarget | null = null,
+    clientX = 120,
+    clientY = 120,
+  ): void {
+    target.dispatchEvent(new MouseEvent(type, { bubbles: true, relatedTarget, clientX, clientY }));
+  }
+
+  function move(clientX: number, clientY: number, target: Element = document.body): void {
+    pointer('pointermove', target, null, clientX, clientY);
+  }
+
+  function install(): HTMLElement {
+    handle = installTooltips(root);
+    const tooltip = root.querySelector<HTMLElement>('.a11y-tooltip')!;
+    rect(btn1, TRIGGER_RECT);
+    rect(btn2, NEXT_TRIGGER_RECT);
+    rect(tooltip, TOOLTIP_RECT);
+    return tooltip;
   }
 
   function hover(): HTMLElement {
-    handle = installTooltips(root);
+    const tooltip = install();
     pointer('pointerover', btn1);
-    const tooltip = root.querySelector<HTMLElement>('.a11y-tooltip')!;
     expect(tooltip.hidden).toBe(false);
     return tooltip;
   }
@@ -198,25 +234,29 @@ describe('tooltip accessibility contract', () => {
     // A short journey across the existing gap must not blank the text.
     vi.advanceTimersByTime(SHORT_TRANSIT_MS);
     expect(tooltip.hidden).toBe(false);
-    pointer('pointerover', tooltip, root);
+    // A non-interactive tooltip receives no events: the underlying page does.
+    move(90, 80);
     vi.runAllTimers();
     expect(tooltip.hidden).toBe(false);
     expect(tooltip.textContent).toBe('First tooltip');
     expect(btn1.getAttribute('aria-describedby')).toBe(tooltip.id);
-    pointer('pointerout', tooltip, root);
-    vi.runAllTimers();
+    move(10, 10);
+    vi.advanceTimersByTime(TRANSIT_LIMIT_MS - 1);
+    expect(tooltip.hidden).toBe(false);
+    vi.advanceTimersByTime(1);
     expect(tooltip.hidden).toBe(true);
     expect(btn1.hasAttribute('aria-describedby')).toBe(false);
   });
 
   it('keeps direct trigger-to-tooltip and return transit visible', () => {
     const tooltip = hover();
-    pointer('pointerout', btn1, tooltip);
-    pointer('pointerover', tooltip, btn1);
+    pointer('pointerout', btn1, root);
+    move(90, 80);
     vi.runAllTimers();
     expect(tooltip.hidden).toBe(false);
-    pointer('pointerout', tooltip, btn1);
-    pointer('pointerover', btn1, tooltip);
+    move(120, 97);
+    vi.advanceTimersByTime(SHORT_TRANSIT_MS);
+    move(120, 120);
     vi.runAllTimers();
     expect(tooltip.hidden).toBe(false);
   });
@@ -243,14 +283,13 @@ describe('tooltip accessibility contract', () => {
   });
 
   it('keeps tooltip hover after a focus-only trigger blurs', () => {
-    handle = installTooltips(root);
+    const tooltip = install();
     keyboardFocus(btn1);
-    const tooltip = root.querySelector<HTMLElement>('.a11y-tooltip')!;
-    pointer('pointerover', tooltip, root);
+    move(90, 80);
     btn1.blur();
     vi.runAllTimers();
     expect(tooltip.hidden).toBe(false);
-    pointer('pointerout', tooltip, root);
+    move(10, 10);
     vi.runAllTimers();
     expect(tooltip.hidden).toBe(true);
   });
@@ -292,10 +331,11 @@ describe('tooltip accessibility contract', () => {
 
   it('keeps Escape dismissed during tooltip transit and allows new keyboard focus', () => {
     const tooltip = hover();
-    pointer('pointerout', btn1, tooltip);
-    pointer('pointerover', tooltip, btn1);
+    pointer('pointerout', btn1, root);
+    move(90, 80);
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-    pointer('pointerover', btn1, tooltip);
+    move(120, 120);
+    vi.runAllTimers();
     expect(tooltip.hidden).toBe(true);
     pointer('pointerout', btn1, root);
     vi.runAllTimers();
@@ -315,12 +355,131 @@ describe('tooltip accessibility contract', () => {
     expect(btn1.hasAttribute('aria-describedby')).toBe(false);
   });
 
-  it('allows the tooltip surface to receive pointer events', () => {
+  it('keeps the tooltip stylesheet transparent to pointer events', () => {
     const css = readFileSync('src/ui/tooltip.css', 'utf8');
     const style = document.createElement('style');
     style.textContent = css;
     root.appendChild(style);
     const tooltip = hover();
-    expect(getComputedStyle(tooltip).pointerEvents).toBe('auto');
+    expect(getComputedStyle(tooltip).pointerEvents).toBe('none');
+  });
+
+  it('switches immediately to an underlying trigger even inside the tooltip rectangle', () => {
+    const child = document.createElement('span');
+    btn2.appendChild(child);
+    const tooltip = hover();
+    pointer('pointerout', btn1, root);
+    move(90, 80);
+    pointer('pointerover', child, root, 120, 76);
+    move(120, 76, child);
+    expect(tooltip.textContent).toBe('Second tooltip');
+    expect(btn1.hasAttribute('aria-describedby')).toBe(false);
+    expect(btn2.getAttribute('aria-describedby')).toBe('existing-id a11y-tooltip');
+    vi.runAllTimers();
+    expect(tooltip.hidden).toBe(false);
+    expect(tooltip.textContent).toBe('Second tooltip');
+    pointer('pointerover', btn1, root);
+    expect(tooltip.textContent).toBe('First tooltip');
+    // Document geometry handling must also prefer the actual underlying trigger.
+    move(120, 76, child);
+    expect(tooltip.textContent).toBe('Second tooltip');
+  });
+
+  it('keeps the trigger rectangle hovered when only document pointermove reaches it', () => {
+    const tooltip = hover();
+    pointer('pointerout', btn1, root);
+    move(120, 120);
+    vi.runAllTimers();
+    expect(tooltip.hidden).toBe(false);
+    move(10, 10);
+    vi.advanceTimersByTime(TRANSIT_LIMIT_MS);
+    expect(tooltip.hidden).toBe(true);
+  });
+
+  it('uses both rectangle edges and starts a fresh delay after leaving the tooltip', () => {
+    const tooltip = hover();
+    pointer('pointerout', btn1, root);
+    for (const [x, y] of [[80, 64], [160, 94], [80, 94], [160, 64]] as const) {
+      move(x, y);
+      vi.advanceTimersByTime(TRANSIT_LIMIT_MS);
+      expect(tooltip.hidden).toBe(false);
+    }
+    move(161, 95);
+    vi.advanceTimersByTime(TRANSIT_LIMIT_MS - 1);
+    expect(tooltip.hidden).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(tooltip.hidden).toBe(true);
+  });
+
+  it('does not postpone hiding on repeated moves outside both rectangles', () => {
+    const tooltip = hover();
+    pointer('pointerout', btn1, root);
+    move(90, 80);
+    move(10, 10);
+    vi.advanceTimersByTime(SHORT_TRANSIT_MS);
+    move(20, 20);
+    vi.advanceTimersByTime(TRANSIT_LIMIT_MS - SHORT_TRANSIT_MS);
+    expect(tooltip.hidden).toBe(true);
+  });
+
+  it('reads the current tooltip rectangle after its layout changes', () => {
+    const tooltip = hover();
+    pointer('pointerout', btn1, root);
+    rect(tooltip, { left: 200, top: 200, right: 280, bottom: 230 });
+    move(240, 215);
+    vi.runAllTimers();
+    expect(tooltip.hidden).toBe(false);
+    move(90, 80);
+    vi.advanceTimersByTime(TRANSIT_LIMIT_MS);
+    expect(tooltip.hidden).toBe(true);
+  });
+
+  it('owns one document pointermove listener only while shown, including focus and Escape', () => {
+    const added = vi.spyOn(document, 'addEventListener');
+    const removed = vi.spyOn(document, 'removeEventListener');
+    const tooltip = install();
+    const moves = (calls: typeof added.mock.calls): typeof added.mock.calls =>
+      calls.filter(([type]) => type === 'pointermove');
+    expect(moves(added.mock.calls)).toHaveLength(0);
+
+    keyboardFocus(btn1);
+    expect(moves(added.mock.calls)).toHaveLength(1);
+    pointer('pointerover', btn1);
+    expect(moves(added.mock.calls)).toHaveLength(1);
+    keyboardFocus(btn2);
+    expect(moves(added.mock.calls).length - moves(removed.mock.calls).length).toBe(1);
+    pointer('pointerout', btn1, root);
+    vi.runAllTimers();
+    btn2.blur();
+    expect(tooltip.hidden).toBe(true);
+    expect(moves(added.mock.calls).length - moves(removed.mock.calls).length).toBe(0);
+    const timersBeforeMove = vi.getTimerCount();
+    move(10, 10);
+    expect(vi.getTimerCount()).toBe(timersBeforeMove);
+
+    keyboardFocus(btn1);
+    expect(moves(added.mock.calls).length - moves(removed.mock.calls).length).toBe(1);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    expect(tooltip.hidden).toBe(true);
+    expect(moves(added.mock.calls).length - moves(removed.mock.calls).length).toBe(0);
+    expect(moves(removed.mock.calls).map(([, listener]) => listener)).toEqual(
+      moves(added.mock.calls).map(([, listener]) => listener),
+    );
+  });
+
+  it('removes the document pointermove listener and description on disposal while shown', () => {
+    const added = vi.spyOn(document, 'addEventListener');
+    const removed = vi.spyOn(document, 'removeEventListener');
+    hover();
+    const listener = added.mock.calls.find(([type]) => type === 'pointermove')?.[1];
+    expect(listener).toBeTypeOf('function');
+    move(90, 80);
+    handle!.dispose();
+    handle = null;
+    expect(removed).toHaveBeenCalledWith('pointermove', listener);
+    expect(btn1.hasAttribute('aria-describedby')).toBe(false);
+    move(10, 10);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(root.querySelector('.a11y-tooltip')).toBeNull();
   });
 });
