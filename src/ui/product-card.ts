@@ -24,7 +24,7 @@ export interface ProductCardOptions {
 
 export interface ProductCardHandle {
   /** Re-renders name, text, thumbnail, swatches for a new look. */
-  setLook(look: CatalogLook, variant: string | null): void;
+  setLook(look: CatalogLook | null, variant: string | null): void;
   /** Marks the active swatch only. */
   setVariant(name: string | null): void;
   /** The Rotate button reads aria-pressed. */
@@ -99,9 +99,10 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
   // The card leads the side panel, above the badge, so it is prepended rather than appended.
   root.prepend(card);
 
-  // One controller for every listener, so dispose revokes them all at once.
+  // Fixed controls live for the card; swatch listeners live for one rendered look.
   const listeners = new AbortController();
   const signal = listeners.signal;
+  let swatchListeners: AbortController | null = null;
 
   rotateButton.addEventListener(
     'click',
@@ -148,11 +149,17 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
     return `Mannequin in ${variant} tone`;
   }
 
-  function renderSwatches(look: CatalogLook): void {
+  function retireSwatches(): void {
+    swatchListeners?.abort();
+    swatchListeners = null;
     for (const button of swatchButtons.values()) {
       button.remove();
     }
     swatchButtons = new Map<string, HTMLButtonElement>();
+  }
+
+  function renderSwatches(look: CatalogLook): void {
+    swatchListeners = new AbortController();
     for (const variant of look.variants) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -167,7 +174,7 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
           handle.setVariant(variant);
           options.actions.material(variant);
         },
-        { signal },
+        { signal: swatchListeners.signal },
       );
       swatchButtons.set(variant, button);
       swatches.appendChild(button);
@@ -213,15 +220,12 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
   );
 
   function renderLook(look: CatalogLook | null): void {
+    retireSwatches();
     if (look === null) {
       name.textContent = '';
       description.textContent = 'No look on the plinth yet.';
       thumb.hidden = true;
       thumbEmpty.hidden = false;
-      for (const button of swatchButtons.values()) {
-        button.remove();
-      }
-      swatchButtons = new Map<string, HTMLButtonElement>();
       return;
     }
     name.textContent = look.name;
@@ -237,7 +241,8 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
   }
 
   const handle: ProductCardHandle = {
-    setLook(look: CatalogLook, variant: string | null): void {
+    setLook(look: CatalogLook | null, variant: string | null): void {
+      if (signal.aborted) return;
       renderLook(look);
       handle.setVariant(variant);
       // A new look re-renders the row through renderLook, which returns it to the page's default.
@@ -273,6 +278,7 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
     },
     dispose(): void {
       listeners.abort();
+      retireSwatches();
       card.remove();
     },
   };

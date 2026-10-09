@@ -87,6 +87,8 @@ function readSafeAreaInsets(): SafeAreaInsets {
 }
 
 export function mountOnboarding(options: OnboardingOptions): OnboardingHandle {
+  const listeners = new AbortController();
+  const signal = listeners.signal;
   let activeStepIndex = -1;
   let running = false;
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -130,6 +132,7 @@ export function mountOnboarding(options: OnboardingOptions): OnboardingHandle {
   let focusBeforeStart: HTMLElement | null = null;
 
   function finish(): void {
+    if (signal.aborted) return;
     running = false;
     activeStepIndex = -1;
     stopWaiting();
@@ -151,7 +154,7 @@ export function mountOnboarding(options: OnboardingOptions): OnboardingHandle {
 
   skipBtn.addEventListener('click', () => {
     finish();
-  });
+  }, { signal });
 
   nextBtn.addEventListener('click', () => {
     if (activeStepIndex < ONBOARDING_STEPS.length - 1) {
@@ -159,7 +162,7 @@ export function mountOnboarding(options: OnboardingOptions): OnboardingHandle {
     } else {
       finish();
     }
-  });
+  }, { signal });
 
   function stopWaiting(): void {
     if (pollTimer !== null) {
@@ -206,6 +209,7 @@ export function mountOnboarding(options: OnboardingOptions): OnboardingHandle {
   }
 
   function present(anchor: HTMLElement, stepId: OnboardingStep['id']): void {
+    if (signal.aborted) return;
     if (!card.isConnected) {
       options.root.appendChild(card);
     }
@@ -259,6 +263,7 @@ export function mountOnboarding(options: OnboardingOptions): OnboardingHandle {
 
   return {
     start(): void {
+      if (signal.aborted) return;
       // Only a stored key stops the sequence. Optional chaining here would yield undefined for a
       // null storage, which is not null either, and the sequence would never run without storage.
       const storage = options.storage;
@@ -277,7 +282,7 @@ export function mountOnboarding(options: OnboardingOptions): OnboardingHandle {
       showStep(0);
     },
     complete(id: OnboardingStep['id']): void {
-      if (!running || activeStepIndex < 0 || activeStepIndex >= ONBOARDING_STEPS.length) {
+      if (signal.aborted || !running || activeStepIndex < 0 || activeStepIndex >= ONBOARDING_STEPS.length) {
         return;
       }
       const step = ONBOARDING_STEPS[activeStepIndex];
@@ -291,7 +296,10 @@ export function mountOnboarding(options: OnboardingOptions): OnboardingHandle {
       }
     },
     dispose(): void {
+      listeners.abort();
       running = false;
+      activeStepIndex = -1;
+      focusBeforeStart = null;
       stopWaiting();
       card.remove();
     },

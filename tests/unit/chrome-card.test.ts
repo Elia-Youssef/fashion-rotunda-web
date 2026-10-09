@@ -281,6 +281,30 @@ describe('the card reporting actions', () => {
 });
 
 describe('ProductCardHandle.dispose', () => {
+  it.each(['replacement', 'no-look', 'disposal'] as const)(
+    'retires retained swatches after %s',
+    (retirement) => {
+      const handlers = actions();
+      const handle = mount({ handlers });
+      const retained = ['base', 'light', 'dark'].map(swatch);
+      if (retirement === 'disposal') {
+        handle.dispose();
+      } else {
+        handle.setLook(retirement === 'no-look' ? null : OTHER, 'base');
+      }
+      for (const old of retained) {
+        expect(old.isConnected).toBe(false);
+        old.click();
+      }
+      expect(handlers.material).not.toHaveBeenCalled();
+      if (retirement === 'replacement') {
+        expect(swatch('base').getAttribute('aria-checked')).toBe('true');
+        swatch('dark').click();
+        expect(handlers.material).toHaveBeenCalledExactlyOnceWith('dark');
+      }
+    },
+  );
+
   it('empties the root and stops the buttons from reporting', () => {
     const handlers = actions();
     const handle = mount({ handlers });

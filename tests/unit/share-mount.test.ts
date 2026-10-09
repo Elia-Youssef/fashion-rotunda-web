@@ -144,6 +144,13 @@ async function tick(ms: number): Promise<void> {
   }
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   clock.ms = 0;
@@ -160,12 +167,108 @@ afterEach(() => {
   mounts = [];
   document.body.replaceChildren();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
   window.localStorage.clear();
   window.history.replaceState(null, '', '/');
 });
 
 describe('share mount', () => {
+  it.each(['resolve', 'reject'] as const)('retires clipboard %s after disposal', async (outcome) => {
+    const pending = deferred<void>();
+    const writeText = vi.fn(() => pending.promise);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const stage = makeStage('');
+    const handle = mount(stage);
+    const status = stage.root.querySelector('.share__status')!;
+    stage.root.querySelector<HTMLButtonElement>('.share__button--copy')!.click();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    handle.dispose();
+    const replacement = document.createElement('input');
+    replacement.className = 'share__fallback share__fallback--hidden';
+    stage.root.appendChild(replacement);
+    const focus = vi.spyOn(replacement, 'focus');
+    const select = vi.spyOn(replacement, 'select');
+    const replace = vi.spyOn(window.history, 'replaceState');
+    expect(vi.getTimerCount()).toBe(0);
+    if (outcome === 'resolve') pending.resolve(undefined);
+    else pending.reject(new Error('Clipboard refused'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(status.textContent).toBe('');
+    expect(replacement.value).toBe('');
+    expect(replacement.classList.contains('share__fallback--hidden')).toBe(true);
+    expect(focus).not.toHaveBeenCalled();
+    expect(select).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['resolve', 'reject'] as const)('retires capture %s after disposal', async (outcome) => {
+    const stage = makeStage('');
+    let finishCapture!: BlobCallback;
+    vi.spyOn(stage.canvas, 'toBlob').mockImplementation((callback) => { finishCapture = callback; });
+    const share = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { canShare: () => true, share });
+    const createURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:retired');
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    stage.options.drawFrame = vi.fn();
+    stage.options.onChange = vi.fn();
+    stage.options.renderer.setPixelRatio = vi.fn();
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const handle = mount(stage);
+    const status = stage.root.querySelector('.share__status')!;
+    stage.root.querySelector<HTMLButtonElement>('.share__button--screenshot')!.click();
+    expect(stage.options.drawFrame).toHaveBeenCalledTimes(1);
+    expect(stage.options.renderer.setPixelRatio).toHaveBeenCalledTimes(2);
+    handle.dispose();
+    finishCapture(outcome === 'resolve' ? new Blob(['still'], { type: 'image/png' }) : null);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(stage.options.onChange).not.toHaveBeenCalled();
+    expect(stage.options.drawFrame).toHaveBeenCalledTimes(1);
+    expect(stage.options.renderer.setPixelRatio).toHaveBeenCalledTimes(2);
+    expect(share).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+    expect(createURL).not.toHaveBeenCalled();
+    expect(status.textContent).toBe('');
+    expect(error).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it.each(['resolve', 'reject'] as const)('retires delivery %s after disposal', async (outcome) => {
+    const stage = makeStage('');
+    vi.spyOn(stage.canvas, 'toBlob').mockImplementation((callback) => {
+      callback(new Blob(['still'], { type: 'image/png' }));
+    });
+    const pending = deferred<void>();
+    const share = vi.fn(() => pending.promise);
+    vi.stubGlobal('navigator', { canShare: () => true, share });
+    const createURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:retired');
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    stage.options.drawFrame = vi.fn();
+    stage.options.onChange = vi.fn();
+    const handle = mount(stage);
+    const status = stage.root.querySelector('.share__status')!;
+    stage.root.querySelector<HTMLButtonElement>('.share__button--screenshot')!.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(share).toHaveBeenCalledTimes(1);
+    expect(stage.options.onChange).toHaveBeenCalledTimes(1);
+    handle.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    if (outcome === 'resolve') pending.resolve(undefined);
+    else pending.reject(new Error('Share refused'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(download).not.toHaveBeenCalled();
+    expect(createURL).not.toHaveBeenCalled();
+    expect(stage.options.onChange).toHaveBeenCalledTimes(1);
+    expect(stage.options.drawFrame).toHaveBeenCalledTimes(1);
+    expect(status.textContent).toBe('');
+    expect(warn).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('writes the address bar with replaceState and never pushState', async () => {
     const replace = vi.spyOn(window.history, 'replaceState');
     const push = vi.spyOn(window.history, 'pushState');

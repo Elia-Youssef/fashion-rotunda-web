@@ -62,6 +62,54 @@ describe('ONBOARDING_STEPS', () => {
 });
 
 describe('mountOnboarding', () => {
+  it.each(['skip', 'next'] as const)('retires a retained %s control on disposal', (control) => {
+    const storage = { getItem: vi.fn(() => null), setItem: vi.fn() };
+    const onDismissed = vi.fn();
+    handle = mountOnboarding({ root, storage, onDismissed });
+    handle.start();
+    if (control === 'next') {
+      handle.complete('orbit');
+      handle.complete('looks');
+    }
+    const card = root.querySelector<HTMLElement>('.onboarding-card')!;
+    const retained = card.querySelector<HTMLButtonElement>(`.onboarding-card__${control}`)!;
+    const title = card.querySelector('.onboarding-card__title')!;
+    const stepTitle = title.textContent;
+    handle.dispose();
+    onDismissed.mockClear();
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    retained.click();
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(focus).not.toHaveBeenCalled();
+    expect(onDismissed).not.toHaveBeenCalled();
+    expect(title.textContent).toBe(stepTitle);
+    expect(card.isConnected).toBe(false);
+    focus.mockRestore();
+  });
+
+  it('keeps public methods inert after final disposal', () => {
+    const storage = { getItem: vi.fn(() => null), setItem: vi.fn() };
+    const onDismissed = vi.fn();
+    handle = mountOnboarding({ root, storage, onDismissed });
+    handle.start();
+    const card = root.querySelector<HTMLElement>('.onboarding-card')!;
+    const title = card.querySelector('.onboarding-card__title')!;
+    handle.dispose();
+    storage.getItem.mockClear();
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus');
+    handle.start();
+    handle.complete('orbit');
+    handle.complete('looks');
+    handle.complete('lights');
+    expect(card.isConnected).toBe(false);
+    expect(title.textContent).toBe(ONBOARDING_STEPS[0].title);
+    expect(storage.getItem).not.toHaveBeenCalled();
+    expect(storage.setItem).not.toHaveBeenCalled();
+    expect(onDismissed).not.toHaveBeenCalled();
+    expect(focus).not.toHaveBeenCalled();
+    focus.mockRestore();
+  });
+
   it('starts on step 0 and presents title, text, Next and Skip buttons', () => {
     handle = mountOnboarding({
       root,

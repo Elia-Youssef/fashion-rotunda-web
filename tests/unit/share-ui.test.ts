@@ -19,6 +19,8 @@ describe('share UI component', () => {
   });
 
   afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
     vi.restoreAllMocks();
     root.remove();
   });
@@ -86,5 +88,22 @@ describe('share UI component', () => {
 
     handle.dispose();
     expect(root.querySelector('.share')).toBeNull();
+  });
+
+  it('keeps notifications and retained controls inert after disposal', () => {
+    const handle = mountShare(root, actions);
+    const status = root.querySelector<HTMLElement>('.share__status')!;
+    const copy = root.querySelector<HTMLButtonElement>('.share__button--copy')!;
+    const screenshot = root.querySelector<HTMLButtonElement>('.share__button--screenshot')!;
+    handle.notify('Before disposal');
+    handle.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    handle.notify('After disposal');
+    copy.click();
+    screenshot.click();
+    expect(status.textContent).toBe('Before disposal');
+    expect(vi.getTimerCount()).toBe(0);
+    expect(actions.copyLink).not.toHaveBeenCalled();
+    expect(actions.screenshot).not.toHaveBeenCalled();
   });
 });

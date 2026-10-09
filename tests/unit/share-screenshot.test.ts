@@ -25,6 +25,8 @@ describe('share screenshot module', () => {
   });
 
   afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
     vi.restoreAllMocks();
     for (const [key, descriptor] of savedDescriptors) {
       if (descriptor === undefined) {
@@ -172,5 +174,68 @@ describe('share screenshot module', () => {
     expect(clickSpy).toHaveBeenCalledTimes(1);
     // A dismissal is a choice, not a fault, so it is not worth a console line.
     expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it.each(['resolve', 'reject'] as const)('retires a share sheet %s with its signal', async (outcome) => {
+    vi.useFakeTimers();
+    let resolve!: () => void;
+    let reject!: (error: Error) => void;
+    const pending = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+    const share = vi.fn(() => pending);
+    stubNavigator('share', share);
+    stubNavigator('canShare', () => true);
+    const createURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:retired');
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const controller = new AbortController();
+    // The optional signal is the delivery owner's lifetime.
+    const delivery = deliverStill(new Blob(['still']), 'still.png', controller.signal);
+    const settled = delivery.catch((error: unknown) => error);
+    expect(share).toHaveBeenCalledTimes(1);
+    controller.abort();
+    if (outcome === 'resolve') resolve();
+    else reject(new Error('Share refused'));
+    expect(await settled).toBe(controller.signal.reason);
+    expect(download).not.toHaveBeenCalled();
+    expect(createURL).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('rejects delivery before starting when its signal is already aborted', async () => {
+    vi.useFakeTimers();
+    const share = vi.fn().mockResolvedValue(undefined);
+    stubNavigator('share', share);
+    stubNavigator('canShare', () => true);
+    const createURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:retired');
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const controller = new AbortController();
+    controller.abort();
+    await expect(deliverStill(new Blob(['still']), 'still.png', controller.signal))
+      .rejects.toBe(controller.signal.reason);
+    expect(share).not.toHaveBeenCalled();
+    expect(download).not.toHaveBeenCalled();
+    expect(createURL).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('keeps a live signal dismissal falling back to download and URL cleanup', async () => {
+    vi.useFakeTimers();
+    const dismissed = new Error('Share dismissed');
+    dismissed.name = 'AbortError';
+    stubNavigator('share', vi.fn().mockRejectedValue(dismissed));
+    stubNavigator('canShare', () => true);
+    const createURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:live');
+    const revokeURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const controller = new AbortController();
+    const blob = new Blob(['still']);
+    expect(await deliverStill(blob, 'still.png', controller.signal)).toBe('downloaded');
+    expect(createURL).toHaveBeenCalledExactlyOnceWith(blob);
+    expect(download).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.runAllTimersAsync();
+    expect(revokeURL).toHaveBeenCalledExactlyOnceWith('blob:live');
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

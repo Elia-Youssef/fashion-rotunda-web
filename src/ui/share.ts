@@ -57,6 +57,7 @@ export function mountShare(root: HTMLElement, actions: ShareActions): ShareHandl
   }
 
   let notifyTimer: number | null = null;
+  let disposed = false;
   const abortController = new AbortController();
 
   copyBtn.addEventListener(
@@ -77,6 +78,7 @@ export function mountShare(root: HTMLElement, actions: ShareActions): ShareHandl
 
   return {
     notify(text: string): void {
+      if (disposed) return;
       if (notifyTimer !== null) {
         window.clearTimeout(notifyTimer);
       }
@@ -88,6 +90,7 @@ export function mountShare(root: HTMLElement, actions: ShareActions): ShareHandl
     },
 
     dispose(): void {
+      disposed = true;
       abortController.abort();
       if (notifyTimer !== null) {
         window.clearTimeout(notifyTimer);

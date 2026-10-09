@@ -79,6 +79,8 @@ function formatStillFileName(lookId: string, date: Date = new Date()): string {
 }
 
 export function mountShare(options: ShareMountOptions): ShareMount {
+  const lifetime = new AbortController();
+  const signal = lifetime.signal;
   // Capture proof position before applying any state overrides so proof resets can be detected.
   const proofPos = options.camera.orbit.position;
   const proofPosition: [number, number, number] = [proofPos[0], proofPos[1], proofPos[2]];
@@ -187,6 +189,7 @@ export function mountShare(options: ShareMountOptions): ShareMount {
   let pendingTimer: number | null = null;
 
   function updateSearchNow(): void {
+    if (signal.aborted) return;
     if (pendingTimer !== null) {
       window.clearTimeout(pendingTimer);
       pendingTimer = null;
@@ -202,6 +205,7 @@ export function mountShare(options: ShareMountOptions): ShareMount {
   }
 
   function scheduleUpdate(immediate = false): void {
+    if (signal.aborted) return;
     const now = performance.now();
     const elapsed = now - lastReplaceTime;
 
@@ -214,6 +218,7 @@ export function mountShare(options: ShareMountOptions): ShareMount {
 
   const uiHandle = mountShareUI(options.root, {
     async copyLink(): Promise<void> {
+      if (signal.aborted) return;
       updateSearchNow();
       const href = window.location.href;
       let copied = false;
@@ -230,6 +235,7 @@ export function mountShare(options: ShareMountOptions): ShareMount {
         }
       }
 
+      if (signal.aborted) return;
       if (copied) {
         uiHandle.notify('Link copied');
       } else {
@@ -245,6 +251,7 @@ export function mountShare(options: ShareMountOptions): ShareMount {
     },
 
     async screenshot(): Promise<void> {
+      if (signal.aborted) return;
       try {
         const blob = await captureStill({
           renderer: options.renderer,
@@ -252,13 +259,16 @@ export function mountShare(options: ShareMountOptions): ShareMount {
           drawFrame: options.drawFrame,
           scale: 2,
         });
+        if (signal.aborted) return;
         options.onChange();
 
         const lookId = options.showroom.currentLook ?? 'look';
         const fileName = formatStillFileName(lookId);
-        const result = await deliverStill(blob, fileName);
+        const result = await deliverStill(blob, fileName, signal);
+        if (signal.aborted) return;
         uiHandle.notify(result === 'shared' ? 'Still shared' : 'Still saved');
       } catch (error) {
+        if (signal.aborted) return;
         // A press that produces nothing and says nothing reads as a dead button, so the failure
         // is on the status line as well as in the console.
         console.error('[archviz] screenshot capture failed', error);
@@ -293,6 +303,7 @@ export function mountShare(options: ShareMountOptions): ShareMount {
 
   return {
     dispose(): void {
+      lifetime.abort();
       window.clearInterval(pollInterval);
       if (pendingTimer !== null) {
         window.clearTimeout(pendingTimer);

@@ -46,7 +46,12 @@ export function captureStill(options: ScreenshotOptions): Promise<Blob> {
  * Downloads the blob as `fashion-rotunda-<look>-<yyyymmdd-hhmmss>.png`, or shares it on a device
  * that can.
  */
-export async function deliverStill(blob: Blob, fileName: string): Promise<'downloaded' | 'shared'> {
+export async function deliverStill(
+  blob: Blob,
+  fileName: string,
+  signal?: AbortSignal,
+): Promise<'downloaded' | 'shared'> {
+  signal?.throwIfAborted();
   // Mobile / capable devices with Web Share API and file sharing support
   if (
     typeof navigator !== 'undefined' &&
@@ -60,9 +65,12 @@ export async function deliverStill(blob: Blob, fileName: string): Promise<'downl
           files: [file],
           title: fileName,
         });
+        signal?.throwIfAborted();
         return 'shared';
       }
     } catch (error) {
+      // Retiring the owner cancels delivery; a live dismissal still downloads below.
+      signal?.throwIfAborted();
       // A dismissed share sheet throws AbortError. Reporting that as 'shared' would tell the
       // visitor the still left the page when nothing did, so every failure, cancelled or not,
       // falls through to the download and the page says the still was saved because it was.
@@ -72,6 +80,7 @@ export async function deliverStill(blob: Blob, fileName: string): Promise<'downl
     }
   }
 
+  signal?.throwIfAborted();
   // Standard download via temporary object URL
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
