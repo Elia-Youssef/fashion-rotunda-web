@@ -115,6 +115,11 @@ test('arms until the first gesture anywhere on the page', async ({ page }) => {
   }
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 
+  // The click lands while the content set is still loading, as the entry gate's press does, so the
+  // music list, the file and its decoding share the network and the main thread with the scene. In a
+  // loaded software-rendered run that start outlasted PLAYING_TIMEOUT, so the music's own time limit
+  // starts once the scene is ready.
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
   await expect(button).toHaveAttribute('data-music', 'playing', { timeout: PLAYING_TIMEOUT });
   expectClean();
 });
