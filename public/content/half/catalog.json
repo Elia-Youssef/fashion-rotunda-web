@@ -1,8 +1,5 @@
 {
   "version": 1,
-  "environment": {
-    "file": "env/school-field-cloudy-1k.hdr"
-  },
   "rotunda": {
     "file": "rotunda.glb"
   },
@@ -99,7 +96,7 @@
     {
       "id": "blue-silk-dress",
       "name": "Blue Silk Dress",
-      "description": "Blue silk lace insets and handkerchief skirt panels over a crepe de chine lining. It was owned by Carrie Lane Chatman Catt born in 1859. A skilled political strategist, Carrie Clinton Lane Chapman Catt was a suffragist and peace activist who helped secure for American women the right to vote.",
+      "description": "Blue silk lace insets and handkerchief skirt panels over a crepe de chine lining. It was owned by Carrie Lane Chapman Catt born in 1859. A skilled political strategist, Carrie Clinton Lane Chapman Catt was a suffragist and peace activist who helped secure for American women the right to vote.",
       "thumbnail": "thumbs/blue-silk-dress.jpg",
       "file": "looks/blue-silk-dress.glb",
       "variants": [
@@ -198,5 +195,8 @@
       ],
       "fov": 55
     }
+  },
+  "environment": {
+    "file": "env/school-field-cloudy-1k.hdr"
   }
 }
