@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
+import { waitForSceneInitialization } from './support/ready';
 import type { Locator, Page } from '@playwright/test';
+import { holdFirstRequest } from './support/held-request';
 
 // Catalogue rail E2E verification.
 // Covers four benchmark viewports, internal horizontal scrolling below the desktop width,
@@ -570,17 +572,22 @@ test.describe('Catalogue Rail Parity', () => {
     const btnJumpsuit = rail.locator('button[data-look="jumpsuit-dress"]');
     const btnBlueSilk = rail.locator('button[data-look="blue-silk-dress"]');
 
-    // Introduce an artificial 2-second delay for the jumpsuit-dress GLB model
-    let jumpsuitDelayed = false;
-    await page.route('**/content/looks/jumpsuit-dress.glb', async (route) => {
-      jumpsuitDelayed = true;
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      await route.continue();
-    });
-
-    // Rapidly click jumpsuit then blue silk
-    await btnJumpsuit.click();
-    await btnBlueSilk.click();
+    await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
+    const startId = await canvas.getAttribute('data-look');
+    expect(startId, 'the starting look is published').not.toBeNull();
+    const memoryBefore = await canvas.getAttribute('data-memory');
+    expect(memoryBefore, 'the initialized memory baseline is published').not.toBeNull();
+    const hold = await holdFirstRequest(page, '**/content/looks/jumpsuit-dress.glb', SWITCH_TIMEOUT);
+    try {
+      await btnJumpsuit.click();
+      await hold.waitUntilEntered();
+      // Wait for the held request's busy state before superseding it.
+      await expect(btnJumpsuit).toHaveAttribute('aria-busy', 'true', { timeout: SWITCH_TIMEOUT });
+      await btnBlueSilk.click();
+    } finally {
+      hold.release();
+    }
+    await hold.waitUntilContinued();
 
     // The winning look must be blue silk dress
     await expect(canvas).toHaveAttribute('data-look', 'blue-silk-dress', { timeout: SWITCH_TIMEOUT });
@@ -590,7 +597,12 @@ test.describe('Catalogue Rail Parity', () => {
 
     // No buttons remain busy
     await expect(rail.locator('[aria-busy="true"]')).toHaveCount(0);
-    expect(jumpsuitDelayed, 'jumpsuit GLB route was intercepted').toBe(true);
+    // Return to the same initialized look so leaked loser resources change the live GPU count.
+    await rail.locator(`button[data-look="${String(startId)}"]`).click();
+    await expect(canvas).toHaveAttribute('data-look', String(startId), { timeout: SWITCH_TIMEOUT });
+    await expect(canvas).toHaveAttribute('data-fade', '0', { timeout: SWITCH_TIMEOUT });
+    // Wait for the disposal draw to publish the original resource count.
+    await expect(canvas).toHaveAttribute('data-memory', String(memoryBefore), { timeout: SWITCH_TIMEOUT });
 
     await page.unroute('**/content/looks/jumpsuit-dress.glb');
   });
@@ -654,6 +666,7 @@ test.describe('Catalogue Rail Parity', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const canvas = await openScene(page);
 
+    await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
     const initialMetrics = await page.evaluate(() => {
       const cv = document.querySelector<HTMLCanvasElement>('canvas#scene');
       const camera = window.archvizCamera;

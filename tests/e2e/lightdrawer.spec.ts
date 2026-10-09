@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { waitForSceneInitialization } from './support/ready';
 import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 
 const SCENE_READY_TIMEOUT = 60_000;
@@ -652,6 +653,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     await expect(panel).toBeVisible();
     await expect(keySwitch).toBeFocused();
 
+    await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
     const initialRig = await page.evaluate(() => window.archvizE2E?.rigState() ?? null);
     expect(initialRig).toMatch(/^v2;/);
     await page.keyboard.press('Space');

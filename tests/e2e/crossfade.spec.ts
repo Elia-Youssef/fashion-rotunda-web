@@ -1,5 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { waitForSceneInitialization } from './support/ready';
 import type { ConsoleMessage, Locator, Page } from '@playwright/test';
+import { CROSSFADE_MS, MAX_FADE_STEP_MS } from '../../src/scene/crossfade';
+import { parseCatalog } from '../../src/catalog/catalog';
+import { holdFirstRequest } from './support/held-request';
 
 // The cross-fade between looks. The suite runs on the webgl2 project only: the fade
 // is the same state machine on both backends, and the webgpu project opens a headed Chrome window
@@ -13,16 +17,13 @@ const SCENE_READY_TIMEOUT = 60_000;
  * reason; against a real GPU and a warm cache the whole switch measures 90-500 ms.
  */
 const FADE_TIMEOUT = 30_000;
-/**
- * Once the fade has started, nothing is waiting on the network any more: it runs CROSSFADE_MS of
- * wall clock and ends. Five seconds is that 600 ms with room for a slow frame, and it is the half
- * of the pair that would catch a fade that starts and never finishes.
- */
-const FADE_END_TIMEOUT = 5_000;
+// A stalled draw contributes at most MAX_FADE_STEP_MS: allow the minimum clamped advances plus
+// one scheduling margin, each with the existing 5 s frame-handshake allowance. Faster draws need
+// more advances but consume less wall time; this is a bounded stall budget, not a duration promise.
+const FADE_FRAME_TIMEOUT = 5_000;
+const FADE_END_TIMEOUT = (Math.ceil(CROSSFADE_MS / MAX_FADE_STEP_MS) + 1) * FADE_FRAME_TIMEOUT;
 /** A switch whose first faded frame never arrives would sit at the load ceiling, not near it. */
 const SWITCH_MEASURE_LIMIT_MS = 15_000;
-/** Two clicks this far apart land inside one switch, which is what the interrupt needs. */
-const RAPID_CLICK_GAP_MS = 150;
 /** Three look loads of the unoptimized set, 6 to 17 MB each, well past the 60 s default. */
 const RAPID_RUN_TIMEOUT = 180_000;
 const TURNTABLE_YAW = Math.PI / 3;
@@ -61,6 +62,7 @@ async function openScene(page: Page, path: string): Promise<Locator> {
   await page.goto(path);
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+  await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
   return canvas;
 }
 
@@ -95,14 +97,17 @@ test('cross-fades to the third look and measures the switch', async ({ page }) =
 
   await thumbnails.nth(2).click();
 
-  // The fade begins when the incoming look is on the plinth, which is load bound, and ends
-  // CROSSFADE_MS after that, which is not: the second window is the fade's own, not the load's.
-  await expect(canvas).toHaveAttribute('data-fade', '1', { timeout: FADE_TIMEOUT });
-  // Reads the rendered objects' world transforms and parents, not canvas data-yaw. The outgoing
-  // look is still alive here, so this proves both fade participants and the pedestal share one yaw.
-  const duringFade = await page.evaluate(() => window.archvizE2E?.turntableState());
-  expect(duringFade).toBeDefined();
-  expectTurntableYaw(duringFade!, true);
+  // Wait for the fade flag and both participants' transforms in one synchronous observation.
+  await expect(async () => {
+    const duringFade = await page.evaluate(() => ({
+      fading: document.querySelector<HTMLCanvasElement>('canvas#scene')?.dataset.fade,
+      state: window.archvizE2E?.turntableState(),
+    }));
+    expect(duringFade.fading).toBe('1');
+    expect(duringFade.state).toBeDefined();
+    expectTurntableYaw(duringFade.state!, true);
+  }).toPass({ timeout: FADE_TIMEOUT });
+  // Wait for accumulated scheduled-frame progress to finish the fade.
   await expect(canvas).toHaveAttribute('data-fade', '0', { timeout: FADE_END_TIMEOUT });
 
   const switches = await page.evaluate(() =>
@@ -122,6 +127,7 @@ test('cross-fades to the third look and measures the switch', async ({ page }) =
 
 test('two clicks in a row end on the second look and stack nothing on the plinth', async ({
   page,
+  request,
 }) => {
   skipUnlessWebgl2();
   test.setTimeout(RAPID_RUN_TIMEOUT);
@@ -150,9 +156,24 @@ test('two clicks in a row end on the second look and stack nothing on the plinth
   const secondId = await thumbnails.nth(2).getAttribute('data-look');
   expect(secondId, 'the third thumbnail carries its look id').not.toBeNull();
 
-  await thumbnails.nth(1).click();
-  await page.waitForTimeout(RAPID_CLICK_GAP_MS);
-  await thumbnails.nth(2).click();
+  const response = await request.get('/content/catalog.json');
+  expect(response.ok(), 'the catalogue is served').toBe(true);
+  const json: unknown = await response.json();
+  const catalog = parseCatalog(json);
+  const firstId = await thumbnails.nth(1).getAttribute('data-look');
+  const firstLook = catalog.looks.find((look) => look.id === firstId);
+  expect(firstLook, 'the first request has a catalogue file').toBeDefined();
+  const hold = await holdFirstRequest(page, `**/content/${firstLook!.file}`, FADE_TIMEOUT);
+  try {
+    await thumbnails.nth(1).click();
+    await hold.waitUntilEntered();
+    // Wait for the held request's busy state before superseding it.
+    await expect(thumbnails.nth(1)).toHaveAttribute('aria-busy', 'true', { timeout: FADE_TIMEOUT });
+    await thumbnails.nth(2).click();
+  } finally {
+    hold.release();
+  }
+  await hold.waitUntilContinued();
 
   // The second click wins whichever request finishes first, and only its look reaches the plinth.
   await expect(canvas).toHaveAttribute('data-look', String(secondId), { timeout: FADE_TIMEOUT });

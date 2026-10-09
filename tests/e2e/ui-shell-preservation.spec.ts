@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { waitForSceneInitialization } from './support/ready';
 import type { Locator, Page } from '@playwright/test';
 
 // UI12-AUDIT-06: opening a purely presentational shell disclosure must not reset or otherwise
@@ -105,6 +106,8 @@ test('opening and closing Light Control preserves renderer state and returns to 
   const toggle = page.locator('#shell-light-toggle');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+  await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
 
   // A non-default inspection pose makes a silent Reset-camera side effect observable.
   await page.evaluate(() => {

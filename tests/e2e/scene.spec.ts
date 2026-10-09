@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { waitForSceneInitialization } from './support/ready';
 import type { APIRequestContext, ConsoleMessage, Locator, Page } from '@playwright/test';
 import { canvasStats } from './support/pixels';
 import { parseCatalog } from '../../src/catalog/catalog';
@@ -92,6 +93,7 @@ test('falls back to the defaults, with a warning, on a url that names neither', 
 test('builds the room from the material classes GLTFLoader creates', async ({ page }) => {
   skipUnlessWebgl2();
   await openScene(page, '/?webgl=1&e2e=1');
+  await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
 
   const description = await page.evaluate(() => {
     const hooks = window.archvizE2E;
@@ -115,6 +117,7 @@ test('frees the look it replaces, so ten switches end where they started', async
   test.setTimeout(SWITCH_RUN_TIMEOUT);
 
   const canvas = await openScene(page, '/?webgl=1&e2e=1');
+  await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
   const lookBefore = await canvas.getAttribute('data-look');
   // data-memory is renderer.info.memory as geometries/textures: live GPU resources, written after
   // every drawn frame. Both readings below are taken with the same look on the plinth.

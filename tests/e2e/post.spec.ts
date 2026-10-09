@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { waitForSceneInitialization } from './support/ready';
 import type { Locator, Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 import { canvasStats } from './support/pixels';
@@ -18,6 +19,68 @@ const SCENE_READY_TIMEOUT = 60_000;
  * 30-second stall inside the test timeout.
  */
 const POST_ATTRIBUTE_TIMEOUT = 10_000;
+
+/** A drag must change the actual camera and draw its moving post state before release. */
+async function expectDrawnDrag(
+  page: Page,
+  canvas: Locator,
+  originX: number,
+  originY: number,
+  required: string[],
+  forbidden: string[],
+  alwaysAbsent: string[] = [],
+): Promise<void> {
+  await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
+  await page.mouse.move(originX, originY);
+  await page.mouse.down();
+  try {
+    const before = await page.evaluate(() => ({
+      position: [...window.archvizCamera!.orbit.position],
+      frames: Number(document.querySelector<HTMLCanvasElement>('canvas#scene')!.dataset.frames),
+    }));
+    // A quarter-canvas horizontal drag stays inside the box and changes the orbit once.
+    const box = await canvas.boundingBox();
+    expect(box, 'the canvas remains available during the held drag').not.toBeNull();
+    await page.mouse.move(originX + box!.width / 4, originY);
+    const forbiddenSeen = new Set<string>();
+    // Wait for one atomic camera, moving flag, frame-counter and post-token handshake.
+    await expect.poll(async () => {
+      const snapshot = await page.evaluate(() => ({
+        position: [...window.archvizCamera!.orbit.position],
+        moving: window.archvizCamera!.orbit.moving,
+        frames: Number(document.querySelector<HTMLCanvasElement>('canvas#scene')!.dataset.frames),
+        post: document.querySelector<HTMLCanvasElement>('canvas#scene')!.dataset.post ?? null,
+      }));
+      const moved = snapshot.position.some((value, axis) => value !== before.position[axis]);
+      const drawn = snapshot.frames > before.frames;
+      if (moved && drawn && snapshot.moving) {
+        for (const token of alwaysAbsent) {
+          if (hasPostToken(snapshot.post ?? '', token)) forbiddenSeen.add(token);
+        }
+      }
+      return {
+        moved,
+        drawn,
+        moving: snapshot.moving,
+        published: snapshot.post !== null,
+        forbiddenSeen: [...forbiddenSeen],
+        required: required.map((token) => hasPostToken(snapshot.post ?? '', token)),
+        forbidden: forbidden.map((token) => hasPostToken(snapshot.post ?? '', token)),
+      };
+    }, { timeout: POST_ATTRIBUTE_TIMEOUT, message: 'a drawn moving frame has the required post state' })
+      .toEqual({
+        moved: true,
+        drawn: true,
+        moving: true,
+        published: true,
+        forbiddenSeen: [],
+        required: required.map(() => true),
+        forbidden: forbidden.map(() => false),
+      });
+  } finally {
+    await page.mouse.up();
+  }
+}
 
 /**
  * data-post is a comma-separated token list in a fixed order: ao, traa, msaa, then the SSGI token
@@ -282,7 +345,6 @@ test('diagnostic SSGI remains full resolution while the pointer drags on WebGPU'
       message: 'data-post carries the full-resolution ssgi token at rest',
     })
     .toBe(true);
-  const positionBefore = await page.evaluate(() => [...window.archvizCamera!.orbit.position]);
 
   const box = await canvas.boundingBox();
   expect(box, 'the canvas has a box to drag inside').not.toBeNull();
@@ -292,22 +354,8 @@ test('diagnostic SSGI remains full resolution while the pointer drags on WebGPU'
   const originX = box.x + box.width / 2;
   const originY = box.y + box.height / 2;
 
-  // Read during the drag to establish that the drawn moving frames retain the full target.
-  await page.mouse.move(originX, originY);
-  await page.mouse.down();
-  let sawFull = false;
-  for (let step = 1; step <= 24; step += 1) {
-    await page.mouse.move(originX + step * 6, originY + (step % 2 === 0 ? 4 : -4));
-    const post = (await canvas.getAttribute('data-post')) ?? '';
-    sawFull ||= hasPostToken(post, 'ssgi');
-    expect(hasPostToken(post, 'ssgi-half'), 'moving frame does not lower SSGI').toBe(false);
-  }
-  const positionDuring = await page.evaluate(() => [...window.archvizCamera!.orbit.position]);
-  await page.mouse.up();
-  expect(positionDuring, 'the drag moved the actual camera').not.toEqual(positionBefore);
-  expect(sawFull, 'data-post carried the full-resolution SSGI token during the drag').toBe(true);
+  await expectDrawnDrag(page, canvas, originX, originY, ['ssgi'], ['ssgi-half'], ['ssgi-half']);
 
-  // Rest retains full resolution.
   await expect
     .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'ssgi'), {
       timeout: 3000,
@@ -408,15 +456,7 @@ test('depth of field follows camera rest and the walkthrough allowance on webgpu
   }
   const originX = box.x + box.width / 2;
   const originY = box.y + box.height / 2;
-  await page.mouse.move(originX, originY);
-  await page.mouse.down();
-  let sawReady = false;
-  for (let step = 1; step <= 24 && !sawReady; step += 1) {
-    await page.mouse.move(originX + step * 6, originY + (step % 2 === 0 ? 4 : -4));
-    sawReady = !hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'dof');
-  }
-  await page.mouse.up();
-  expect(sawReady, 'depth of field was visually disabled while the camera moved').toBe(true);
+  await expectDrawnDrag(page, canvas, originX, originY, [], ['dof']);
 
   await expect
     .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'dof'), {
