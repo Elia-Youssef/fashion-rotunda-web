@@ -34,6 +34,7 @@ function mountLobby(options: {
   search?: string;
   unsupportedMessage?: string | null;
   withPreExistingDOM?: boolean;
+  random?: () => number;
 } = {}): { lobby: EntryLobby; element: HTMLElement } {
   if (options.withPreExistingDOM) {
     const existing = document.createElement('div');
@@ -50,8 +51,8 @@ function mountLobby(options: {
           <p class="entry-lobby__status" aria-live="polite">Loading your experience</p>
           <p class="entry-lobby__progress-readout">0.0 MB of 0.0 MB</p>
           <div class="entry-lobby__fact-container">
-            <span class="entry-lobby__fact-heading"></span>
-            <p class="entry-lobby__fact-text"></p>
+            <span class="entry-lobby__fact-heading">${APPROVED_FACTS[0].heading}</span>
+            <p class="entry-lobby__fact-text">"${APPROVED_FACTS[0].text}"</p>
           </div>
         </div>
         <div class="entry-lobby__error-pane" hidden>
@@ -71,6 +72,7 @@ function mountLobby(options: {
     search: options.search ?? '',
     store,
     unsupportedMessage: options.unsupportedMessage ?? null,
+    ...(options.random === undefined ? {} : { random: options.random }),
   });
   mountedLobbies.push(lobby);
 
@@ -312,22 +314,88 @@ describe('loading state and truthful progress', () => {
       'Loading from cache - 4 of 4 files',
     );
   });
+});
 
-  it('displays approved facts during loading and rotates them', async () => {
-    const { lobby, element } = mountLobby();
-    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+describe.each([false, true])('one fact per visit (hydration=%s)', (withPreExistingDOM) => {
+  function expectFact(element: HTMLElement, index: number): void {
+    expect(element.querySelector('.entry-lobby__fact-heading')?.textContent)
+      .toBe(APPROVED_FACTS[index].heading);
+    expect(element.querySelector('.entry-lobby__fact-text')?.textContent)
+      .toBe(`"${APPROVED_FACTS[index].text}"`);
+  }
 
-    const factText = element.querySelector('.entry-lobby__fact-text')!;
-    expect(factText.textContent).toContain(APPROVED_FACTS[0].text);
+  it.each([
+    { value: 0, index: 0 },
+    { value: 0.1, index: 0 },
+    { value: 0.5, index: 3 },
+    { value: 1 - Number.EPSILON, index: 5 },
+  ])('selects fact $index at mount from random value $value', ({ value, index }) => {
+    const random = vi.fn(() => value);
+    const { element } = mountLobby({ withPreExistingDOM, random });
+    expectFact(element, index);
+    expect(random).toHaveBeenCalledOnce();
+  });
 
-    // Advance by rotation interval
-    await vi.advanceTimersByTimeAsync(6000);
-    expect(factText.textContent).toContain(APPROVED_FACTS[1].text);
+  it('defaults to Math.random when no source is injected', () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const { element } = mountLobby({ withPreExistingDOM });
+    expectFact(element, 3);
+    expect(random).toHaveBeenCalledOnce();
+  });
 
-    lobby.setReady();
-    // Verify rotation stops when ready
-    await vi.advanceTimersByTimeAsync(12000);
-    expect(factText.textContent).toContain(APPROVED_FACTS[1].text);
+  // Five former rotation periods exercise long idle, loading and error waits.
+  const longWaitMs = 30_000;
+
+  it.each([false, true])('keeps the mounted fact through loading and error (reduced motion=%s)',
+    async (reducedMotion) => {
+      vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: reducedMotion })));
+      try {
+        const random = vi.fn(() => 0.5);
+        const { lobby, element } = mountLobby({ withPreExistingDOM, random });
+        expectFact(element, 3);
+        await vi.advanceTimersByTimeAsync(longWaitMs);
+        expectFact(element, 3);
+
+        element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+        expectFact(element, 3);
+        await vi.advanceTimersByTimeAsync(longWaitMs);
+        expectFact(element, 3);
+
+        for (const fromCache of [false, true]) {
+          lobby.setProgress({ received: 5, expected: 10, ended: 1, totalFiles: 2, fromCache });
+          expectFact(element, 3);
+          await vi.advanceTimersByTimeAsync(longWaitMs);
+          expectFact(element, 3);
+        }
+
+        lobby.setError('Connection lost');
+        expectFact(element, 3);
+        await vi.advanceTimersByTimeAsync(longWaitMs);
+        expectFact(element, 3);
+        expect(random).toHaveBeenCalledOnce();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+  it.each([false, true])('leaves no fact timer pending (reduced motion=%s)', async (reducedMotion) => {
+    vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: reducedMotion })));
+    try {
+      const { lobby, element } = mountLobby({ withPreExistingDOM, random: () => 0 });
+      // Drain jsdom's deferred document work before inspecting pending display timers.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(0);
+      element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+      expect(vi.getTimerCount()).toBe(0);
+      lobby.setError('Connection lost');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(0);
+      lobby.dispose();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

@@ -41,6 +41,8 @@ export interface EntryLobbyOptions {
   store?: KeyValueStore | null;
   /** Initial unsupported message if WebGPU/WebGL2 are missing */
   unsupportedMessage?: string | null;
+  /** Random source for the visit's fact choice. Default: Math.random, values in [0, 1). */
+  random?: () => number;
 }
 
 export interface EntryLobby {
@@ -86,8 +88,6 @@ export const APPROVED_FACTS: Array<{ heading: string; text: string }> = [
     text: 'Tri-point studio lighting rig combined with architectural daylight dome illumination.',
   },
 ];
-
-const FACT_ROTATION_INTERVAL_MS = 6000;
 
 /**
  * Evaluates query parameter precedence for showing the entry lobby:
@@ -147,14 +147,6 @@ function safeLocalStorage(): KeyValueStore | null {
   } catch {
     return null;
   }
-}
-
-function prefersReducedMotion(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  );
 }
 
 /**
@@ -460,13 +452,12 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
     readyHiddenResolver = resolve;
   });
 
-  // Fact rotation timer
-  let factIndex = 0;
-  let factTimer: number | null = null;
   let stopProgressTrackingFn: (() => void) | null = null;
 
-  function renderFact(index: number): void {
-    const fact = APPROVED_FACTS[index % APPROVED_FACTS.length];
+  // Choose and render once at mount, before any loading or progress transitions.
+  const random = options.random ?? Math.random;
+  const fact = APPROVED_FACTS[Math.floor(random() * APPROVED_FACTS.length)];
+  function renderFact(): void {
     if (factHeading !== null) {
       factHeading.textContent = fact.heading;
     }
@@ -475,24 +466,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
     }
   }
 
-  function startFactRotation(): void {
-    if (prefersReducedMotion() || factTimer !== null) {
-      renderFact(0);
-      return;
-    }
-    renderFact(factIndex);
-    factTimer = window.setInterval(() => {
-      factIndex = (factIndex + 1) % APPROVED_FACTS.length;
-      renderFact(factIndex);
-    }, FACT_ROTATION_INTERVAL_MS);
-  }
-
-  function stopFactRotation(): void {
-    if (factTimer !== null) {
-      window.clearInterval(factTimer);
-      factTimer = null;
-    }
-  }
+  renderFact();
 
   const listeners = new AbortController();
   // Global focus containment belongs to the modal input phase, which ends at reveal.
@@ -532,8 +506,6 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
     if (cardElement !== null) {
       cardElement.dataset.view = 'loading';
     }
-
-    startFactRotation();
 
     if (loadRequestResolver !== null) {
       loadRequestResolver({ musicPreference: currentMusicPreference });
@@ -688,7 +660,6 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       if (currentState === 'disposed') {
         return;
       }
-      stopFactRotation();
       if (stopProgressTrackingFn !== null) {
         stopProgressTrackingFn();
         stopProgressTrackingFn = null;
@@ -751,7 +722,6 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       if (currentState === 'disposed') {
         return;
       }
-      stopFactRotation();
       if (stopProgressTrackingFn !== null) {
         stopProgressTrackingFn();
         stopProgressTrackingFn = null;
@@ -792,7 +762,6 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
     },
 
     dispose(): void {
-      stopFactRotation();
       if (stopProgressTrackingFn !== null) {
         stopProgressTrackingFn();
         stopProgressTrackingFn = null;
