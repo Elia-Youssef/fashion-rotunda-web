@@ -41,6 +41,7 @@ import { lut3D } from 'three/addons/tsl/display/Lut3DNode.js';
 import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js';
 import {
   builtinAOContext,
+  convertToTexture,
   float,
   materialMetalness,
   materialRoughness,
@@ -67,6 +68,7 @@ import type DepthOfFieldNode from 'three/addons/tsl/display/DepthOfFieldNode.js'
 import type { SSRNodeOptions } from 'three/addons/tsl/display/SSRNode.js';
 import type { PerspectiveCamera, Scene } from 'three';
 import type { Node, PassNode, UniformNode, WebGPURenderer } from 'three/webgpu';
+import type RTTNode from 'three/src/nodes/utils/RTTNode.js';
 
 import { postSettingsFor, settingsForLevel } from './settings';
 import type { Backend, PostSettings } from './settings';
@@ -335,6 +337,30 @@ function createLutTexture(): Data3DTexture {
 }
 
 /**
+ * These layouts contain only shared shader outputs, never a graph's textures or uniforms.
+ * Keep their identities for the renderer's lifetime: RenderContexts keys by MRT id, so new ids
+ * for the same layout would retain another set of persistent scene render objects on every rebuild.
+ */
+const mrtLayouts = new WeakMap<WebGPURenderer, {
+  beauty: ReturnType<typeof mrt>;
+  normals: ReturnType<typeof mrt>;
+  reflections: ReturnType<typeof mrt>;
+}>();
+
+function layoutsFor(renderer: WebGPURenderer): NonNullable<ReturnType<typeof mrtLayouts.get>> {
+  let layouts = mrtLayouts.get(renderer);
+  if (layouts === undefined) {
+    layouts = {
+      beauty: mrt({ output, velocity }),
+      normals: mrt({ output: normalView }),
+      reflections: mrt({ output: normalView, metalness: materialMetalness, roughness: materialRoughness }),
+    };
+    mrtLayouts.set(renderer, layouts);
+  }
+  return layouts;
+}
+
+/**
  * The graph behind one settings choice: null fields are features that are off, so dispose walks
  * exactly what was allocated.
  */
@@ -354,6 +380,9 @@ interface ChainGraph {
   bokehScaleUniform: UniformNode<'float', number> | null;
   aspectUniform: UniformNode<'float', number>;
   lutTexture: Data3DTexture | null;
+  /** Only conversions allocated by this graph, never borrowed texture/pass inputs. */
+  ownedRTTs: Set<RTTNode>;
+  disposed: boolean;
   /** Bloom creates its internal blur targets during the first render. */
   hasRendered: boolean;
 }
@@ -363,6 +392,8 @@ export function createPostChain(options: PostChainOptions): PostChain {
   const requestFrame = options.requestFrame;
   const dev = applyDevSwitch(postSettingsFor(options.tier, options.isTouch, backend), backend);
   const settings = dev.settings;
+  const layouts = layoutsFor(renderer);
+  let disposed = false;
 
   let governor: Governor | null = null;
   if (dev.governorEnabled) {
@@ -426,6 +457,17 @@ export function createPostChain(options: PostChainOptions): PostChain {
 
   function buildGraph(wanted: PostSettings): ChainGraph {
     const scenePass = scenePassFor(wanted);
+    const ownedRTTs = new Set<RTTNode>();
+
+    // Use the same conversion as the effect factories, but keep ownership when it allocates.
+    // Existing samplers, textures and pass outputs stay borrowed, even if they are RTTs already.
+    function effectTexture(input: Node<'vec4'>): ReturnType<typeof convertToTexture> {
+      const converted = convertToTexture(input);
+      if (converted !== input && converted.isRTTNode === true) {
+        ownedRTTs.add(converted);
+      }
+      return converted;
+    }
 
     let prePass: PassNode | null = null;
     let gtao: GTAONode | null = null;
@@ -445,15 +487,9 @@ export function createPostChain(options: PostChainOptions): PostChain {
       if (wanted.ssr) {
         // SSR requires metalness and roughness attachments to determine reflection specular lobes
         // and dielectric vs metal response. Extending the pre-pass MRT avoids a third geometry pass.
-        prePass.setMRT(
-          mrt({
-            output: normalView,
-            metalness: materialMetalness,
-            roughness: materialRoughness,
-          }),
-        );
+        prePass.setMRT(layouts.reflections);
       } else {
-        prePass.setMRT(mrt({ output: normalView }));
+        prePass.setMRT(layouts.normals);
       }
 
       if (wanted.ao) {
@@ -464,7 +500,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
     }
 
     if (wanted.traa) {
-      scenePass.setMRT(mrt({ output, velocity }));
+      scenePass.setMRT(layouts.beauty);
     }
 
     if (wanted.ssgi !== 'off' && prePass !== null) {
@@ -548,7 +584,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
       // TRAA reprojects the composite history along velocity vectors, providing temporal stability
       // and denoising for both SSGI and SSR.
       traaNode = traa(
-        compositeColor ?? scenePass.getTextureNode(),
+        effectTexture(compositeColor ?? scenePass.getTextureNode()),
         scenePass.getTextureNode('depth'),
         scenePass.getTextureNode('velocity'),
         camera,
@@ -565,7 +601,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
       dofActiveUniform = uniform(0.0);
 
       dofNode = dof(
-        beautyInput,
+        effectTexture(beautyInput),
         viewZ,
         focusDistanceUniform,
         3.0,
@@ -621,11 +657,15 @@ export function createPostChain(options: PostChainOptions): PostChain {
       bokehScaleUniform,
       aspectUniform,
       lutTexture,
+      ownedRTTs,
+      disposed: false,
       hasRendered: false,
     };
   }
 
   function disposeGraph(target: ChainGraph): void {
+    if (target.disposed) return;
+    target.disposed = true;
     target.pipeline.dispose();
     target.scenePass.dispose();
     target.prePass?.dispose();
@@ -635,6 +675,8 @@ export function createPostChain(options: PostChainOptions): PostChain {
     target.ssrNode?.dispose();
     target.bloomNode?.dispose();
     target.dofNode?.dispose();
+    for (const intermediate of target.ownedRTTs) intermediate.dispose();
+    target.ownedRTTs.clear();
     target.lutTexture?.dispose();
   }
 
@@ -741,6 +783,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
 
   return {
     render(): void {
+      if (disposed) return;
       try {
         applyGovernorLevel();
 
@@ -911,6 +954,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
     },
 
     notifyMotion(): void {
+      if (disposed) return;
       lastMotionTimestamp = performance.now();
       if (typeof window !== 'undefined') {
         if (motionTimer !== null) {
@@ -928,6 +972,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
     },
 
     setSize(width: number, height: number): void {
+      if (disposed) return;
       const ratio = renderer.getPixelRatio();
       const key = `${width}:${height}:${ratio}`;
       if (key === lastSizeKey) {
@@ -938,6 +983,8 @@ export function createPostChain(options: PostChainOptions): PostChain {
     },
 
     dispose(): void {
+      if (disposed) return;
+      disposed = true;
       if (motionTimer !== null && typeof window !== 'undefined') {
         window.clearTimeout(motionTimer);
         motionTimer = null;
