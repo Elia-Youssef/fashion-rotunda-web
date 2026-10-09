@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { ConsoleMessage, Locator, Page } from '@playwright/test';
 
-// GOAL ENTRY-3: E2E transition verification suite for two-stage stable-frame black reveal.
+// E2E transition verification suite for two-stage stable-frame black reveal.
 // Tests run on WebGL2 and WebGPU projects where available.
 
 const VIEWPORTS = [

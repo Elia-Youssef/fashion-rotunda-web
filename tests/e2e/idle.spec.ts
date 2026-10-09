@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-// G0.6: the page draws nothing while idle. The cube turns for a wake window after the load and after
+// The page draws nothing while idle. The cube turns for a wake window after the load and after
 // any input, then the loop stops scheduling frames. canvas#scene[data-frames] counts rendered frames,
 // so two equal readings a second apart mean no frame was drawn in between. Headless only: a pointer
 // moving over a headed window is an input and would wake the loop.

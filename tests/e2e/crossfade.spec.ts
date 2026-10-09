@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { ConsoleMessage, Locator, Page } from '@playwright/test';
 
-// G5.1 step 4: the cross-fade between looks. The suite runs on the webgl2 project only: the fade
+// The cross-fade between looks. The suite runs on the webgl2 project only: the fade
 // is the same state machine on both backends, and the webgpu project opens a headed Chrome window
 // the memory suite already avoids holding open.
 

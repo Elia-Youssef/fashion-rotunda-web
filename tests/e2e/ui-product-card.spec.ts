@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 
-// UI-4: Product-Card Parity and Narration Cleanup E2E verification.
+// Product-card and narration cleanup E2E verification.
 // Covers four viewports (1440x900, 820x1180, 390x844, 844x390),
 // compact card geometry, Material disclosure open/close sync,
 // 3-action reflow without Audio, elementFromPoint hit testing,
@@ -41,7 +41,7 @@ async function installSafeArea(page: Page): Promise<SafeArea> {
   return safeArea;
 }
 
-test.describe('UI-4: Product-Card Parity and Narration Cleanup', () => {
+test.describe('Product-Card Parity and Narration Cleanup', () => {
   test('desktop 1440x900: card hierarchy, actions reflow without Audio, and Material disclosure toggle', async ({
     page,
   }) => {
@@ -72,7 +72,7 @@ test.describe('UI-4: Product-Card Parity and Narration Cleanup', () => {
     await expect(cardRoot.locator('button:has-text("Audio")')).toHaveCount(0);
     await expect(cardRoot.locator('[data-action="audio"]')).toHaveCount(0);
 
-    // 3. Swatches initial disclosure state: open by default per UI-1
+    // 3. Swatches initial disclosure state: open by default
     const swatches = card.locator('.product-card__swatches');
     const materialBtn = card.locator('.product-card__action[data-action="material"]');
     await expect(materialBtn).toHaveAttribute('aria-expanded', 'true');

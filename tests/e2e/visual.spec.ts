@@ -1,4 +1,4 @@
-// Goal G2.10: renderer-only WebGL 2 visual baselines at the catalogue proof pose.
+// Renderer-only WebGL 2 visual baselines at the catalogue proof pose.
 
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';

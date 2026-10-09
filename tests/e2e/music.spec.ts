@@ -1,6 +1,6 @@
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
 
-// G5.6: the music switch in the header. The webgl2 project only: it runs headless, and Playwright
+// The music switch in the header. The webgl2 project only: it runs headless, and Playwright
 // launches its Chromium with --mute-audio (playwright-core 1.63.0, lib/coreBundle.js line 43342,
 // inside the `if (options.headless)` branch of _innerDefaultArgs), so nothing reaches the
 // speakers. The headed WebGPU project has no such flag. A Playwright click is a trusted gesture,

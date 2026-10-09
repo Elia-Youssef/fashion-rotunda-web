@@ -5,7 +5,7 @@ import { PNG } from 'pngjs';
 import { parseCatalog } from '../../src/catalog/catalog';
 import type { Catalog } from '../../src/catalog/catalog';
 
-// Goals G5.3 & G5.4 e2e test suite: deep linking, URL synchronization, and 2x screenshot capture.
+// Sharing e2e test suite: deep linking, URL synchronization, and 2x screenshot capture.
 // Runs on the webgl2 project only (skips webgpu to keep headless testing reproducible and fast).
 
 const READY_TIMEOUT_MS = 60_000;

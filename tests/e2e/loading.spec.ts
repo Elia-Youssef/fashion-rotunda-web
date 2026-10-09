@@ -1,6 +1,6 @@
 import { expect, test, type ConsoleMessage } from '@playwright/test';
 
-// ENTRY-2: Opaque Entry Lobby on a real load.
+// Opaque entry lobby on a real load.
 // WebGL2 project runs headless, ensuring deterministic test execution.
 test('gates the experience until the visitor activates Load Experience', async ({ page }) => {
   test.skip(test.info().project.name !== 'webgl2', 'runs headless, where no pointer can enter the gate');

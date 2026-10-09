@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 // The loss notice is the page's answer to a GPU that disappears mid-session. WEBGL_lose_context exists
 // on WebGL only, so this check runs in the webgl2 project. It deliberately loses the device while the
-// ENTRY-3 veil is frozen black: that is the hard case in which both the lobby retry and page-level
+// Scene reveal veil is frozen black: that is the hard case in which both the lobby retry and page-level
 // Reload recovery must remain operable without exposing an unready scene.
 test('fails closed and keeps reload recovery operable when WebGL is lost during black-hold', async ({ page }) => {
   test.skip(test.info().project.name !== 'webgl2', 'WEBGL_lose_context is a WebGL extension');

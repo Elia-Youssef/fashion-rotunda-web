@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-// GOAL ENTRY-2: Comprehensive Entry Lobby E2E Verification.
+// Entry lobby E2E verification.
 // WebGL2 project runs headless and verifies the deferred boot contract,
 // zero network activity before user gesture, responsive viewports,
 // focus containment, hit-test blocking, and music preferences.

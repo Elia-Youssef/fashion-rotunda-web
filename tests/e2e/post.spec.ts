@@ -3,7 +3,7 @@ import type { Locator, Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 import { canvasStats } from './support/pixels';
 
-// G2.3 and G2.5: the post chain's development slices on the WebGL 2 backend. The chain is
+// The post chain's development slices on the WebGL 2 backend. The chain is
 // wired into main.ts in a later step; until then the canvas carries no
 // data-post and both tests skip with the reason below. On this backend the tier decision is always
 // mid (decide.ts lines 54-56), so the aa slice is TRAA and the ao slice is GTAO, deterministically.

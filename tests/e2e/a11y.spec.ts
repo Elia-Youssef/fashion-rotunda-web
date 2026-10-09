@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { ConsoleMessage, Page } from '@playwright/test';
 
-// G6.2, G6.3: onboarding, tooltips and accessibility pass.
+// Onboarding, tooltips and accessibility pass.
 // Tests the first-visit onboarding card, Skip dismissal, the DOM tab walk order,
 // roving tabindex arrow navigation on swatches, the tooltip on focus, live region announcements
 // on look changes, and ensures no console errors occur.

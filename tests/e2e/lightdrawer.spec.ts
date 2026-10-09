@@ -259,7 +259,7 @@ async function newTouchPage(browser: Browser): Promise<{ context: BrowserContext
   return { context, page: await context.newPage() };
 }
 
-test.describe('UI-5: simplified Light Control drawer and rig', () => {
+test.describe('simplified Light Control drawer and rig', () => {
   for (const viewport of VIEWPORTS) {
     test(`closed/open contract and preservation at ${viewport.name} ${viewport.width}x${viewport.height}`, async ({
       page,
@@ -410,10 +410,10 @@ test.describe('UI-5: simplified Light Control drawer and rig', () => {
     });
   }
 
-  // Client review item 2 (2026-09-23): at desktop size the drawer is the Unreal panel's one bar
-  // beside the launcher. On a fine pointer its controls are compact, which reverses the UI-5/UI-6
-  // 44 px desktop clause at the client's request: every target keeps the 24 px WCAG 2.5.8 floor
-  // and owns its centre. The bar stays inside the bottom 140 px the rail leaves free, and it opens
+  // At desktop size the drawer is the Unreal panel's one bar
+  // beside the launcher. On a fine pointer its controls are compact, with a 24 px desktop minimum:
+  // every target keeps the 24 px WCAG 2.5.8 floor and owns its centre. The bar stays inside the
+  // bottom 140 px the rail leaves free, and it opens
   // right of the rail, which is what keeps the two apart when a coarse pointer makes it taller.
   for (const viewport of DESKTOP_BAR_VIEWPORTS) {
     test(`desktop fine-pointer bar at ${viewport.width}x${viewport.height}: four columns, 24px targets, no overlap`, async ({

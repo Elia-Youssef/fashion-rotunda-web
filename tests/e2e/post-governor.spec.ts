@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-// Goal G3.5-R: the bidirectional frame-time governor on actual, headed WebGPU. The deterministic
+// The bidirectional frame-time governor on actual, headed WebGPU. The deterministic
 // harness behind `?e2e=1` (window.archvizE2E.governor) is the only thing this spec drives: it
 // blocks real-frame samples and injects observations with explicit workMs/nowMs/eligibility, so
 // the 80% threshold, the ten-second qualification and the ten-second cooldown are proven on the

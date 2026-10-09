@@ -3,7 +3,7 @@ import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import { parseCatalog } from '../../src/catalog/catalog';
 import type { Catalog } from '../../src/catalog/catalog';
 
-// G5.1, G5.2: the visitor-facing chrome. The strip switches the look, the card names it, the
+// The visitor-facing chrome. The strip switches the look, the card names it, the
 // swatches swap the mannequin and Reset returns the default. webgl2 project only, like the scene
 // suite: the checks are about the DOM, not the backend, and the webgpu project opens a window on
 // this machine that the look loads would hold open for minutes.
@@ -76,7 +76,7 @@ test('the swatches switch the mannequin and Reset returns the default', async ({
   );
 });
 
-// The reachability census (G6.1): at each of the three shell viewports, with the sheets opened
+// The reachability census: at each of the three shell viewports, with the sheets opened
 // where they exist, every census control is visible, sized for a touch (44 by 44 CSS px on the
 // phone viewport), inside the viewport, and no two census boxes intersect. The Light Control
 // drawer starts closed on every breakpoint, so its phase is asserted after opening it through the

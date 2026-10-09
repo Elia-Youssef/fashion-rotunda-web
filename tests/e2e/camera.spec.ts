@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 const SCENE_READY_TIMEOUT = 60_000;
 
-// G4.1 + G4.4 through the real page: a drag orbits the inspection camera, the turntable turns the
+// Camera and turntable through the real page: a drag orbits the inspection camera, the turntable turns the
 // look while it runs, and the loop goes back to sleep once both are still. Reads and the toggle go
 // through window.archvizCamera, which ?e2e=1 mounts; the frame-settling wait mirrors idle.spec.ts.
 // Headless only, like idle.spec.ts: a pointer moving over a headed window is an input nobody

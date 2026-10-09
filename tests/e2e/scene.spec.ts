@@ -4,7 +4,7 @@ import { canvasStats } from './support/pixels';
 import { parseCatalog } from '../../src/catalog/catalog';
 import type { Catalog } from '../../src/catalog/catalog';
 
-// G1.7: the rotunda, the plinth and one look, loaded from public/content. The suite runs on the
+// The rotunda, the plinth and one look, loaded from public/content. The suite runs on the
 // webgl2 project only. Nothing here is backend specific, the checks are about what the page loaded
 // and what it freed, and the webgpu project opens a window on this machine that the memory run
 // would hold open for minutes.

@@ -1,14 +1,14 @@
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
 
-// UI-3 Catalogue Rail Parity E2E verification.
+// Catalogue rail E2E verification.
 // Covers four benchmark viewports, internal horizontal scrolling below the desktop width,
 // synthetic safe-area insets, actionable point elementFromPoint hit testing,
 // pointer and keyboard (Enter, Space) selection, breakpoint focus continuity,
 // latest-click-wins race resolution, and deterministic pending/busy state.
 //
-// Client review item 1 (2026-09-23) reversed UI-3's desktop clause that required the rail to
-// scroll: from 1200px wide the rail shows all seven looks at once with no internal scroll, keeps
+// The desktop rail adapts to the available width and height: from 1200px wide the rail shows all
+// seven looks at once with no internal scroll, keeps
 // its bottom 140px above the viewport bottom for the light bar, shrinks the thumbnails on a short
 // window down to the 24px floor, and scrolls only below that floor.
 
@@ -132,7 +132,7 @@ async function focusRing(
     });
 }
 
-test.describe('UI-3: Catalogue Rail Parity', () => {
+test.describe('Catalogue Rail Parity', () => {
   const GEOMETRY_VIEWPORTS = [
     { id: 'desktop', width: 1440, height: 900, axis: 'y' },
     { id: 'tablet', width: 820, height: 1180, axis: 'x' },
