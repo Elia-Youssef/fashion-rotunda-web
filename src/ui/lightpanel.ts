@@ -49,7 +49,7 @@ function formatCandela(value: number): string {
 
 function formatDaylightPhase(value: number): string {
   if (value < 0.35) return 'Dawn';
-  if (value > 0.65) return 'Dusk';
+  if (value > 0.65) return 'Noon';
   return 'Day';
 }
 
@@ -176,18 +176,18 @@ function addDaylightRow(panel: HTMLElement, daylight: number, idPrefix: string):
   range.step = String(DAYLIGHT_STEP);
   range.value = String(daylight);
   range.setAttribute('list', listId);
-  range.dataset.tooltip = 'Continuous daylight atmosphere: Dawn to Day to Dusk';
+  range.dataset.tooltip = 'Continuous daylight atmosphere: Dawn to Day to Noon';
 
-  // Visible Dawn / Day / Dusk guidance marks
+  // Visible Dawn / Day / Noon guidance marks
   const guidance = element('div', 'lightpanel__guidance');
   guidance.setAttribute('aria-hidden', 'true');
   const dawnMark = element('span', 'lightpanel__guidance-item');
   dawnMark.textContent = 'Dawn';
   const dayMark = element('span', 'lightpanel__guidance-item');
   dayMark.textContent = 'Day';
-  const duskMark = element('span', 'lightpanel__guidance-item');
-  duskMark.textContent = 'Dusk';
-  guidance.append(dawnMark, dayMark, duskMark);
+  const noonMark = element('span', 'lightpanel__guidance-item');
+  noonMark.textContent = 'Noon';
+  guidance.append(dawnMark, dayMark, noonMark);
 
   // Native datalist support
   const datalist = element('datalist', 'lightpanel__datalist');
@@ -198,10 +198,10 @@ function addDaylightRow(panel: HTMLElement, daylight: number, idPrefix: string):
   const optDay = document.createElement('option');
   optDay.value = '0.5';
   optDay.label = 'Day';
-  const optDusk = document.createElement('option');
-  optDusk.value = '1.0';
-  optDusk.label = 'Dusk';
-  datalist.append(optDawn, optDay, optDusk);
+  const optNoon = document.createElement('option');
+  optNoon.value = '1.0';
+  optNoon.label = 'Noon';
+  datalist.append(optDawn, optDay, optNoon);
 
   trackWrap.append(range, guidance, datalist);
 

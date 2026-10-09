@@ -331,7 +331,7 @@ test.describe('UI-5: simplified Light Control drawer and rig', () => {
     await expect(daylight.locator('.lightpanel__range--daylight')).toHaveAttribute('min', '0');
     await expect(daylight.locator('.lightpanel__range--daylight')).toHaveAttribute('max', '1');
     await expect(daylight.locator('.lightpanel__range--daylight')).toHaveAttribute('step', '0.01');
-    for (const phase of ['Dawn', 'Day', 'Dusk']) {
+    for (const phase of ['Dawn', 'Day', 'Noon']) {
       await expect(daylight.locator('.lightpanel__guidance')).toContainText(phase);
     }
     for (const selector of [
@@ -791,7 +791,7 @@ test.describe('UI-5: simplified Light Control drawer and rig', () => {
 
     await setNativeInput(daylight, '0.85');
     await expect(daylight).toHaveValue('0.85');
-    await expect(readout).toHaveText('Dusk');
+    await expect(readout).toHaveText('Noon');
     await expectRigAndUrl(
       page,
       'v2;key,1,15,ffffff;fill,0,7,ffffff;back,0,7,ffffff;day,0.85;e,0.93',

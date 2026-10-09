@@ -45,7 +45,7 @@ export interface RigLight {
 
 export interface Rig {
   lights: RigLight[];
-  /** Continuous daylight/atmosphere control from 0.0 (Dawn) to 0.5 (Day) to 1.0 (Dusk). */
+  /** Continuous daylight/atmosphere control from 0.0 (Dawn) to 0.5 (Day) to 1.0 (Noon). */
   daylight: number;
   /** Preserved tone mapping exposure (default 1.0). */
   exposure: number;

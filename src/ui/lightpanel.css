@@ -278,7 +278,7 @@
   }
 
   /* Daylight: "Atmosphere" and its phase readout on the first row, the slider under them, the
-     Dawn/Day/Dusk marks under the slider. */
+     Dawn/Day/Noon marks under the slider. */
   .lightpanel__control-group--daylight {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:

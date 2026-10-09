@@ -113,7 +113,7 @@ describe('mountLightPanel', () => {
     expect(studioReadout('back', 'color')).toBe('#ffffff');
   });
 
-  it('provides a continuous Daylight range with Dawn/Day/Dusk guidance', () => {
+  it('provides a continuous Daylight range with Dawn/Day/Noon guidance', () => {
     mount();
     const range = daylightControl();
     expect(range.type).toBe('range');
@@ -125,7 +125,7 @@ describe('mountLightPanel', () => {
     expect(guidance).not.toBeNull();
     expect(guidance?.textContent).toContain('Dawn');
     expect(guidance?.textContent).toContain('Day');
-    expect(guidance?.textContent).toContain('Dusk');
+    expect(guidance?.textContent).toContain('Noon');
   });
 
   it('changing checkbox fires onChange with updated on state', () => {
@@ -203,7 +203,7 @@ describe('mountLightPanel', () => {
     expect(studioReadout('key', 'intensity')).toBe('40.0 cd');
     expect(studioReadout('key', 'color')).toBe('#123456');
     expect(studioControl('fill', 'on').checked).toBe(true);
-    expect(daylightReadout()).toBe('Dusk');
+    expect(daylightReadout()).toBe('Noon');
   });
 
   it('labels carry the light name for assistive technology and both switch words', () => {
