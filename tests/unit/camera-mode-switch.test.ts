@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mountModeSwitch } from '../../src/camera/mode-switch';
 import type { ModeSwitchMount } from '../../src/camera/mode-switch';
@@ -7,10 +7,22 @@ import type { CameraMode } from '../../src/camera/mount';
 
 describe('mountModeSwitch', () => {
   let root: HTMLElement;
+  let canvas: HTMLCanvasElement;
 
   beforeEach(() => {
     root = document.createElement('div');
     document.body.appendChild(root);
+    canvas = document.createElement('canvas');
+    canvas.tabIndex = 0;
+    root.appendChild(canvas);
+    // jsdom does not implement pointer lock; model the browser-owned getter explicitly.
+    Object.defineProperty(document, 'pointerLockElement', { configurable: true, get: () => null });
+  });
+
+  afterEach(() => {
+    root.remove();
+    vi.restoreAllMocks();
+    Reflect.deleteProperty(document, 'pointerLockElement');
   });
 
   function make(
@@ -43,7 +55,7 @@ describe('mountModeSwitch', () => {
       }),
     };
 
-    const handle = mountModeSwitch(root, mount, { hasPointerLock });
+    const handle = mountModeSwitch(root, mount, { hasPointerLock, canvas });
     const triggerWalkReady = () => {
       for (const l of readyListeners) {
         l();
@@ -105,6 +117,7 @@ describe('mountModeSwitch', () => {
 
   it('returns to Orbit with O while walking', () => {
     const { mount, handle } = make('walk', true);
+    canvas.focus();
     const event = new KeyboardEvent('keydown', {
       code: 'KeyO',
       bubbles: true,
@@ -159,5 +172,64 @@ describe('mountModeSwitch', () => {
     expect(walk.getAttribute('aria-pressed')).toBe('true');
 
     handle.dispose();
+  });
+
+  describe('shortcut accessibility contract', () => {
+    it.each([
+      ['body', false, false],
+      ['guide', false, false],
+      ['canvas', false, true],
+      ['body', true, true],
+      ['guide', true, true],
+      ['canvas', true, true],
+      ['input', false, false],
+      ['input', true, false],
+      ['textarea', false, false],
+      ['textarea', true, false],
+      ['select', false, false],
+      ['select', true, false],
+      ['button', false, false],
+      ['button', true, false],
+      ['a', false, false],
+      ['a', true, false],
+      ['editable', false, false],
+      ['editable', true, false],
+      ['foreign canvas', false, false],
+      ['foreign canvas', true, false],
+    ] as const)('scopes O from %s with pointer lock %s to scene ownership %s', (source, locked, allowed) => {
+      const { mount, handle } = make('walk');
+      const target = source === 'canvas' ? canvas : source === 'body' ? document.body :
+        document.createElement(source === 'guide' || source === 'editable' ? 'div' :
+          source === 'foreign canvas' ? 'canvas' : source);
+      if (target !== canvas && target !== document.body) root.appendChild(target);
+      if (source === 'editable') target.setAttribute('contenteditable', 'plaintext-only');
+      target.tabIndex = 0;
+      target.focus();
+      vi.spyOn(document, 'pointerLockElement', 'get').mockReturnValue(
+        locked ? source === 'foreign canvas' ? target : canvas : null,
+      );
+      const event = new KeyboardEvent('keydown', { code: 'KeyO', bubbles: true, cancelable: true });
+      target.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(allowed);
+      if (allowed) expect(mount.setMode).toHaveBeenCalledExactlyOnceWith('orbit');
+      else expect(mount.setMode).not.toHaveBeenCalled();
+      handle.dispose();
+    });
+
+    it.each([false, true].flatMap((locked) =>
+      (['altKey', 'ctrlKey', 'metaKey', 'shiftKey', 'repeat'] as const).map((modifier) =>
+        [modifier, locked] as const),
+    ))('leaves %s O alone with pointer lock %s', (modifier, locked) => {
+        const { mount, handle } = make('walk');
+        canvas.focus();
+        vi.spyOn(document, 'pointerLockElement', 'get').mockReturnValue(locked ? canvas : null);
+        const event = new KeyboardEvent('keydown', {
+          code: 'KeyO', bubbles: true, cancelable: true, [modifier]: true,
+        });
+        canvas.dispatchEvent(event);
+        expect(event.defaultPrevented).toBe(false);
+        expect(mount.setMode).not.toHaveBeenCalled();
+        handle.dispose();
+    });
   });
 });

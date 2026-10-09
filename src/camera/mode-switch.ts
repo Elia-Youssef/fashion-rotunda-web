@@ -12,13 +12,14 @@ export type ModeSwitchMount = Pick<CameraMount, 'mode' | 'setMode' | 'onModeChan
 
 export interface ModeSwitchOptions {
   hasPointerLock?: boolean;
+  canvas: HTMLCanvasElement;
 }
 
 /** Two camera-mode buttons plus the Walk pointer-lock escape guidance. */
 export function mountModeSwitch(
   root: HTMLElement,
   mount: ModeSwitchMount,
-  options: ModeSwitchOptions = {},
+  options: ModeSwitchOptions,
 ): { dispose(): void } {
   const hasPointerLock = options.hasPointerLock ?? true;
   const container = document.createElement('nav');
@@ -77,6 +78,9 @@ export function mountModeSwitch(
 
   let orbitShortcutPending = false;
   function onKeyDown(event: KeyboardEvent): void {
+    const canvas = options.canvas;
+    // Pointer lock owns scene input even when clicking a canvas did not move DOM focus.
+    const sceneOwnsKeyboard = document.activeElement === canvas || document.pointerLockElement === canvas;
     const source = event.target;
     const interactiveSource =
       source instanceof HTMLElement &&
@@ -89,6 +93,7 @@ export function mountModeSwitch(
       event.metaKey ||
       event.shiftKey ||
       interactiveSource ||
+      !sceneOwnsKeyboard ||
       !hasPointerLock ||
       mount.mode !== 'walk' ||
       orbitShortcutPending

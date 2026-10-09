@@ -243,10 +243,20 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
   const handle: ProductCardHandle = {
     setLook(look: CatalogLook | null, variant: string | null): void {
       if (signal.aborted) return;
+      const active = document.activeElement;
+      const ownedFocus = active !== null && swatches.contains(active);
+      const focusedVariant = [...swatchButtons].find(([, button]) => button === active)?.[0];
       renderLook(look);
       handle.setVariant(variant);
       // A new look re-renders the row through renderLook, which returns it to the page's default.
       setSwatchesCollapsed(false);
+      if (ownedFocus) {
+        // Restore by identity, not row position. Empty rows return to their disclosure control.
+        const equivalent = focusedVariant === undefined ? undefined : swatchButtons.get(focusedVariant);
+        const checked = [...swatchButtons.values()].find((button) => button.getAttribute('aria-checked') === 'true');
+        const destination = equivalent ?? checked ?? swatchButtons.values().next().value ?? materialButton;
+        destination.focus();
+      }
     },
     setVariant(variant: string | null): void {
       let checkedFound = false;

@@ -861,7 +861,7 @@ async function main(): Promise<void> {
     });
     cameraMount = cameraHandle;
     proofView = catalog.views.proof;
-    mountModeSwitch(shell.roots.header, cameraHandle, { hasPointerLock: !isTouch });
+    mountModeSwitch(shell.roots.header, cameraHandle, { hasPointerLock: !isTouch, canvas });
     const finishingPass = initializedChain;
     finishingPass.setDepthOfFieldAllowed(cameraHandle.mode === 'orbit');
     cameraHandle.onModeChange((mode) => {

@@ -11,6 +11,8 @@ export interface TooltipHandle {
 const TOOLTIP_ID = 'a11y-tooltip';
 const VIEWPORT_PADDING_PX = 8;
 const ANCHOR_GAP_PX = 6;
+// Allow a pointer to cross the existing gap without briefly removing the text.
+const HOVER_TRANSIT_DELAY_MS = 150;
 
 /**
  * Whether a focus should show its tooltip: only when the browser draws the focus ring, that is,
@@ -31,8 +33,8 @@ function focusIsVisible(target: EventTarget | null): boolean {
 
 /**
  * One tooltip element for the page: any element with data-tooltip shows it on hover and on
- * keyboard-visible focus, hides it on leave, blur and Escape; aria-describedby links them while
- * shown.
+ * keyboard-visible focus, keeps it across both hover surfaces, and dismisses on Escape.
+ * aria-describedby links them while shown.
  */
 export function installTooltips(root: HTMLElement): TooltipHandle {
   const tooltip = document.createElement('div');
@@ -44,6 +46,31 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
 
   let activeAnchor: HTMLElement | null = null;
   let previousDescribedBy: string | null = null;
+  let hoveredAnchor: HTMLElement | null = null;
+  let focusedAnchor: HTMLElement | null = null;
+  let dismissedAnchor: HTMLElement | null = null;
+  let transitTimer: number | null = null;
+
+  function cancelTransit(): void {
+    if (transitTimer !== null) {
+      window.clearTimeout(transitTimer);
+      transitTimer = null;
+    }
+  }
+
+  function reconcile(preferredAnchor?: HTMLElement): void {
+    // The latest deliberate entry wins when hover and focus belong to different controls.
+    const activeOwned = activeAnchor !== null && (activeAnchor === hoveredAnchor || activeAnchor === focusedAnchor);
+    const anchor = preferredAnchor ?? (activeOwned ? activeAnchor : hoveredAnchor ?? focusedAnchor);
+    if (anchor !== null && anchor !== dismissedAnchor) {
+      show(anchor);
+    } else {
+      hide();
+    }
+    if (hoveredAnchor === null && focusedAnchor === null) {
+      dismissedAnchor = null;
+    }
+  }
 
   function updatePosition(anchor: HTMLElement): void {
     const rect = anchor.getBoundingClientRect();
@@ -123,9 +150,21 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
   root.addEventListener(
     'pointerover',
     (event) => {
+      const tooltipAnchor = activeAnchor ?? hoveredAnchor;
+      if (event.target instanceof Node && tooltip.contains(event.target) && tooltipAnchor !== null) {
+        cancelTransit();
+        hoveredAnchor = tooltipAnchor;
+        reconcile(tooltipAnchor);
+        return;
+      }
       const anchor = findAnchor(event.target);
       if (anchor !== null) {
-        show(anchor);
+        cancelTransit();
+        const related = event.relatedTarget;
+        const fromPair = related instanceof Node && (anchor.contains(related) || tooltip.contains(related));
+        if (!fromPair) dismissedAnchor = null;
+        hoveredAnchor = anchor;
+        reconcile(anchor);
       }
     },
     { signal },
@@ -134,14 +173,23 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
   root.addEventListener(
     'pointerout',
     (event) => {
-      if (activeAnchor === null) {
+      if (hoveredAnchor === null) {
+        return;
+      }
+      const source = event.target;
+      if (!(source instanceof Node) || (!hoveredAnchor.contains(source) && !tooltip.contains(source))) {
         return;
       }
       const related = event.relatedTarget;
-      if (related instanceof Node && activeAnchor.contains(related)) {
+      if (related instanceof Node && (hoveredAnchor.contains(related) || tooltip.contains(related))) {
         return;
       }
-      hide();
+      cancelTransit();
+      transitTimer = window.setTimeout(() => {
+        transitTimer = null;
+        hoveredAnchor = null;
+        reconcile();
+      }, HOVER_TRANSIT_DELAY_MS);
     },
     { signal },
   );
@@ -151,7 +199,10 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
     (event) => {
       const anchor = findAnchor(event.target);
       if (anchor !== null && focusIsVisible(event.target)) {
-        show(anchor);
+        const related = event.relatedTarget;
+        if (!(related instanceof Node) || !anchor.contains(related)) dismissedAnchor = null;
+        focusedAnchor = anchor;
+        reconcile(anchor);
       }
     },
     { signal },
@@ -160,14 +211,15 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
   root.addEventListener(
     'focusout',
     (event) => {
-      if (activeAnchor === null) {
+      if (focusedAnchor === null) {
         return;
       }
       const related = event.relatedTarget;
-      if (related instanceof Node && activeAnchor.contains(related)) {
+      if (related instanceof Node && focusedAnchor.contains(related)) {
         return;
       }
-      hide();
+      focusedAnchor = null;
+      reconcile();
     },
     { signal },
   );
@@ -176,6 +228,7 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
     'keydown',
     (event) => {
       if (event.key === 'Escape' && activeAnchor !== null) {
+        dismissedAnchor = activeAnchor;
         hide();
       }
     },
@@ -195,6 +248,7 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
   return {
     dispose(): void {
       controller.abort();
+      cancelTransit();
       hide();
       tooltip.remove();
     },

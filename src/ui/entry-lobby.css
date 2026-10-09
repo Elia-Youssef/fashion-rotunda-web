@@ -324,7 +324,7 @@
   font-family: var(--font-mono);
   font-size: var(--type-telemetry);
   letter-spacing: 0.08em;
-  color: var(--border-strong);
+  color: var(--brand-text-secondary);
 }
 
 /* Loading Pane */

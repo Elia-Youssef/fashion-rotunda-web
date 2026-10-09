@@ -319,3 +319,45 @@ describe('ProductCardHandle.dispose', () => {
     expect(handlers.rotate).not.toHaveBeenCalled();
   });
 });
+
+describe('swatch accessibility contract', () => {
+  it.each([
+    ['same variants', ['base', 'light', 'dark'], 'dark', 'light'],
+    ['reordered variants', ['dark', 'base', 'light'], 'dark', 'light'],
+    ['removed variant with checked fallback', ['base', 'dark'], 'dark', 'dark'],
+    ['removed variant with first fallback', ['dark', 'base'], null, 'dark'],
+    ['removed variant with unknown selection', ['dark', 'base'], 'missing', 'dark'],
+  ] as const)('preserves focus for %s and keeps arrow navigation working', (_, variants, selected, expected) => {
+    const handlers = actions();
+    const handle = mount({ handlers });
+    swatch('light').focus();
+    handle.setLook(makeLook('replacement', 'Replacement', [...variants]), selected);
+    expect(document.activeElement).toBe(swatch(expected));
+    const order: readonly string[] = variants;
+    const next = order[(order.indexOf(expected) + 1) % order.length];
+    swatch(expected).dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(document.activeElement).toBe(swatch(next));
+    expect(handlers.material).toHaveBeenCalledExactlyOnceWith(next);
+    expect(swatch(next).getAttribute('aria-checked')).toBe('true');
+  });
+
+  it.each(['no look', 'empty variants'] as const)('keeps a keyboard destination for %s', (empty) => {
+    const handle = mount();
+    swatch('light').focus();
+    handle.setLook(empty === 'no look' ? null : makeLook('empty', 'Empty', []), null);
+    expect(root.querySelectorAll('[role="radio"]')).toHaveLength(0);
+    expect(document.activeElement).toBe(button('Material'));
+  });
+
+  it.each(['outside card', 'card action'] as const)('leaves focus on %s during replacement and clearing', (where) => {
+    const handle = mount();
+    const outside = document.createElement('button');
+    root.appendChild(outside);
+    const focused = where === 'outside card' ? outside : button('Reset');
+    focused.focus();
+    handle.setLook(OTHER, 'dark');
+    expect(document.activeElement).toBe(focused);
+    handle.setLook(null, null);
+    expect(document.activeElement).toBe(focused);
+  });
+});
