@@ -21,6 +21,7 @@ import { ALL_EXTENSIONS, KHRMaterialsVariants } from '@gltf-transform/extensions
 import { mergeDocuments, prune, unpartition } from '@gltf-transform/functions';
 
 import { sourceDir, workDir } from '../config.mjs';
+import { correctDescription } from './lib/catalog-corrections.mjs';
 
 /** Where stage one writes when the caller says nothing. Stage two reads from here. */
 export const assembledDir = resolve(workDir, 'assembled');
@@ -151,7 +152,7 @@ async function assembleLook(io, look, out, exportRoot) {
   return {
     id: look.slug,
     name: look.name,
-    description: plainText(look.description),
+    description: correctDescription(look.slug, plainText(look.description)),
     thumbnail,
     file,
     variants: variantNames,
