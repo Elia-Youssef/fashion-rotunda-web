@@ -30,7 +30,10 @@ const BANNED_UNIT = /-?\d+(?:\.\d+)?(?:px|rem|ms|s)\b/g;
 const FROZEN_PREDECESSOR_SHEET_HASHES: Readonly<Record<string, string>> = {
   // 2026-09-23: re-pinned after the client asked for every look to show in the desktop rail; the
   // desktop thumbnails now read their size from the rail's --rail-thumb token instead of 48px.
-  'catalog-strip.css': '286ad7d8d0e5fe831ae128118f3af9819386691f223eaaca83e758b79bb70ee7',
+  // 2026-10-09: re-pinned after the focus ring of the horizontal band's last thumbnail was cut at
+  // the scroll edge; below 1200px the last item now carries the ring's extent as end padding and
+  // each thumbnail a matching scroll margin.
+  'catalog-strip.css': '61cb0e0985cc9b54e333d4671cd389981ac4e05eada7c03aa1934d1e813fe02e',
   'product-card.css': '71df61da1cd47a490021cd36d193be30cb5e2a191f9b48dbabdef5f48cb2b9cd',
   'share.css': 'dc7722407941d032ebab9b78b426eae29ccb5e083fc215046956042c7a104cca',
 };

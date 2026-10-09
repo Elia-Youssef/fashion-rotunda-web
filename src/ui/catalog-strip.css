@@ -93,6 +93,26 @@
   outline-offset: var(--focus-offset);
 }
 
+/* Horizontal band, every width below the desktop column. The nav scrolls sideways, and once the
+   thumbnails overflow it its own end padding no longer follows them: the list stays as wide as the
+   nav, the thumbnails spill past it, and the scroll ends flush with the last thumbnail's border edge.
+   The focus ring is drawn outside that edge (width plus offset), so the nav's clip cut it. The last
+   item therefore carries the ring's outer extent, plus one pixel of rounding slack, as padding inside
+   its own box, which every engine counts as scrollable overflow. While the strip fits with room for
+   its ring, that padding lies inside the nav's own end padding and nothing scrolls. scroll-margin
+   keeps a thumbnail that focus scrolls into view the same distance from the edge, which also clears
+   the first thumbnail. The query is the exact complement of the desktop column's min-width, so no
+   fractional width falls between the two. */
+@media not all and (min-width: 1200px) {
+  .catalog-strip__item:last-child {
+    padding-inline-end: calc(var(--focus-ring) + var(--focus-offset) + 1px);
+  }
+
+  .catalog-strip__button {
+    scroll-margin-inline: calc(var(--focus-ring) + var(--focus-offset) + 1px);
+  }
+}
+
 /* The look being fetched: present but dimmed, so a slow load reads as loading, not as dead. */
 .catalog-strip__button[aria-busy='true'] {
   opacity: 0.6;
