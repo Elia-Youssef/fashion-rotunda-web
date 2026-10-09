@@ -6,6 +6,34 @@ import './catalog-strip.css';
 
 import type { CatalogLook } from '../catalog/catalog';
 
+// Keep the focus handler's axis in step with the column breakpoint in catalog-strip.css.
+const DESKTOP_RAIL_QUERY = '(min-width: 1200px)';
+
+type HorizontalRect = Pick<DOMRectReadOnly, 'left' | 'right'>;
+
+/**
+ * Returns the nearest scroll position that reveals the thumbnail and its CSS scroll margins.
+ * Container edges are its visible client area, not its border box. An oversized thumbnail cannot
+ * fit: keep it still when it spans both edges, otherwise bring its nearer edge into view.
+ * The scroll container clamps the result to its own scrollable range.
+ */
+export function focusedThumbnailScrollLeft(
+  container: HorizontalRect,
+  thumbnail: HorizontalRect,
+  margin: { left: number; right: number },
+  scrollLeft: number,
+): number {
+  const left = thumbnail.left - margin.left;
+  const right = thumbnail.right + margin.right;
+  const before = left < container.left;
+  const after = right > container.right;
+  if (before === after) return scrollLeft;
+
+  const oversized = right - left > container.right - container.left;
+  const delta = before !== oversized ? left - container.left : right - container.right;
+  return scrollLeft + delta;
+}
+
 export interface CatalogStripOptions {
   looks: CatalogLook[];
   thumbnailUrl: (look: CatalogLook) => string;
@@ -75,6 +103,31 @@ export function mountCatalogStrip(
     label.className = 'catalog-strip__label';
     label.textContent = look.name;
     button.appendChild(label);
+
+    button.addEventListener(
+      'focus',
+      () => {
+        if (matchMedia(DESKTOP_RAIL_QUERY).matches) return;
+
+        const box = root.getBoundingClientRect();
+        const left = box.left + root.clientLeft;
+        const style = getComputedStyle(button);
+        const target = focusedThumbnailScrollLeft(
+          { left, right: left + root.clientWidth },
+          button.getBoundingClientRect(),
+          {
+            left: parseFloat(style.scrollMarginLeft) || 0,
+            right: parseFloat(style.scrollMarginRight) || 0,
+          },
+          root.scrollLeft,
+        );
+        if (target !== root.scrollLeft) {
+          // Only this nav scrolls, instantly even if CSS enables smooth scrolling elsewhere.
+          root.scrollTo({ left: target, behavior: 'instant' });
+        }
+      },
+      { signal: listeners.signal },
+    );
 
     button.addEventListener(
       'click',
