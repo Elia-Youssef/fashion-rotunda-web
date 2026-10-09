@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { installLossHandlers, normaliseLoss } from '../../src/renderer/create';
+import { describeRendererError, installLossHandlers, normaliseLoss } from '../../src/renderer/create';
 import type {
   DeviceLostInfo,
   RendererLossReport,
@@ -155,5 +155,24 @@ describe('installLossHandlers', () => {
       trackTimestamp: true,
     };
     expect(options.trackTimestamp).toBe(true);
+  });
+});
+
+describe('describeRendererError', () => {
+  it('keeps the whole WebGPU message, prefixed with the api and the error type', () => {
+    // Shape built by WebGPUBackend.js lines 287-292 from an uncapturederror event.
+    const message = 'Texture copy range (origin: [Origin3D x:0, y:0, z:0]) touches outside of [Texture] - While finishing [CommandEncoder "renderContext_7"].';
+    const report = { api: 'WebGPU', type: 'GPUValidationError', message, originalEvent: {} };
+    expect(describeRendererError(report)).toBe(`WebGPU GPUValidationError: ${message}`);
+  });
+
+  it('falls back to the bare message when api and type are missing', () => {
+    expect(describeRendererError(new Error('shader compile failed'))).toBe('shader compile failed');
+  });
+
+  it('stringifies anything without a text message', () => {
+    expect(describeRendererError('lost')).toBe('lost');
+    expect(describeRendererError(null)).toBe('null');
+    expect(describeRendererError({ message: 42 })).toBe('[object Object]');
   });
 });

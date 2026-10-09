@@ -24,7 +24,7 @@ import { createGpuTimes, handleTimestampError } from './proof/gpu';
 import { latestLookSwitchMs, markFirstFrame, snapshot } from './proof/marks';
 import { PROOF_POSITION, PROOF_TARGET, runProofOrbit } from './proof/orbit-run';
 import { mountProofPanel, overlayWanted } from './proof/panel';
-import { createRenderer } from './renderer/create';
+import { createRenderer, describeRendererError } from './renderer/create';
 import { showLossNotice, showPoster } from './renderer/notices';
 import { detectSupport } from './renderer/support';
 import { SCENE_BACKGROUND, createShowroom } from './scene/showroom';
@@ -330,7 +330,8 @@ async function main(): Promise<void> {
       showLossNotice(document.body, info, () => location.reload());
     },
     onError: (error) => {
-      console.error('[archviz] renderer error', error);
+      // The message goes out as text: the console's preview of the error object cuts it short.
+      console.error('[archviz] renderer error', describeRendererError(error), error);
       rendererError = true;
       updateRecoveryEligibility();
       canvas.dataset.scene = 'error';

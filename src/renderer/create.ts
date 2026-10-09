@@ -6,6 +6,8 @@
 
 import { AgXToneMapping, WebGPURenderer } from 'three/webgpu';
 
+import { separateViewportTextureSizes } from './viewport-texture';
+
 export type Backend = 'webgpu' | 'webgl2';
 
 export interface DeviceLostInfo {
@@ -136,6 +138,25 @@ function readWebGlRendererName(context: unknown): string {
 }
 
 /**
+ * A renderer error as one line of text. The WebGPU backend reports `{ api, type, message,
+ * originalEvent }` (WebGPUBackend.js lines 287-292), and a console preview of that object cuts the
+ * message short, which is the part that names the failing pass or texture. Pure, like normaliseLoss.
+ */
+export function describeRendererError(raw: unknown): string {
+  if (typeof raw === 'object' && raw !== null && 'message' in raw && typeof raw.message === 'string') {
+    const head: string[] = [];
+    if ('api' in raw && typeof raw.api === 'string') {
+      head.push(raw.api);
+    }
+    if ('type' in raw && typeof raw.type === 'string') {
+      head.push(raw.type);
+    }
+    return head.length > 0 ? `${head.join(' ')}: ${raw.message}` : raw.message;
+  }
+  return String(raw);
+}
+
+/**
  * The two callback slots this module overrides, as the renderer exposes them (Renderer.js lines 595
  * and 606, typed in Renderer.d.ts lines 255 and 265). Structural on purpose: the unit test installs the
  * handlers on a stand-in and calls them directly, which jsdom cannot do with a real renderer.
@@ -197,6 +218,9 @@ export function installLossHandlers(
 }
 
 export async function createRenderer(options: CreateRendererOptions): Promise<RendererHandle> {
+  // Before any frame: the dome glass's framebuffer textures must each follow their own render
+  // target's size, or a pixel-ratio step leaves one at a stale size (viewport-texture.ts).
+  separateViewportTextureSizes();
   // `forceWebGL: false` reaches the constructor as an explicit false, which selects the WebGPU
   // backend exactly like an omitted property would (WebGPURenderer.js line 57 checks truthiness).
   const renderer = new WebGPURenderer({
