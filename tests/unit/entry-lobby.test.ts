@@ -417,7 +417,7 @@ describe('disposal', () => {
   });
 });
 
-describe('ENTRY-3 transition handshake additions', () => {
+describe('entry lobby transition handshake', () => {
   it('transitions through cover-to-black, black-hold, revealing, and revealed', () => {
     const { lobby, element } = mountLobby();
     expect(lobby.element).toBe(element);

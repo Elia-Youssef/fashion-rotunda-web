@@ -23,10 +23,9 @@ const HEX_COLOR = /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})(?![\w-])/
 const COLOR_FUNCTION = /(?:rgba?|hsla?)\(/g;
 const BANNED_UNIT = /-?\d+(?:\.\d+)?(?:px|rem|ms|s)\b/g;
 
-// UI-3/UI-4 own these component stylesheets, which contain predecessor-approved literals and are
-// outside UI-6's exhaustive allowlist. Pin their complete bytes instead of broadly exempting
-// individual literals: UI-6 may neither change them nor use them to weaken the token contract for
-// any editable stylesheet.
+// These component stylesheets contain existing literals and are outside the token allowlist.
+// Pin their complete bytes instead of broadly exempting individual literals: frozen stylesheets
+// must not change or weaken the token contract for any editable stylesheet.
 const FROZEN_PREDECESSOR_SHEET_HASHES: Readonly<Record<string, string>> = {
   // 2026-09-23: re-pinned after the client asked for every look to show in the desktop rail; the
   // desktop thumbnails now read their size from the rail's --rail-thumb token instead of 48px.
@@ -136,7 +135,7 @@ describe('the token contract on the component stylesheets', () => {
   for (const sheet of componentSheets()) {
     const frozenHash = FROZEN_PREDECESSOR_SHEET_HASHES[sheet];
     if (frozenHash !== undefined) {
-      it(`${sheet} remains byte-identical predecessor CSS outside UI-6 scope`, () => {
+      it(`${sheet} remains byte-identical frozen CSS`, () => {
         const css = readFileSync(join(UI_DIR, sheet), 'utf8');
         expect(sha256(css), `${sheet} may not change in UI-6`).toBe(frozenHash);
       });

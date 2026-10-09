@@ -11,7 +11,7 @@ import {
 import type { EnhancedLevel, Governor, GovernorEvent, GovernorState } from '../../src/post/governor';
 import { postChainRebuildAllowed } from '../../src/post/chain';
 
-// G3.5 (one-way degradation) and G3.5-R (safe recovery). Every test drives the governor on a
+// One-way degradation and safe recovery. Every test drives the governor on a
 // deterministic fake clock: observe() takes the monotonic nowMs the decision clock runs on, so
 // ten seconds of qualification and cooldown are exact integers here and wall time never leaks in.
 
@@ -68,7 +68,7 @@ const COMFORTABLE_MS = 8;
 /** Inside the borderline band: above 80% of budget, at or under the budget itself. */
 const BORDERLINE_MS = 15;
 
-describe('post governor: preserved G3.5 downgrade behaviour', () => {
+describe('post governor: downgrade behaviour', () => {
   const defaultOptions = { budgetMs: 16.7, windowFrames: 60, patience: 2 };
 
   it('starts at full level and exposes the degradation ladder', () => {
@@ -298,7 +298,7 @@ describe('post governor: preserved G3.5 downgrade behaviour', () => {
   });
 });
 
-describe('post governor: G3.5-R recovery policy', () => {
+describe('post governor: recovery policy', () => {
   it('matrix 5: recovery accepts p95 exactly equal to 80% of the budget', () => {
     const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
     const { gov, decidedAt } = degradedAtSsgiHalf();
@@ -618,7 +618,7 @@ describe('post governor: G3.5-R recovery policy', () => {
   });
 });
 
-describe('post governor: snapshot, restoration and resize (G3.5-R state transfer)', () => {
+describe('post governor: snapshot, restoration and resize state transfer', () => {
   /** A mid-decision state: degraded, patience 1, mid-window, mid-run, inside cooldown. */
   function richState(): GovernorState {
     const gov = createGovernor({ budgetMs: BUDGET_MS, windowFrames: 10, patience: 2 });

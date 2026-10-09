@@ -1,3 +1,3 @@
 // @vitest-environment jsdom
-// Migrated to EntryLobby under GOAL ENTRY-2.
+// The entry lobby suite covers the loading gate.
 import './entry-lobby.test';

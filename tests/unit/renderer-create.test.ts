@@ -69,7 +69,7 @@ describe('normaliseLoss', () => {
 /**
  * A stand-in for the renderer's two callback slots. The default device-lost handler mirrors three.js:
  * a method that writes `this._isDeviceLost` (Renderer.js line 1360). Calling it bare throws, which is
- * exactly the defect the G0.3 audit found, so the flag is the assertion that matters below.
+ * why the device-lost flag is the assertion that matters below.
  */
 function fakeRenderer() {
   const reports: RendererLossReport[] = [];

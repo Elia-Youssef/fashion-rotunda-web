@@ -1,4 +1,4 @@
-// Unit tests for material tuning table and applier (goals G2.6, G2.7).
+// Unit tests for the material tuning table and applier.
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';

@@ -81,7 +81,7 @@ function createAllPassingPredicates(): ReadinessPredicates {
   };
 }
 
-describe('SceneRevealCoordinator (GOAL ENTRY-3)', () => {
+describe('SceneRevealCoordinator', () => {
   let canvas: HTMLCanvasElement;
   let mockLobby: EntryLobby;
 

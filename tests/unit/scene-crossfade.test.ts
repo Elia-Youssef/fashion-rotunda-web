@@ -9,7 +9,7 @@ import {
 } from '../../src/scene/crossfade';
 import type { FadeMachine } from '../../src/scene/crossfade';
 
-// G5.1 step 4: the cross-fade. Both halves are here, because both are pure: the arithmetic, and
+// The cross-fade. Both halves are here, because both are pure: the arithmetic, and
 // the machine that decides which transition happens on which frame. What stays in showroom.ts is
 // the three.js side of each callback, which the browser spec covers.
 
