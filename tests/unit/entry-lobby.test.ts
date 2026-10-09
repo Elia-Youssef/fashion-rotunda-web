@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
+import { contentUrl, loadCatalog } from '../../src/catalog/catalog';
+import type { Catalog } from '../../src/catalog/catalog';
 
 import {
   APPROVED_FACTS,
@@ -736,4 +739,71 @@ describe('first-frame byte total and the sky source', () => {
     expect(reading.expected).toBe(withoutEnvironment + bytes(catalog.environment.file));
     expect(reading.totalFiles).toBe(4);
   });
+
+  it.each([
+    [false, false, false], [false, false, true],
+    [true, false, false], [true, false, true],
+    [true, true, false], [true, true, true],
+  ])('shares tracker requests with content selection (half=%s, missing=%s, hdr=%s)',
+    async (half, missing, hdr) => {
+      // Execute the content-set selection itself, including the half-to-full failure fallback.
+      const main = ts.createSourceFile('main.ts', readFileSync('src/main.ts', 'utf8'), ts.ScriptTarget.Latest, true);
+      const fn = main.statements.find((node): node is ts.FunctionDeclaration =>
+        ts.isFunctionDeclaration(node) && node.name?.text === 'loadContentSet');
+      if (fn === undefined) throw new Error('missing content-set selection');
+      const code = ts.transpileModule(fn.getText(main), {
+        compilerOptions: { target: ts.ScriptTarget.ES2022 },
+      }).outputText;
+      const select = new Function('loadCatalog', 'contentUrl', `
+        const FULL_CONTENT_BASE = '/content', HALF_CONTENT_BASE = '/content/half';
+        ${code} return loadContentSet;
+      `)(loadCatalog, contentUrl) as (half: boolean) => Promise<{ base: string; catalog: Catalog }>;
+      let resolve!: (response: Response) => void;
+      const full = new Promise<Response>((yes) => { resolve = yes; });
+      const fetchFn = vi.fn((input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url === '/content/catalog.json') return full;
+        if (url === '/content/manifest.json') return Promise.resolve(new Response(manifestText));
+        if (url === '/content/half/catalog.json') return Promise.resolve(
+          new Response(missing ? 'missing' : catalogText, { status: missing ? 404 : 200 }),
+        );
+        throw new Error('unexpected request: ' + url);
+      });
+      vi.stubGlobal('fetch', fetchFn);
+      // The extra HDR and nonselected look must never enter the default progress list.
+      const entries = [
+        { name: '/content/' + catalog.rotunda.file, transferSize: 101 },
+        { name: '/content/' + catalog.plinth.file, transferSize: 202 },
+        { name: '/content/' + catalog.looks[0].file, transferSize: 303 },
+        { name: '/content/' + catalog.environment.file, transferSize: 404 },
+        { name: '/content/looks/not-first.glb', transferSize: 999 },
+      ].map((entry) => ({ ...entry, responseEnd: 1, entryType: 'resource' }));
+      vi.stubGlobal('performance', { getEntriesByType: () => entries });
+      const readings: ProgressReading[] = [];
+      let stop: (() => void) | undefined;
+      const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        expect(fetchFn).not.toHaveBeenCalled();
+        stop = trackFirstFrameProgress('/content', (reading) => readings.push(reading), hdr);
+        const selected = select(half);
+        resolve(new Response(catalogText));
+        expect((await selected).base).toBe(half && !missing ? '/content/half' : '/content');
+        await vi.waitFor(() => expect(readings.some((reading) => reading.expected > 0)).toBe(true));
+        // A later consumer also reuses the settled request.
+        await select(half);
+        const reading = readings.find((one) => one.expected > 0)!;
+        expect(reading).toEqual({ received: hdr ? 1010 : 606,
+          expected: withoutEnvironment + (hdr ? bytes(catalog.environment.file) : 0),
+          ended: hdr ? 4 : 3, totalFiles: hdr ? 4 : 3, fromCache: false });
+        expect(fetchFn.mock.calls.map(([url]) => String(url))).toEqual([
+          '/content/manifest.json', '/content/catalog.json', ...(half ? ['/content/half/catalog.json'] : []),
+        ]);
+        if (missing) expect(warning).toHaveBeenCalledWith(
+          '[archviz] no content set at /content/half, using /content', expect.any(Error),
+        );
+      } finally {
+        stop?.(); warning.mockRestore(); vi.unstubAllGlobals();
+      }
+    },
+  );
 });

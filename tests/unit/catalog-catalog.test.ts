@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CATALOG_VERSION, contentUrl, loadCatalog, parseCatalog } from '../../src/catalog/catalog';
 
 // The fixtures are built as plain JSON so a test can delete or corrupt one field and leave the rest
@@ -133,6 +133,27 @@ describe('contentUrl', () => {
 });
 
 describe('loadCatalog', () => {
+  it.each(['/content/catalog.json', '/content/half/catalog.json'])(
+    'shares pending, fulfilled and rejected requests for %s without fetching early', async (url) => {
+      let resolve!: (response: Response) => void;
+      const fetchFn = vi.fn<typeof fetch>(() => new Promise<Response>((yes) => { resolve = yes; }));
+      expect(fetchFn).not.toHaveBeenCalled();
+      const first = loadCatalog(url, fetchFn);
+      const second = loadCatalog(url, fetchFn);
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+      resolve(new Response(JSON.stringify(catalogJson())));
+      expect(await first).toEqual(await second);
+      expect(await loadCatalog(url, fetchFn)).toBe(await first);
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+
+      const failing = vi.fn<typeof fetch>(async () => new Response('missing', { status: 404 }));
+      const failures = await Promise.allSettled([loadCatalog(url, failing), loadCatalog(url, failing)]);
+      expect(failures.map((result) => result.status)).toEqual(['rejected', 'rejected']);
+      await expect(loadCatalog(url, failing)).rejects.toThrow('404');
+      expect(failing).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it('fetches the url it is given and validates the answer', async () => {
     const asked: string[] = [];
     const fetchFn: typeof fetch = async (input) => {

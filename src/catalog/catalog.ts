@@ -187,16 +187,32 @@ export function contentUrl(base: string, file: string): string {
   return `${left}/${right}`;
 }
 
+// A request owner per fetch implementation, shared by the scene loader and progress tracker.
+const catalogRequests = new WeakMap<typeof fetch, Map<string, Promise<Catalog>>>();
+
 /**
- * Fetches and validates catalog.json. `fetchFn` exists for the unit tests; in the page the global
- * fetch is used, bound to globalThis because a detached reference throws in Chrome.
+ * Fetches and validates catalog.json once per URL. `fetchFn` exists for the unit tests; in the
+ * page the global fetch is called with globalThis because a detached reference throws in Chrome.
  */
-export async function loadCatalog(url: string, fetchFn?: typeof fetch): Promise<Catalog> {
-  const request = fetchFn ?? globalThis.fetch.bind(globalThis);
-  const response = await request(url);
-  if (!response.ok) {
-    throw new Error(`catalog: ${url} answered ${response.status}`);
+export function loadCatalog(url: string, fetchFn?: typeof fetch): Promise<Catalog> {
+  const request = fetchFn ?? globalThis.fetch;
+  let requests = catalogRequests.get(request);
+  if (requests === undefined) {
+    requests = new Map();
+    catalogRequests.set(request, requests);
   }
-  const json: unknown = await response.json();
-  return parseCatalog(json);
+  const existing = requests.get(url);
+  if (existing !== undefined) return existing;
+  // Keep fulfilled and rejected requests: the tracker and scene must see the same catalogue
+  // outcome, without another download. No request is started until loadCatalog is called.
+  const pending = (async (): Promise<Catalog> => {
+    const response = await request.call(globalThis, url);
+    if (!response.ok) {
+      throw new Error(`catalog: ${url} answered ${response.status}`);
+    }
+    const json: unknown = await response.json();
+    return parseCatalog(json);
+  })();
+  requests.set(url, pending);
+  return pending;
 }

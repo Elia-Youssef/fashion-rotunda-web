@@ -68,6 +68,8 @@ export interface ShowroomOptions {
   onChange: () => void;
   /** Called on every loaded root before it enters the scene; the lighting uses it to enable shadows. */
   decorate?: (root: Object3D) => void;
+  /** Downloads and parsing overlap; scene attachment waits for its startup prerequisites. */
+  beforeMount?: (kind: 'statics' | 'look') => Promise<unknown>;
 }
 
 export interface Showroom {
@@ -444,6 +446,7 @@ export function createShowroom(options: ShowroomOptions): Showroom {
       loaded.applied = wanted;
     }
     collectResources(loaded);
+    await waitToMount('look', [loaded.root]);
     return loaded;
   }
 
@@ -462,6 +465,36 @@ export function createShowroom(options: ShowroomOptions): Showroom {
     }
     loaded.geometries.clear();
     loaded.materials.clear();
+  }
+
+  async function waitToMount(kind: 'statics' | 'look', roots: Object3D[]): Promise<void> {
+    try {
+      await options.beforeMount?.(kind);
+    } catch (error) {
+      // A failed prerequisite leaves parsed content unattached. Release its resources just as
+      // for a replaced look, rather than retaining work that can never reach the scene.
+      const geometries = new Set<BufferGeometry>();
+      const materials = new Set<Material>();
+      const textures = new Set<Texture>();
+      for (const root of roots) {
+        root.traverse((object) => {
+          if (!(object instanceof Mesh)) return;
+          geometries.add(object.geometry);
+          for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+            materials.add(material);
+          }
+          const original: unknown = object.userData['originalMaterial'];
+          if (original instanceof Material) materials.add(original);
+        });
+      }
+      for (const geometry of geometries) geometry.dispose();
+      for (const material of materials) {
+        collectTextures(material, textures);
+        material.dispose();
+      }
+      for (const texture of textures) texture.dispose();
+      throw error;
+    }
   }
 
   const switcher = createSwitcher<LoadedLook>({
@@ -500,6 +533,7 @@ export function createShowroom(options: ShowroomOptions): Showroom {
         loadGltf(contentUrl(contentBase, catalog.rotunda.file), forever),
         loadGltf(contentUrl(contentBase, catalog.plinth.file), forever),
       ]);
+      await waitToMount('statics', [rotunda.scene, plinth.scene]);
       tuneHierarchy(rotunda.scene, catalog.rotunda.file);
       tuneHierarchy(plinth.scene, catalog.plinth.file);
       // The level origin is the room centre at floor height and the plinth stands on it, so both

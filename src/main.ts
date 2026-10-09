@@ -787,6 +787,9 @@ async function main(): Promise<void> {
         loop.invalidate();
       },
       decorate: enableShadows,
+      // Preserve the lighting -> statics -> look attachment order while their GLBs prepare
+      // concurrently. The loop can draw during loading, before contentOnScreen is published.
+      beforeMount: (kind) => kind === 'statics' ? lightingReady : staticsReady,
     });
     // The camera was built square; the canvas box is the aspect it has to keep.
     resize();
@@ -794,7 +797,7 @@ async function main(): Promise<void> {
     // The studio rig, the environment and the panel, around the showroom's scene. ?rig= carries a
     // serialized rig from a shared link; the level's own values otherwise.
     const rigParam = params.get('rig');
-    const lighting = await composeLighting({
+    const lightingReady = composeLighting({
       renderer,
       scene: showroom.scene,
       // The default sky is generated in memory. ?sky=hdr restores the School Field HDR as a
@@ -811,17 +814,26 @@ async function main(): Promise<void> {
       },
     });
 
-    await showroom.loadStatics();
+    const staticsReady = showroom.loadStatics();
     const look = chooseLook(catalog);
-    await showroom.showLook(look.id);
-    try {
-      await showroom.setVariant(chooseVariant(look));
-    } catch (error) {
-      // The catalogue names the variants and the look file carries them, and the two are written
-      // by different steps. A swatch that does not exist is a content defect worth seeing, but the
-      // room and the look are already on screen and taking the page down over it helps nobody.
-      console.warn('[archviz] the look loaded without its variant', error);
+    const firstLookReady = (async () => {
+      await showroom.showLook(look.id);
+      try {
+        await showroom.setVariant(chooseVariant(look));
+      } catch (error) {
+        // The catalogue names the variants and the look file carries them, and the two are written
+        // by different steps. A swatch that does not exist is a content defect worth seeing, but the
+        // room and the look are already on screen and taking the page down over it helps nobody.
+        console.warn('[archviz] the look loaded without its variant', error);
+      }
+    })();
+    // Observe every rejection immediately, then retain the original error priority even when
+    // a later request fails first. No readiness state is published until all work has settled.
+    const results = await Promise.allSettled([lightingReady, staticsReady, firstLookReady]);
+    for (const result of results) {
+      if (result.status === 'rejected') throw result.reason;
     }
+    const lighting = await lightingReady;
     contentOnScreen = true;
     publishSceneState();
     loop.invalidate();
