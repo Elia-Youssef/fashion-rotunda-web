@@ -1,4 +1,4 @@
-// Goal G4.6: camera presets and catalogue view integration.
+// Camera presets and catalogue view integration.
 // Stable ordering with proof first, followed by entrance, detail, inlay, and dome.
 // Glides the orbit to the chosen preset pose, cutting instantly under reduced motion.
 

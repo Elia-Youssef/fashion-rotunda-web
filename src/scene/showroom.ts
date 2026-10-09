@@ -1,6 +1,6 @@
-// Goal G1.7, G5.1 step 4: the showroom scene. The rotunda and the plinth load once and stay; one
+// The showroom scene. The rotunda and the plinth load once and stay; one
 // look stands on the plinth and is replaced on request, with its GPU resources freed as it goes.
-// A replacement since G5.1 cross-fades over CROSSFADE_MS instead of swapping in one frame.
+// A replacement cross-fades over CROSSFADE_MS instead of swapping in one frame.
 //
 // What this module owns: the three.js scene graph, the placement rule, the switch race, the
 // cross-fade and the disposal. What it deliberately does not own: the DOM (main.ts writes the

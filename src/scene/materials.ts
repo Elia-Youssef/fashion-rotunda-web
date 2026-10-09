@@ -1,9 +1,9 @@
-// Material tuning table and application for goals G2.6 and G2.7.
+// Material tuning table and application for dome glass and showroom surfaces.
 //
 // GLTFLoader maps extensions to material classes: standard materials are upgraded to physical
 // materials when physical properties (transmission, clearcoat, anisotropy, sheen) are assigned.
 // Source-backed values and appearance approximations share this table; the latter still require
-// material-family visual review against Unreal references before G2.7 closes.
+// material-family visual review against Unreal references before acceptance.
 
 import { Mesh, MeshPhysicalMaterial, MeshStandardMaterial } from 'three/webgpu';
 import type { Material, Object3D } from 'three/webgpu';

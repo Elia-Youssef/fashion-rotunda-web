@@ -1,4 +1,4 @@
-// Goal G2.8 and G6.4: GPU frame-time ring buffer driven by renderer timestamp queries.
+// GPU frame-time ring buffer driven by renderer timestamp queries.
 
 export interface GpuTimes {
   /** Records the last resolved GPU time of a frame; called once per drawn frame after the resolve. */

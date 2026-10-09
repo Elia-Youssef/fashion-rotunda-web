@@ -1,4 +1,4 @@
-// Goal G0.4: first-frame and payload measurement plus the proof snapshot assembly.
+// First-frame and payload measurement plus the proof snapshot assembly.
 
 import type { FrameTimes } from './frametime';
 

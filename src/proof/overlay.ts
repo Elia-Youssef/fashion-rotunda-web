@@ -1,4 +1,4 @@
-// Goal G0.4: the proof overlay panel. The only proof module that touches the DOM.
+// The proof overlay panel. The only proof module that touches the DOM.
 
 import type { ProofSnapshot } from './marks';
 

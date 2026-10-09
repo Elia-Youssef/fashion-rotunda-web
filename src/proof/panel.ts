@@ -1,4 +1,4 @@
-// Goal G2.8 and G6.4: The proof panel with the complete numbers definition and scripted orbit measure.
+// The proof panel with the complete numbers definition and scripted orbit measure.
 
 import './panel.css';
 import type { ProofSnapshot } from './marks';

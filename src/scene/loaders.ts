@@ -1,4 +1,4 @@
-// Goal G1.7: the one GLTFLoader the page uses, wired for the three things the optimize pass adds
+// The one GLTFLoader the page uses, wired for the three things the optimize pass adds
 // to every file it writes.
 //
 // KTX2 textures (KHR_texture_basisu): KTX2Loader transcodes them to whatever compressed format the

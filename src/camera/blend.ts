@@ -1,4 +1,4 @@
-// Goal G4.3: blended camera switch between inspection and walkthrough.
+// Blended camera switch between inspection and walkthrough.
 // Smoothly eases camera position and look-at target from one mode's stored pose to the other's
 // over BLEND_MS (700 ms). Reduced motion uses 0 ms (instant cut).
 

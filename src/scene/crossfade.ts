@@ -1,4 +1,4 @@
-// Goal G5.1 step 4: the cross-fade between two looks. The arithmetic and the transitions both
+// The cross-fade between two looks. The arithmetic and the transitions both
 // live here, in a module with no three.js import, so the whole machine runs under node. The
 // showroom owns the materials, the meshes and the GPU resources; this module owns which
 // transition happens when, and calls back into the showroom to make each one happen.

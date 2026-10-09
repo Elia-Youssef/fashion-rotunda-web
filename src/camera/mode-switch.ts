@@ -1,4 +1,4 @@
-// Goal G4.3: camera mode switch UI.
+// Camera mode switch UI.
 // Two buttons (Orbit and Walk), aria-pressed on the active one, keyboard reachable,
 // and data-tooltip set ("Orbit inspection camera", "Walk the showroom floor" or "Loading the floor").
 

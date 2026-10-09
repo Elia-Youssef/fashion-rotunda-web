@@ -1,4 +1,4 @@
-// Goal G0.4: frame work-time statistics for the proof panel and the resolution scaler.
+// Frame work-time statistics for the proof panel and the resolution scaler.
 
 const DEFAULT_CAPACITY = 240;
 

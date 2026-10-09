@@ -1,4 +1,4 @@
-// Goal G4.2: the first-person walkthrough camera.
+// The first-person walkthrough camera.
 // Navigates the rotunda floor at a constant eye height (1.65 m) with capsule collision (0.3 m radius)
 // against the collision mesh. Supports pointer lock and WASD / arrow keys on desktop, and a touch
 // virtual joystick and drag look on mobile. Shifts double the walk speed (1.4 m/s to 2.8 m/s).

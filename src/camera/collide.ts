@@ -1,4 +1,4 @@
-// Goal G4.2: capsule collision against the rotunda geometry.
+// Capsule collision against the rotunda geometry.
 // Implements the three-mesh-bvh shapecast pattern documented in example/characterMovement.js
 // (lines 368-392). The capsule is vertical with its lowest point at foot.y and height equal to
 // eye height. Resolves penetrations iteratively so corners and the plinth edge do not snag.

@@ -1,4 +1,4 @@
-// Goal G4.1: the inspection camera. Orbits the target by drag, dollies by wheel, pinch and keys,
+// The inspection camera. Orbits the target by drag, dollies by wheel, pinch and keys,
 // and glides to rest after release through the page's own on-demand loop (onChange asks for the
 // frame, update integrates the damping). Written against three.js primitives directly: the addon
 // OrbitControls owns pointer events and schedules its own animation frames, which this page's

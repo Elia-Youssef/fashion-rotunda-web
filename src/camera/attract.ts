@@ -1,4 +1,4 @@
-// Goal G4.6: the attract loop.
+// The attract loop.
 // Tours the catalogue presets in order after ATTRACT_IDLE_MS (60 s) of user inactivity.
 // Each preset is reached via an eased glide over ATTRACT_MOVE_MS (3 s) and held for
 // ATTRACT_HOLD_MS (4 s). Any user input stops the tour immediately and restarts the idle clock.

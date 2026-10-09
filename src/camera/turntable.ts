@@ -1,4 +1,4 @@
-// Goal G4.4: the turntable. The look on the plinth turns at a steady rate while this runs; the
+// The turntable. The look on the plinth turns at a steady rate while this runs; the
 // product card's Rotate action and the Reset action drive it through toggle() and setYaw().
 // Pure state: no three.js, no DOM, so the unit tests are arithmetic.
 

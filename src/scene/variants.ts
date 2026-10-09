@@ -1,4 +1,4 @@
-// Goal G1.7: KHR_materials_variants, the mannequin's three swatches in one file.
+// KHR_materials_variants, the mannequin's three swatches in one file.
 //
 // GLTFLoader does not implement this extension. It copies the unknown extension blocks into
 // userData and stops there: the root block reaches gltf.userData.gltfExtensions

@@ -1,4 +1,4 @@
-// Goal G2.8 and G6.4: scripted 10-second inspection orbit around the showroom proof target.
+// Scripted 10-second inspection orbit around the showroom proof target.
 
 export interface OrbitRunOptions {
   setPose(position: [number, number, number], target: [number, number, number]): void;

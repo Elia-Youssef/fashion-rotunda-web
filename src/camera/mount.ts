@@ -1,4 +1,4 @@
-// Goal G4.1 + G4.2 + G4.3 + G4.4 + G4.6 wiring: the one place the camera code touches the page.
+// Camera wiring: the one place the camera code touches the page.
 // Integrates the orbit inspection camera, turntable, walkthrough camera with capsule collision,
 // blended mode transitions, catalogue view presets, and the idle attract tour.
 
