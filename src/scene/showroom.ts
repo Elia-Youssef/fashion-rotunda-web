@@ -119,7 +119,7 @@ type DissolveThreshold = typeof DISSOLVE_THRESHOLD;
 
 /**
  * GLTFLoader builds classic materials (loadMaterial, GLTFLoader.js lines 3596-3736; the default
- * type is MeshStandardMaterial from createDefaultMaterial, line 2317) and the renderer turns them
+ * type is MeshStandardMaterial from createDefaultMaterial, line 2321) and the renderer turns them
  * into node materials per build by copying every own property onto the node class for the type
  * (NodeLibrary.js lines 52-70, reached from NodeBuilder.prebuild, NodeBuilder.js line 3156). The
  * fade writes opacityNode on the classic instance and lets that copy carry it into the shader.
@@ -316,7 +316,7 @@ export function createShowroom(options: ShowroomOptions): Showroom {
       if ((fadeMaterial.opacityNode ?? null) === opacityNode) {
         // Already carrying this look's uniform. A second stamp would move the material's version
         // for nothing, and a moved version with a changed cache key throws the render object away
-        // and rebuilds it (RenderObjects.js lines 135-141).
+        // and rebuilds it (RenderObjects.js lines 136-142).
         continue;
       }
       fadeMaterial.opacityNode = opacityNode;

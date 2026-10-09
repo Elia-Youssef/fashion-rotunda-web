@@ -480,7 +480,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
       rawSSGI.sliceCount.value = 2;
       rawSSGI.stepCount.value = 8;
       rawSSGI.giIntensity.value = 3;
-      // SSGINode.updateBefore (SSGINode.js line 357) calls this.setSize with the full drawing
+      // SSGINode.updateBefore (SSGINode.js lines 365-366) calls this.setSize with the full drawing
       // buffer on every frame, so the resolution switch has to live in the instance's own setSize
       // rather than in a field the node would overwrite.
       const rawSetSize = rawSSGI.setSize.bind(rawSSGI);

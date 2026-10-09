@@ -174,7 +174,7 @@ export type LossHandlers = Pick<CreateRendererOptions, 'onDeviceLost' | 'onError
  * (WebGLBackend.js lines 232-249), which it also removes on dispose (WebGLBackend.js line 2944). No
  * canvas listener of our own is needed. The device-lost slot is chained behind the default instead of
  * replaced, because the default sets the `_isDeviceLost` flag that stops render() after a loss
- * (Renderer.js lines 898 and 1360). That default is a method writing `this._isDeviceLost`, so it must
+ * (Renderer.js lines 1656 and 1360). That default is a method writing `this._isDeviceLost`, so it must
  * run with the target as `this`: called bare it throws, and the notice never appears (found in the
  * G0.3 audit by the WEBGL_lose_context check).
  *
@@ -231,7 +231,7 @@ export async function createRenderer(options: CreateRendererOptions): Promise<Re
   });
 
   // init() may swap in the WebGL backend through the automatic fallback (WebGPURenderer.js lines
-  // 66-70 install it when the WebGPU backend cannot initialize), so the backend is detected
+  // 65-71 install it when the WebGPU backend cannot initialize), so the backend is detected
   // after the await, never from the options.
   await renderer.init();
 

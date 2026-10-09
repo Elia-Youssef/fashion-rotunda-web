@@ -36,7 +36,7 @@ export interface Environment {
 }
 
 /**
- * A blur radius in radians applied to the room before the prefilter (PMREMGenerator.js line 118 documents
+ * A blur radius in radians applied to the room before the prefilter (PMREMGenerator.js lines 118-119 document
  * the parameter). The room is flat painted boxes with hard bright panels; at the example default of 0.04
  * every panel came back as a white splotch on the satin garments, so the blur is wide enough to turn them
  * into the soft gradient a showroom sky wants.
@@ -180,7 +180,7 @@ export function fromRenderTarget(
         // The PMREM carries the lighting sky; the separate background texture is what visitors see
         // through the glazed dome. Any blurriness above 0 sends an equirectangular background
         // through pmremTexture rather than cubeMapNode (three r186 src/renderers/common/nodes/
-        // NodeManager.js lines 713 to 727), so the background and the lighting share one PMREM
+        // NodeManager.js lines 713 to 733), so the background and the lighting share one PMREM
         // orientation (first uploaded row at the nadir); on the smooth gradient the blur is invisible.
         scene.background = background;
         // Both skies' visible copies are authored in HDR radiance units; the rig's background
