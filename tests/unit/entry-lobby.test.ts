@@ -510,6 +510,55 @@ describe('lobby keyboard ownership ends at reveal', () => {
 });
 
 describe('unsupported browser behavior', () => {
+  it.each([false, true])('exposes the support explanation as an alert (hydration=%s)', (withPreExistingDOM) => {
+    const message = 'This exhibition requires WebGPU or WebGL 2.';
+    const { element } = mountLobby({ unsupportedMessage: message, withPreExistingDOM });
+    const pane = element.querySelector<HTMLElement>('.entry-lobby__error-pane')!;
+    expect(pane.hidden).toBe(false);
+    expect(pane.closest('[hidden], [inert], [aria-hidden="true"]')).toBeNull();
+    expect(pane.getAttribute('role')).toBe('alert');
+    expect(pane.querySelector('.entry-lobby__error-message')?.textContent).toBe(message);
+    expect(pane.querySelector<HTMLButtonElement>('#lobby-retry-btn')!.hidden).toBe(true);
+  });
+
+  it.each([false, true])('describes disabled Load and prevents startup (hydration=%s)', async (withPreExistingDOM) => {
+    const message = 'This exhibition requires WebGPU or WebGL 2.';
+    const { lobby, element } = mountLobby({ unsupportedMessage: message, withPreExistingDOM });
+    const button = element.querySelector<HTMLButtonElement>('#lobby-load-btn')!;
+    expect(button.disabled).toBe(true);
+    const descriptionId = button.getAttribute('aria-describedby');
+    expect(descriptionId).toBeTruthy();
+    const description = document.getElementById(descriptionId!);
+    expect(description?.textContent).toBe(message);
+    expect(description?.closest('[hidden], [inert], [aria-hidden="true"]')).toBeNull();
+    let started = false;
+    void lobby.waitForLoadRequest().then(() => { started = true; });
+    button.click();
+    for (const key of ['Enter', ' ']) {
+      button.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+    }
+    await vi.advanceTimersByTimeAsync(0);
+    expect(started).toBe(false);
+    expect(lobby.state).toBe('idle');
+  });
+
+  it.each([false, true])('preserves supported lobby startup (hydration=%s)', async (withPreExistingDOM) => {
+    const { lobby, element } = mountLobby({ withPreExistingDOM });
+    const pane = element.querySelector<HTMLElement>('.entry-lobby__error-pane')!;
+    const button = element.querySelector<HTMLButtonElement>('#lobby-load-btn')!;
+    expect(pane.hidden).toBe(true);
+    expect(pane.hasAttribute('role')).toBe(false);
+    expect(button.disabled).toBe(false);
+    expect(button.hasAttribute('aria-describedby')).toBe(false);
+    expect(element.querySelector<HTMLButtonElement>('#lobby-retry-btn')!.hidden).toBe(false);
+    expect(document.activeElement).toBe(button);
+    const request = lobby.waitForLoadRequest();
+    button.click();
+    expect(lobby.state).toBe('loading');
+    expect(element.querySelector<HTMLElement>('.entry-lobby__loading-pane')!.hidden).toBe(false);
+    await expect(request).resolves.toEqual({ musicPreference: 'on' });
+  });
+
   it('disables Load Experience and shows support message when neither WebGPU nor WebGL 2 exists', () => {
     const { lobby, element } = mountLobby({
       unsupportedMessage: 'This exhibition requires WebGPU or WebGL 2.',

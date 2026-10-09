@@ -431,7 +431,20 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       loadBtn.disabled = true;
     }
     if (errorMessage !== null) {
+      errorMessage.id = 'lobby-unsupported-message';
       errorMessage.textContent = options.unsupportedMessage;
+      loadBtn?.setAttribute('aria-describedby', errorMessage.id);
+    }
+    if (errorPane !== null) {
+      errorPane.setAttribute('role', 'alert');
+      errorPane.hidden = false;
+      const errorTitle = errorPane.querySelector<HTMLElement>('.entry-lobby__error-title');
+      if (errorTitle !== null) {
+        errorTitle.textContent = '3D unavailable';
+      }
+    }
+    if (retryBtn !== null) {
+      retryBtn.hidden = true;
     }
   }
 
