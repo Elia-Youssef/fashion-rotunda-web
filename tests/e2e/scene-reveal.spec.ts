@@ -82,6 +82,35 @@ async function enterExperience(lobby: Locator, canvas: Locator, backend: Backend
   await expect(canvas).toHaveAttribute('data-backend', backend, { timeout: 60_000 });
 }
 
+// The veil reads black-hold as soon as the stable-frame handshake starts, but the handshake still has
+// to wait for three scheduled scene renders (one committed black frame, then two counted frames).
+// Under software GL with four workers that takes seconds. 10 s is far above that and far below the
+// 90 s test budget, so a handshake that never completes still fails promptly.
+const HANDSHAKE_TIMEOUT_MS = 10_000;
+
+// Waits until the handshake is parked at the `?freeze=black-hold` seam with its two stable frames.
+// `stableFrames` only grows from 0 to 2 while the veil reads black-hold, and the seam then holds it
+// at 2 until unfreeze() or a disruption. `timestamps.holdEnd` is recorded immediately before the
+// coordinator parks at that freeze, so a disruption sent afterwards lands on a parked coordinator and
+// leaves `stableFrames` at 0 instead of racing a handshake that restarts and counts back up to 2.
+// Both fields come from one synchronous read. `holdEnd` is not cleared by a restart, so call this
+// only before the first disruption.
+async function expectParkedBehindBlack(page: Page): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const seam = window.archvizTransitionSeam;
+          return seam === undefined || seam.timestamps.holdEnd === null ? -1 : seam.stableFrames;
+        }),
+      {
+        message: 'two stable frames were drawn behind black and the black-hold freeze was reached',
+        timeout: HANDSHAKE_TIMEOUT_MS,
+      },
+    )
+    .toBeGreaterThanOrEqual(2);
+}
+
 test.describe('Scene Reveal Transition', () => {
   test('executes two-stage reveal lifecycle in exact order with stable frames', async ({ page }) => {
     const consoleErrors: ConsoleMessage[] = [];
@@ -172,9 +201,14 @@ test.describe('Scene Reveal Transition', () => {
       expect(ok, `predicate ${pred} is true`).toBe(true);
     }
 
-    // Stable frames behind black >= 2
-    const stableFrames = await page.evaluate(() => window.archvizTransitionSeam?.stableFrames ?? 0);
-    expect(stableFrames).toBeGreaterThanOrEqual(2);
+    // Stable frames behind black >= 2. The veil turns black-hold before the frames are counted, so
+    // this polls; the freeze holds the counter at 2 once it gets there.
+    await expect
+      .poll(() => page.evaluate(() => window.archvizTransitionSeam?.stableFrames ?? -1), {
+        message: 'at least two stable frames were drawn behind black',
+        timeout: HANDSHAKE_TIMEOUT_MS,
+      })
+      .toBeGreaterThanOrEqual(2);
 
     // Unfreeze and confirm graceful completion to revealed
     await page.evaluate(() => window.archvizTransitionSeam?.unfreeze());
@@ -233,7 +267,7 @@ test.describe('Scene Reveal Transition', () => {
     const { backend, lobby, veil, canvas } = await openTransition(page, { freeze: 'black-hold' });
     await enterExperience(lobby, canvas, backend);
     await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
-    expect(await page.evaluate(() => window.archvizTransitionSeam?.stableFrames)).toBeGreaterThanOrEqual(2);
+    await expectParkedBehindBlack(page);
 
     await page.setViewportSize({ width: 820, height: 1180 });
     await expect
@@ -250,7 +284,7 @@ test.describe('Scene Reveal Transition', () => {
     const { backend, lobby, veil, canvas } = await openTransition(page, { freeze: 'black-hold' });
     await enterExperience(lobby, canvas, backend);
     await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
-    expect(await page.evaluate(() => window.archvizTransitionSeam?.stableFrames)).toBeGreaterThanOrEqual(2);
+    await expectParkedBehindBlack(page);
 
     // Playwright cannot background a headed local window reliably. This temporarily overrides the
     // read-only document value in the isolated test page and dispatches the browser lifecycle
@@ -275,7 +309,7 @@ test.describe('Scene Reveal Transition', () => {
     const { backend, lobby, veil, canvas } = await openTransition(page, { freeze: 'black-hold' });
     await enterExperience(lobby, canvas, backend);
     await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
-    expect(await page.evaluate(() => window.archvizTransitionSeam?.stableFrames)).toBeGreaterThanOrEqual(2);
+    await expectParkedBehindBlack(page);
 
     await page.evaluate(() => window.dispatchEvent(new Event('orientationchange')));
     await expect.poll(() => page.evaluate(() => window.archvizTransitionSeam?.stableFrames ?? -1)).toBe(0);
