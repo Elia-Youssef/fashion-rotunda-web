@@ -50,7 +50,7 @@ import { planFactorResets, planRepairs } from './lib/repairs.mjs';
 import { shouldPreserveSpecular } from './lib/specular.mjs';
 import { canonicalizeSourceTextures, getOrCreateSourceTexture } from './lib/texture-authority.mjs';
 
-import { FLOOR_MESH_NAME, needsResize, targetSize, textureCap } from './lib/sizing.mjs';
+import { FLOOR_MESH_NAME, needsResize, targetSize, textureCapForUsage } from './lib/sizing.mjs';
 
 /** instance() needs this many nodes on one mesh before it makes a batch. The rotunda's repeated
  *  beams and columns sit at eight each; the walls at two and four stay as they are. */
@@ -382,24 +382,16 @@ function decimateGarments(document, item, set) {
 }
 
 /** Resizes each texture to its cap for this set. sharp is the only image resizer in the pipeline. */
-/** The rotunda and the plinth; everything under looks/ is a garment or a mannequin. */
-function isStaticFile(file) {
-  return !file.startsWith('looks/');
-}
-
 async function resizeTextures(document, set, floorTextures, mannequinTextures, item) {
   for (const texture of document.getRoot().listTextures()) {
     const size = texture.getSize();
     if (!size) continue;
     const slots = listTextureSlots(texture);
-    const cap = textureCap(set, {
+    const cap = textureCapForUsage(set, slots, {
+      file: item.file,
+      look: item.look,
       floor: floorTextures.has(texture),
       mannequin: mannequinTextures.has(texture),
-      staticNormal: isStaticFile(item.file) && slots.length > 0 && slots.every((slot) => /normal/i.test(slot)),
-      // A mannequin normal keeps its established cap. Only look-garment normals receive the
-      // tighter budget cap, and only when no material uses that map outside a normal slot.
-      garmentNormal: Boolean(item.look) && !mannequinTextures.has(texture) &&
-        slots.length > 0 && slots.every((slot) => /normal/i.test(slot)),
     });
     const target = targetSize(size, cap);
     if (!needsResize(size, target)) continue;

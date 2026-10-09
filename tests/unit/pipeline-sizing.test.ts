@@ -13,7 +13,7 @@ import {
 describe('TEXTURE_CAPS', () => {
   it('pins the desktop caps: 2048, 4096 for the floor, and 1024 for normals with bounded detail', () => {
     expect(TEXTURE_CAPS.full).toEqual({
-      default: 2048, floor: 4096, mannequin: 2048, staticNormal: 1024, garmentNormal: 1024,
+      default: 2048, floor: 4096, mannequin: 512, staticData: 1024, staticNormal: 1024, garmentNormal: 1024,
     });
   });
 
@@ -43,7 +43,7 @@ describe('textureCap', () => {
   it('gives the mannequin the tighter cap, and lets it win over the floor flag', () => {
     expect(textureCap('half', { mannequin: true })).toBe(512);
     expect(textureCap('half', { mannequin: true, floor: true })).toBe(512);
-    expect(textureCap('full', { mannequin: true })).toBe(2048);
+    expect(textureCap('full', { mannequin: true })).toBe(512);
   });
 
   it('refuses a set it does not know', () => {
@@ -100,7 +100,7 @@ describe('garmentNormal cap', () => {
   it('bounds garment-only normal maps without changing mannequin precedence', () => {
     expect(textureCap('full', { garmentNormal: true })).toBe(1024);
     expect(textureCap('half', { garmentNormal: true })).toBe(512);
-    expect(textureCap('full', { garmentNormal: true, mannequin: true })).toBe(2048);
+    expect(textureCap('full', { garmentNormal: true, mannequin: true })).toBe(512);
     expect(textureCap('half', { garmentNormal: true, mannequin: true })).toBe(512);
   });
 });

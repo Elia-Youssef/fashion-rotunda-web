@@ -19,7 +19,8 @@ export const FLOOR_MESH_NAME = 'SM_Floor_A';
  * at 4096.
  */
 export const TEXTURE_CAPS = {
-  full: { default: 2048, floor: 4096, mannequin: 2048, staticNormal: 1024, garmentNormal: 1024 },
+  // Scalar surface data and mannequin detail need less resolution than the architectural colour maps.
+  full: { default: 2048, floor: 4096, mannequin: 512, staticData: 1024, staticNormal: 1024, garmentNormal: 1024 },
   half: { default: 1024, floor: 1024, mannequin: 512, staticNormal: 512, garmentNormal: 512 },
 };
 
@@ -27,7 +28,8 @@ export const TEXTURE_CAPS = {
  * The cap for one texture.
  *
  * @param set 'full' or 'half'.
- * @param flags `{ floor, mannequin, staticNormal, garmentNormal }`. A texture used by both a floor material and a
+ * @param flags `{ floor, mannequin, staticData, staticNormal, garmentNormal }`. A texture used by both a
+ *   floor material and a
  *   mannequin material cannot happen in this scene; mannequin wins, because it is the tighter cap.
  *   `staticNormal` marks a normal map on the rotunda or the plinth: tiled marble detail seen mostly at
  *   grazing angles, capped at half the default because six such maps at 2048 UASTC were 6 MB of a
@@ -35,6 +37,8 @@ export const TEXTURE_CAPS = {
  *   used only by a look garment (not its mannequin). It is capped at 1024 full / 512 half after the
  *   Zoot output gate measured the full asset at 8.11 MB against its 6 MB ceiling, driven by its Hat
  *   normal's 3.14 MB 2048 UASTC payload.
+ *   `staticData` marks exclusively metallic-roughness/occlusion maps on static files. The full set
+ *   caps this scalar surface detail at 1024, including floor data, without reducing colour maps.
  */
 export function textureCap(set, flags = {}) {
   const caps = TEXTURE_CAPS[set];
@@ -42,8 +46,27 @@ export function textureCap(set, flags = {}) {
   if (flags.mannequin) return caps.mannequin;
   if (flags.garmentNormal) return caps.garmentNormal;
   if (flags.staticNormal) return caps.staticNormal;
+  if (set === 'full' && flags.staticData) return caps.staticData;
   if (flags.floor) return caps.floor;
   return caps.default;
+}
+
+/**
+ * Selects a cap from the complete material-slot usage and file role, never the texture name.
+ * Static files are the rotunda and plinth; look files contain garments and mannequins.
+ * Unknown, empty or mixed slot sets cannot qualify for the static scalar-data cap.
+ */
+export function textureCapForUsage(set, slots, usage) {
+  const staticFile = !usage.file.startsWith('looks/');
+  const normalOnly = slots.length > 0 && slots.every((slot) => /normal/i.test(slot));
+  return textureCap(set, {
+    floor: usage.floor,
+    mannequin: usage.mannequin,
+    staticNormal: staticFile && normalOnly,
+    garmentNormal: Boolean(usage.look) && !usage.mannequin && normalOnly,
+    staticData: staticFile && slots.length > 0 && slots.every((slot) =>
+      slot === 'metallicRoughnessTexture' || slot === 'occlusionTexture'),
+  });
 }
 
 /**
