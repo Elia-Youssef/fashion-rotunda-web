@@ -55,7 +55,7 @@ export function mountChrome(options: ChromeOptions): ChromeHandle {
   let pendingSwitches = 0;
 
   /**
-   * Variant changes share one ordered lane. A swatch can still be resolving when Reset is pressed;
+   * Variant changes share one ordered queue. A swatch can still be resolving when Reset is pressed;
    * issuing both calls concurrently lets the earlier swatch finish last and silently undo Reset.
    * Chaining every mutation preserves the visitor's intent order, so the last requested operation
    * is also the last operation applied by the showroom.
@@ -64,7 +64,7 @@ export function mountChrome(options: ChromeOptions): ChromeHandle {
 
   function mutateVariant(name: string): Promise<void> {
     const mutation = variantMutations.then(() => showroom.setVariant(name));
-    // Keep the lane usable after a rejected content mutation while returning the real result to
+    // Keep the queue usable after a rejected content mutation while returning the real result to
     // the caller so it can report the specific failed swatch or Reset.
     variantMutations = mutation.catch(() => undefined);
     return mutation;

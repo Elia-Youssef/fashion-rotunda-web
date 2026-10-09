@@ -4,7 +4,7 @@
 //   node pipeline/gltf/optimize.mjs [--skip-assemble] [--only <name>] [--out DIR]
 //
 // It runs stage one first (assemble.mjs, into assets-src/work/assembled) and then, per file, the
-// order PLAN.md appendix C fixes: dedup, instance (rotunda only), weld, the material repairs, the
+// following order: dedup, instance (rotunda only), weld, the material repairs, the
 // default KHR_materials_specular stripping, resize, KTX2 encode, meshopt, prune. The half set branches off
 // before resize, strips clearcoat, decimates any garment over the phone budget, and caps its
 // textures lower.

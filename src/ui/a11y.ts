@@ -1,4 +1,4 @@
-// Accessibility and onboarding orchestrator.
+// Accessibility and onboarding setup.
 // Configures the canvas accessible name, installs tooltips, wires the polite live region
 // MutationObserver for page state announcements, and drives the onboarding sequence.
 

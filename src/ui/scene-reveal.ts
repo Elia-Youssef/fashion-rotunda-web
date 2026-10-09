@@ -1,4 +1,4 @@
-// GOAL ENTRY-3: Two-stage black reveal transition orchestrator.
+// Two-stage black reveal transition coordinator.
 // The lobby owns the visible cover-to-black. This coordinator then owns a DOM black veil while
 // it proves that real scene frames have completed before the scene is allowed to become visible.
 
@@ -423,7 +423,7 @@ export class SceneRevealCoordinator {
   }
 
   /**
-   * Orchestrates: ready-hidden -> cover-to-black -> black-hold -> revealing -> revealed.
+   * Sequences: ready-hidden -> cover-to-black -> black-hold -> revealing -> revealed.
    * A disruption at any point cancels the in-flight phase and restarts the stable-frame handshake
    * beneath an opaque black DOM veil.
    */

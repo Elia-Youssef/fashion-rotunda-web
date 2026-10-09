@@ -14,16 +14,16 @@
 // Light.power exists on the point and rect lights only, and it derives from intensity. Nothing here writes
 // power or decay: they keep their physical defaults (decay 2, the inverse square law).
 
-/** The panel's temperature span, PLAN.md appendix G. */
+/** The panel's temperature span: 2700 to 8000 kelvin. */
 export const KELVIN_RANGE: readonly [number, number] = [2700, 8000];
 
-/** The panel's intensity span for the rect and point lights, PLAN.md appendix G. */
+/** The panel's intensity span for the rect and point lights: 0 to 50 candela. */
 export const CANDELA_RANGE: readonly [number, number] = [0, 50];
 
 /**
  * The panel's span for the sun, in lux. The Unreal level authors the sun at 7 (lights.json,
  * actor DirectionalLight), so the slider spans that value with room above it rather than the daylight
- * scale appendix G guessed at: this is a stylized interior, not an exterior at noon.
+ * scale of an exterior at noon: this is a stylized interior.
  */
 export const SUN_LUX_RANGE: readonly [number, number] = [0, 20];
 

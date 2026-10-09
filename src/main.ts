@@ -1,7 +1,6 @@
-// The composition root. Every module it wires exists on its own: the renderer factory (G0.3), the
-// proof numbers (G0.4), the tier decision (G0.5), the render loop with the scaler (G0.6) and the
-// showroom scene (G1.7). The G0.2 cube is gone; the rotunda, the plinth and one look stand in its
-// place, loaded from public/content through the catalogue.
+// The composition root. Every module it wires exists on its own: the renderer factory, the
+// proof numbers, the tier decision, the render loop with the scaler and the showroom scene.
+// The rotunda, the plinth and one look load from public/content through the catalogue.
 
 import { Color, Mesh, PerspectiveCamera, Scene } from 'three/webgpu';
 import type { Material } from 'three/webgpu';
@@ -59,8 +58,7 @@ declare global {
     archvizReveal?: SceneRevealCoordinator | null;
     /**
      * Test-only handle, mounted in dev and behind `?e2e=1`. The e2e suite drives look switches
-     * through it, which no visitor-facing control can do until G5.1 mounts the catalogue UI, and
-     * reads back what the loader built.
+     * through it without depending on the catalogue UI, and reads back what the loader built.
      */
     archvizE2E?: {
       switchLooks(count: number): Promise<void>;
@@ -86,7 +84,7 @@ declare global {
 
 /** How long the loop keeps drawing after the load or an input before it goes idle. */
 const WAKE_MS = 4000;
-/** The calibration run behind a provisional High tier, PLAN.md G0.5 step 1. */
+/** The two-second calibration run behind a provisional High tier. */
 const BENCHMARK_MS = 2000;
 
 /** The two content sets. The half set is the phone build, written by the optimize pass. */
@@ -281,7 +279,7 @@ async function main(): Promise<void> {
   let rendererError = false;
   /** Pagehide remains in force until pageshow, including across a post-graph resize rebuild. */
   let pageActive = true;
-  /** True once ENTRY-3 reached 'revealed', or once loading settled on the no-lobby path. */
+  /** True once the scene reveal reached 'revealed', or loading settled on the no-lobby path. */
   let revealSettled = false;
   /** True once a look stands on the plinth, which is what makes a frame worth marking. */
   let contentOnScreen = false;
@@ -291,7 +289,7 @@ async function main(): Promise<void> {
   let e2eDeterministicGovernor = false;
 
   /**
-   * Recovery eligibility, G3.5-R: every lifecycle fact must hold before a sample stream may
+   * Recovery eligibility: every lifecycle fact must hold before a sample stream may
    * count toward the ten-second qualification. The chain adds its own fallback rule on top.
    */
   function recoveryEligibleNow(): boolean {
@@ -360,7 +358,7 @@ async function main(): Promise<void> {
     void audioEngine.unlock();
   }
 
-  // The music switch (G5.6) mounts in the header here, before the content loads, so a
+  // The music switch mounts in the header here, before the content loads, so a
   // visitor can press it while the room is still arriving; the music needs no scene.
   const music = mountMusic({
     headerRoot: shell.roots.header,
@@ -380,8 +378,8 @@ async function main(): Promise<void> {
   let depthOfFieldAllowed = true;
 
   // The tier benchmark measures a render call, so the loop needs something to render before the
-  // showroom exists. An empty scene keeps that measurement real; the G0.2 cube was the previous
-  // stand-in and the camera never sees geometry, so its aspect does not matter.
+  // showroom exists. An empty scene keeps that measurement real; the camera never sees geometry,
+  // so its aspect does not matter.
   const warmupScene = new Scene();
   warmupScene.background = new Color(SCENE_BACKGROUND);
   const warmupCamera = new PerspectiveCamera(50, 1, 0.1, 100);
@@ -574,7 +572,7 @@ async function main(): Promise<void> {
   window.addEventListener('pointermove', wake, { passive: true });
   window.addEventListener('keydown', wake);
   window.addEventListener('wheel', wake, { passive: true });
-  // G3.5-R: a hidden or restored tab, and any page lifecycle interruption, ends recovery
+  // A hidden or restored tab, and any page lifecycle interruption, ends recovery
   // qualification immediately. Time spent hidden never counts; restoration starts a fresh
   // ten-second qualification because the accumulated run was cleared on the way out.
   document.addEventListener('visibilitychange', () => {
@@ -705,7 +703,7 @@ async function main(): Promise<void> {
   }
 
   /**
-   * The data-governor bridge, G3.5-R: fixed-order, bounded tokens read by the proof snapshot,
+   * The data-governor bridge: fixed-order, bounded tokens read by the proof snapshot,
    * the panel and the e2e suite. 'off' means no governor runs this page (WebGL 2, a forced
    * `?post=` slice, or pass-through).
    */
@@ -810,7 +808,7 @@ async function main(): Promise<void> {
     loop.invalidate();
     await settleTier();
     tierSettled = true;
-    // Without the lobby there is no ENTRY-3 transition to wait for: loading settled is revealed.
+    // Without the lobby there is no scene reveal transition to wait for: loading settled is revealed.
     // On the lobby path revealSettled stays false until the coordinator reaches 'revealed'.
     if (!showLobby) {
       revealSettled = true;
@@ -829,9 +827,8 @@ async function main(): Promise<void> {
     // picture.
     wake();
 
-    // Hooks. Each later feature adds exactly one call here, against the handles above: the camera
-    // (G4.1, G4.4) mounts its controls on the canvas and the loop, the chrome (G5.1, G5.2)
-    // mounts the catalogue strip and the product card in the side panel. Nothing else changes here.
+    // Hooks against the handles above: the camera mounts its controls on the canvas and the loop,
+    // and the chrome mounts the catalogue strip and the product card in the side panel.
     const cameraHandle = mountCamera({
       camera: showroom.camera,
       canvas,
@@ -959,7 +956,7 @@ async function main(): Promise<void> {
           footerElement?.removeAttribute('inert');
           footerElement?.removeAttribute('aria-hidden');
 
-          // ENTRY-3 has reached 'revealed': recovery qualification may start accruing now.
+          // The scene reveal has reached 'revealed': recovery qualification may start accruing now.
           revealSettled = true;
           updateRecoveryEligibility();
 
