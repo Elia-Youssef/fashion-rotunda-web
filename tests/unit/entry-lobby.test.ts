@@ -394,6 +394,121 @@ describe('accessibility and focus containment', () => {
   });
 });
 
+describe('lobby keyboard ownership ends at reveal', () => {
+  const inputPhases = [
+    'idle', 'loading', 'ready-hidden', 'cover-to-black', 'black-hold', 'revealing', 'error',
+  ] as const;
+
+  function enterPhase(lobby: EntryLobby, element: HTMLElement, phase: typeof inputPhases[number]): void {
+    if (phase === 'idle') return;
+    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+    if (phase === 'loading') return;
+    if (phase === 'error') {
+      lobby.setError('Loading failed');
+      return;
+    }
+    lobby.setReady();
+    if (phase === 'ready-hidden') return;
+    lobby.setCoverToBlack();
+    if (phase === 'cover-to-black') return;
+    lobby.setBlackHold();
+    if (phase === 'black-hold') return;
+    lobby.setRevealing();
+  }
+
+  function dispatchKey(key: string, shiftKey = false): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', { key, shiftKey, bubbles: true, cancelable: true });
+    document.dispatchEvent(event);
+    return event;
+  }
+
+  it.each(inputPhases)('guards Tab and Escape during %s, then releases them at reveal and disposal', (phase) => {
+    const { lobby, element } = mountLobby();
+    enterPhase(lobby, element, phase);
+    expect(lobby.state).toBe(phase);
+    // jsdom has no layout: no control is visible, and blurring removes the active-element exception.
+    (document.activeElement as HTMLElement).blur();
+    expect(dispatchKey('Tab').defaultPrevented, 'Tab with no visible lobby control').toBe(true);
+    expect(dispatchKey('Escape').defaultPrevented, 'Escape while the lobby owns input').toBe(true);
+
+    lobby.setRevealed();
+    expect(dispatchKey('Tab').defaultPrevented, 'Tab after reveal').toBe(false);
+    expect(dispatchKey('Tab', true).defaultPrevented, 'Shift+Tab after reveal').toBe(false);
+    expect(dispatchKey('Escape').defaultPrevented, 'Escape after reveal').toBe(false);
+    lobby.dispose();
+    expect(dispatchKey('Tab').defaultPrevented, 'Tab after disposal').toBe(false);
+    expect(dispatchKey('Escape').defaultPrevented, 'Escape after disposal').toBe(false);
+  });
+
+  it.each([false, true])('wraps visible controls before reveal, then releases focus (shift=%s)', (shiftKey) => {
+    const { lobby, element } = mountLobby();
+    const music = element.querySelector<HTMLButtonElement>('.entry-lobby__music-switch')!;
+    const load = element.querySelector<HTMLButtonElement>('#lobby-load-btn')!;
+    const retry = element.querySelector<HTMLButtonElement>('#lobby-retry-btn')!;
+    retry.hidden = true;
+    for (const control of [music, load]) {
+      Object.defineProperty(control, 'offsetParent', { configurable: true, get: () => element });
+    }
+    const start = shiftKey ? music : load;
+    const destination = shiftKey ? load : music;
+    start.focus();
+    expect(dispatchKey('Tab', shiftKey).defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(destination);
+
+    lobby.setRevealed();
+    const pageControl = document.createElement('button');
+    root.appendChild(pageControl);
+    pageControl.focus();
+    expect(dispatchKey('Tab', shiftKey).defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(pageControl);
+  });
+
+  it('removes every lobby global listener at reveal and at direct disposal', () => {
+    // Initialize jsdom's selector engine before observing this component's registrations.
+    document.querySelector('button');
+    const registrations: Array<{ target: Document | Window; type: string; calls: ReturnType<typeof vi.fn> }> = [];
+    for (const target of [document, window]) {
+      const add = target.addEventListener;
+      vi.spyOn(target, 'addEventListener').mockImplementation((type, listener, options) => {
+        const calls = vi.fn((event: Event) => {
+          if (typeof listener === 'function') listener.call(target, event);
+          else listener?.handleEvent(event);
+        });
+        registrations.push({ target, type, calls });
+        add.call(target, type, calls, options);
+      });
+    }
+
+    function expectRemoved(): void {
+      for (const { target, type, calls } of registrations) {
+        calls.mockClear();
+        target.dispatchEvent(new Event(type, { cancelable: true }));
+        expect(calls, `${type} callback must no longer be registered`).not.toHaveBeenCalled();
+      }
+    }
+
+    const { lobby } = mountLobby();
+    expect(registrations.map(({ target, type }) => [target === document ? 'document' : 'window', type]))
+      .toEqual([['document', 'keydown']]);
+    dispatchKey('Escape');
+    expect(registrations[0].calls).toHaveBeenCalledOnce();
+    lobby.setRevealed();
+    expectRemoved();
+    lobby.setRevealed();
+    lobby.dispose();
+    lobby.dispose();
+    expectRemoved();
+
+    const { lobby: unrevealed } = mountLobby();
+    dispatchKey('Escape');
+    expect(registrations[1].calls).toHaveBeenCalledOnce();
+    unrevealed.dispose();
+    expectRemoved();
+    expect(dispatchKey('Tab').defaultPrevented).toBe(false);
+    expect(dispatchKey('Escape').defaultPrevented).toBe(false);
+  });
+});
+
 describe('unsupported browser behavior', () => {
   it('disables Load Experience and shows support message when neither WebGPU nor WebGL 2 exists', () => {
     const { lobby, element } = mountLobby({

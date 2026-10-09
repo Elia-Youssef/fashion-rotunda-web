@@ -43,6 +43,43 @@ function watchRequests(page: Page): {
   };
 }
 
+test('releases page keyboard navigation after the lobby reveal', async ({ page }) => {
+  const backend = test.info().project.name === 'webgpu' ? 'webgpu' : 'webgl2';
+  const params = new URLSearchParams({ e2e: '1', gate: 'on', music: 'off' });
+  if (backend === 'webgl2') params.set('webgl', '1');
+  await page.goto(`/?${params.toString()}`);
+  const lobby = page.locator('#entry-lobby');
+  await expect(lobby).toHaveAttribute('data-state', 'idle');
+  await lobby.locator('#lobby-load-btn').click();
+  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  await expect(lobby).toBeHidden();
+  await expect(page.locator('canvas#scene')).toHaveAttribute('data-backend', backend);
+
+  // The reveal hands focus to main. Tab must reach a real page control without cancellation.
+  const main = page.locator('main');
+  await main.focus();
+  await expect(main).toBeFocused();
+  await page.evaluate(() => {
+    document.documentElement.removeAttribute('data-tab-prevented');
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'Tab') {
+        document.documentElement.dataset.tabPrevented = String(event.defaultPrevented);
+      }
+    }, { once: true });
+  });
+  await page.keyboard.press('Tab');
+  await expect(page.locator('html')).toHaveAttribute('data-tab-prevented', 'false');
+  const focus = await page.evaluate(() => {
+    const active = document.activeElement;
+    return {
+      isPageControl: active !== null && active.matches('button, input, select, textarea, a[href], canvas[tabindex="0"]'),
+      outsideLobby: active !== null && active.closest('#entry-lobby') === null,
+      available: active !== null && active.closest('[inert], [hidden], [aria-hidden="true"]') === null,
+    };
+  });
+  expect(focus).toEqual({ isPageControl: true, outsideLobby: true, available: true });
+});
+
 test('proves deferred load: zero /content/ or music requests before user gesture', async ({ page }) => {
   skipUnlessWebgl2();
   const watcher = watchRequests(page);

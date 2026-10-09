@@ -482,6 +482,8 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
   }
 
   const listeners = new AbortController();
+  // Global focus containment belongs to the modal input phase, which ends at reveal.
+  const inputListeners = new AbortController();
 
   // Toggle music preference before Load Experience
   if (musicSwitchBtn !== null) {
@@ -600,7 +602,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
         }
       }
     },
-    { signal: listeners.signal },
+    { signal: inputListeners.signal },
   );
 
   // Set initial focus intentionally
@@ -722,6 +724,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       if (currentState === 'disposed') {
         return;
       }
+      inputListeners.abort();
       currentState = 'revealed';
       lobby.dataset.state = currentState;
       lobby.setAttribute('inert', '');
@@ -781,6 +784,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
         stopProgressTrackingFn();
         stopProgressTrackingFn = null;
       }
+      inputListeners.abort();
       listeners.abort();
       currentState = 'disposed';
       lobby.remove();
