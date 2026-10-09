@@ -82,7 +82,7 @@ export const ROOM_ENVIRONMENT_SCALE = 0.35;
 export const HDR_ENVIRONMENT_SCALE = 0.2;
 /**
  * The procedural lighting sky is authored at zenith luminance 1. The reference is the upright HDR at
- * HDR_ENVIRONMENT_SCALE (the Goal 5 state) as the renderer receives it: HDRLoader clamps every channel
+ * HDR_ENVIRONMENT_SCALE as the renderer receives it: HDRLoader clamps every channel
  * to the float16 maximum 65504, which cuts the file's baked sun disc to about a third. 0.927 is the
  * geometric mean of the scale matching its cosine up irradiance and the scale matching a narrow-lobe
  * stand-in for three's roughness-1 PMREM lookup. Against the reference it gives cosine irradiance

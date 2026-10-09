@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// G0.7: the e2e gate for both renderer backends, run against the production build because
+// The e2e gate for both renderer backends, run against the production build because
 // that is what ships. The preview server owns port 4173 with --strictPort, so a collision with the
 // dev server on 5173 fails loudly instead of silently testing the wrong build. reuseExistingServer
 // stays false on purpose: a stale preview server once served a pre-change build and the results

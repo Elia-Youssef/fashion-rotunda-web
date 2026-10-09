@@ -1,5 +1,4 @@
-// The backend badge in the side panel, the one piece of chrome that exists before the proof panel
-// lands: every number a later goal shows must be readable against the backend that produced it.
+// The backend badge in the side panel identifies the backend behind the displayed measurements.
 //
 // `import type` below is erased at build time, so this module stays DOM-only at runtime.
 

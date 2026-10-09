@@ -1,4 +1,4 @@
-// Share UI component: Copy link and Screenshot actions in the side panel (G5.3, G5.4).
+// Share UI component: Copy link and Screenshot actions in the side panel.
 // Pure DOM manipulation with styling in share.css; holds no scene knowledge.
 
 import './share.css';

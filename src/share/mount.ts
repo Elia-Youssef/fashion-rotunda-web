@@ -1,4 +1,4 @@
-// Goal G5.3 & G5.4 composition hook: binds share state to URL, mounts UI, and handles actions.
+// Composition hook: binds share state to URL, mounts UI, and handles actions.
 // Observes canvas attributes, camera motion, turntable, lighting and music, writing back via
 // history.replaceState (at most 4 Hz) and restoring camera, yaw and turning at boot.
 

@@ -82,7 +82,7 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
   rotateButton.dataset.tooltip = 'Turn the look';
   const resetButton = action('Reset', 'reset');
   resetButton.dataset.tooltip = 'Reset camera and mannequin';
-  // Material toggles the swatch row; the row starts open, matching the Unreal still and UI-1 contract.
+  // Material toggles the swatch row; the row starts open, matching the Unreal reference.
   const materialButton = action('Material', 'material');
   materialButton.dataset.tooltip = 'Show mannequin swatches';
   materialButton.setAttribute('aria-controls', swatchesId);

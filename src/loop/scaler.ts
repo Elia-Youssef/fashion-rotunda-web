@@ -1,4 +1,4 @@
-// Goal G0.6: dynamic resolution scale. Pure state machine: every update carries the caller's
+// Dynamic resolution scale. Pure state machine: every update carries the caller's
 // clock reading, so the class never reads the clock itself and tests need no timers.
 
 export interface ScalerOptions {

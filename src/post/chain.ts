@@ -1,4 +1,4 @@
-// Goals G2.3, G2.5, G3.1, G3.2, G3.3 and G3.5: ambient occlusion, anti-aliasing, screen-space global
+// Ambient occlusion, anti-aliasing, screen-space global
 // illumination, screen-space reflections, bloom, color grade, vignette and depth of field through
 // the node post chain of three 0.186.0, governed by frame work time.
 //
@@ -900,7 +900,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
       }
       // onFrameTime fires only for frames the loop actually drew (loop.ts lines 62-68), so every
       // reading that reaches here is a drawn frame. The governor keeps receiving them at every
-      // level, including below 'no-ssr': G3.5-R recovery has to be able to climb back from there,
+      // level, including below 'no-ssr': recovery has to be able to climb back from there,
       // and the ladder's own patience decides whether another step is ever taken.
       const before = governor.level;
       governor.observe(workMs, performance.now(), recoveryEligible);

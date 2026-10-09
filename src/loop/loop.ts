@@ -1,4 +1,4 @@
-// Goal G0.6: the render loop. Renders only when a frame is owed (invalidate) or continuously
+// The render loop. Renders only when a frame is owed (invalidate) or continuously
 // (setAnimating), enforces the frame cap by skipping early ticks, and reports the render call's
 // own duration. raf, caf and now are injectable so tests drive frames by hand.
 

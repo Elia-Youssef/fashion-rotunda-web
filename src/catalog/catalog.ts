@@ -1,5 +1,5 @@
-// Goal G1.7: catalog.json, the one document that says what the page loads. The shape is fixed in
-// the Phase 1 data contract, so parsing is strict: a field that is missing, empty or of the wrong
+// catalog.json, the one document that says what the page loads. The shape is fixed in
+// the catalogue data contract, so parsing is strict: a field that is missing, empty or of the wrong
 // type throws with the field's path. A silently dropped look is a blank plinth with nothing on
 // screen to explain it, which is far more expensive to diagnose than a thrown error at boot.
 

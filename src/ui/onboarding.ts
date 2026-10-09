@@ -31,7 +31,7 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
     id: 'lights',
     title: 'Adjust lighting',
     text: 'Open Light Control, then fine-tune the studio lights and daylight atmosphere.',
-    // UI-2 starts the panel closed. The disclosure remains visible at every breakpoint, unlike
+    // The panel starts closed. The disclosure remains visible at every breakpoint, unlike
     // the panel itself, so the guide always points to an actionable target.
     anchor: '#shell-light-toggle',
   },

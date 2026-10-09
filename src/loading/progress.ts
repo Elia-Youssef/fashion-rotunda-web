@@ -1,4 +1,4 @@
-// Goal G6.5: the loading gate's arithmetic, kept free of the DOM and of three.js so the numbers
+// The loading gate's arithmetic, kept free of the DOM and of three.js so the numbers
 // are testable in node. The gate owns the reading of Resource Timing; this module owns what the
 // readings mean.
 

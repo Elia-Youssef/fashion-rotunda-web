@@ -1,4 +1,4 @@
-/* GOAL ENTRY-2: Opaque Entry Lobby Styles
+/* Opaque Entry Lobby Styles
    Implements the Art Deco brand identity of the entry experience.
    and brand-tokens.json.
    Fully opaque across all states: idle, loading, ready-hidden, error. */
@@ -631,7 +631,7 @@
   }
 }
 
-/* Transition-State Selectors (GOAL ENTRY-3) */
+/* Scene Reveal Transition-State Selectors */
 .entry-lobby[data-state='cover-to-black'] {
   background-color: var(--brand-transition-black);
   transition: background-color var(--dur-cover-black) var(--ease-architectural);

@@ -1,4 +1,4 @@
-// Goal G0.5: the calibration benchmark that decides whether a discrete GPU earns the high tier.
+// The calibration benchmark that decides whether a discrete GPU earns the high tier.
 
 import { FrameTimes } from '../proof/frametime';
 

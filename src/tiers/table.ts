@@ -1,5 +1,5 @@
-// Goal G0.5: the quality tier table. This file is Appendix D of the project plan as code; the
-// pinning test in tests/unit/tiers-table.test.ts keeps the two in lockstep.
+// Quality tier settings for resolution, frame budgets, post effects and asset selection.
+// tests/unit/tiers-table.test.ts pins the values for each tier.
 
 export type TierName = 'base' | 'mid' | 'high';
 

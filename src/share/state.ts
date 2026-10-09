@@ -1,4 +1,4 @@
-// Pure state parsing and search string serialization for deep links (G5.3).
+// Pure state parsing and search string serialization for deep links.
 // Holds no DOM references and no three.js objects so it runs under node tests.
 
 import { DEFAULT_RIG, serializeRig } from '../lighting/rig';

@@ -291,7 +291,7 @@ def main():
     ensure_dir(OUT)
     log(f"engine {unreal.SystemLibrary.get_engine_version()}, output {OUT}")
 
-    # 1. Audit first: it is the G1.1 deliverable and it drives the LOD choice below.
+    # 1. Audit first: the asset inventory drives the LOD choice below.
     audit = audit_assets()
     with open(os.path.join(OUT, "audit.json"), "w", encoding="utf-8") as handle:
         json.dump(audit, handle, indent=1)

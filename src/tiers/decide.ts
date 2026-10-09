@@ -1,4 +1,4 @@
-// Goal G0.5: the per-device tier decision, in the priority order of the plan's section 4.
+// Per-device tier selection: touch, backend, GPU and benchmark, then the low-memory downgrade.
 
 import { TIER_ORDER } from './table';
 import type { TierName } from './table';

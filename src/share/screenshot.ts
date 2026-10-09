@@ -1,4 +1,4 @@
-// Screenshot capture at scale and delivery through Web Share or download (G5.4).
+// Screenshot capture at scale and delivery through Web Share or download.
 // Reads pixel ratio and drawing buffer methods cited from three.js:
 // node_modules/three/src/renderers/common/Renderer.js:
 // - getPixelRatio (line 2146)
@@ -10,7 +10,7 @@ export interface ScreenshotOptions {
   canvas: HTMLCanvasElement;
   /** Draws one frame at the current pixel ratio, synchronously; the composition root passes drawFrame. */
   drawFrame: () => void;
-  /** Multiplier over the current pixel ratio; 2 by the plan. */
+  /** Multiplier over the current pixel ratio. */
   scale: number;
 }
 

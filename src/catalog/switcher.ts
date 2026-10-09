@@ -1,4 +1,4 @@
-// Goal G1.7: one in-flight look request, and only one. A visitor clicking two thumbnails in a
+// One in-flight look request, and only one. A visitor clicking two thumbnails in a
 // second must end on the second one, whichever fetch happens to finish first, and the loser's
 // GPU resources must be freed rather than left on the heap.
 //

@@ -1,4 +1,4 @@
-// Goal G3.3: the showroom colour grade. Pure, typed arrays only, no three.js, so the
+// The showroom colour grade. Pure, typed arrays only, no three.js, so the
 // lookup table, its monotonicity and its identity round-trip are testable in node.
 //
 // The grade applies in display space after AgX tone mapping and sRGB conversion:

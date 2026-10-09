@@ -12,7 +12,7 @@
 //                          texture was allowed the wider cap.
 //   errors                 at the root, one entry per texture the encoder refused. The run
 //                          continues past a failed texture, so the failure has to be recorded
-//                          somewhere a later goal will read.
+//                          in the manifest for callers to inspect.
 
 import { gpuBytes } from './budget.mjs';
 

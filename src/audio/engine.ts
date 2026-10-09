@@ -7,7 +7,7 @@ export interface AudioBuses {
   context: AudioContext;
   /** The loop's bus, a GainNode into the destination. */
   music: GainNode;
-  /** The narration's bus (a later goal), same shape, unused here. */
+  /** The unused voice bus, a GainNode into the destination. */
   voice: GainNode;
 }
 

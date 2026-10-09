@@ -3,7 +3,7 @@
 // Pure TypeScript, no three.js import and no DOM, so the whole rig is testable in node.
 //
 // Source of positions and sizes: assets-src/source/unreal/lights.json.
-// What is deliberately removed for UI-5:
+// The active rig differs from the authored lighting as follows:
 // - TopLight and the 8-point IndirectLight ring are removed from the active rig.
 // - Separate sun angle, elevation, kelvin, exposure, and sky controls are replaced by
 //   the single continuous Daylight/Atmosphere control.

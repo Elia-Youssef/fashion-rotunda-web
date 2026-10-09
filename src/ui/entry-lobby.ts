@@ -1,4 +1,4 @@
-// GOAL ENTRY-2: Opaque Entry Lobby and Deferred Experience Boot.
+// Opaque Entry Lobby and Deferred Experience Boot.
 // Replaces the translucent loading gate with an opaque branded lobby.
 // Owns the branded lobby, state machine, focus trap, truthful progress,
 // audio preference contract, and deferred boot trigger.
@@ -771,7 +771,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
     },
 
     prepareForReveal(): void {
-      // ENTRY-3 keeps the lobby hit-testable through cover-to-black. The black veil assumes
+      // The scene reveal keeps the lobby hit-testable through cover-to-black. The black veil assumes
       // ownership only after the lobby has visibly reached its opaque black state.
     },
 

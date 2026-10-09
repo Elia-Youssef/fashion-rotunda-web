@@ -1,6 +1,6 @@
-// Lighting presets were removed in UI-5 in favor of the simplified Key/Fill/Back
+// Lighting presets are replaced by the Key/Fill/Back
 // studio drawer and continuous Daylight/Atmosphere control.
-// Per project rules, obsolete preset code is removed without introducing another preset system.
+// The empty exports retain the catalogue shape without an active preset system.
 
 export const LIGHTING_PRESETS: Readonly<Record<string, never>> = {};
 export const PRESET_ORDER: readonly string[] = [];

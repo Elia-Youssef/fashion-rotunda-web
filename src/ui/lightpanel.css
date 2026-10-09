@@ -1,5 +1,5 @@
 /* The simplified lighting panel. Every colour, size and token comes from styles.css.
-   Compact, translucent, floating drawer character matching UI-1 contract. */
+   Compact, translucent, floating drawer character matching the showroom controls. */
 
 .lightpanel {
   display: flex;

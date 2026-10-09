@@ -1,4 +1,4 @@
-// The renderer factory every later goal imports. Backend choice, device-loss wiring and the GPU
+// The shared renderer factory. Backend choice, device-loss wiring and the GPU
 // name live here so the rest of the app deals with one handle and never with backend internals.
 //
 // Source references below are to the installed three.js 0.186.0 sources under
@@ -20,11 +20,11 @@ export interface DeviceLostInfo {
 
 export interface RendererOptions {
   canvas: HTMLCanvasElement;
-  /** The caller owns this number; from goal G0.5 on, the tier table owns it. */
+  /** The caller supplies this cap from the quality tier table. */
   pixelRatioCap: number;
   forceWebGL?: boolean;
-  /** Default true. A renderer option that covers the default framebuffer only; the post chain a
-   * later goal adds sets its own MSAA on the scene pass. */
+  /** Default true. Covers the default framebuffer only; the post chain sets its own MSAA
+   * on the scene pass. */
   antialias?: boolean;
   /** Enables the backend's timestamp queries; renderer.info.render.timestamp then reads GPU ms. */
   trackTimestamp?: boolean;
@@ -175,8 +175,8 @@ export type LossHandlers = Pick<CreateRendererOptions, 'onDeviceLost' | 'onError
  * canvas listener of our own is needed. The device-lost slot is chained behind the default instead of
  * replaced, because the default sets the `_isDeviceLost` flag that stops render() after a loss
  * (Renderer.js lines 1656 and 1360). That default is a method writing `this._isDeviceLost`, so it must
- * run with the target as `this`: called bare it throws, and the notice never appears (found in the
- * G0.3 audit by the WEBGL_lose_context check).
+ * run with the target as `this`: called bare it throws, and the notice never appears.
+ * The WEBGL_lose_context check verifies this binding.
  *
  * `onError` is replaced rather than chained: @types/three declares it as `(errorMessage: string) =>
  * void` (Renderer.d.ts line 265), but the WebGPU backend passes an object `{ api, type, message,

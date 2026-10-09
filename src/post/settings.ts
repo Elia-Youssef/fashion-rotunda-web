@@ -1,4 +1,4 @@
-// Goals G2.3, G2.5, G3.1 and G3.2: the post chain's decision table. Pure, no three.js, so the
+// The post chain's decision table. Pure, no three.js, so the
 // tier-to-features mapping is testable in node against TIERS, the one source of every number.
 //
 // The chain follows this and nothing else: it never reads the tier table itself.

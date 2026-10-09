@@ -1,9 +1,9 @@
-// Goal G3.5 and G3.5-R: the frame-time governor. Pure, no three.js, so the p95 window, the
+// The frame-time governor. Pure, no three.js, so the p95 window, the
 // patience, the ladder, the cooldown and the recovery rule are testable in node.
 //
 // The governor steps enhanced post-processing down when the measured frame work time repeatedly
 // misses the tier budget, and steps it back up one level when the frame work time has stayed
-// comfortably inside the budget for a continuous, eligible ten seconds (G3.5-R). Both directions
+// comfortably inside the budget for a continuous, eligible ten seconds. Both directions
 // change exactly one ladder step and start a cooldown, so the level can never oscillate quickly.
 //
 // The measured input is the render callback's own duration (CPU render-work time, loop.ts

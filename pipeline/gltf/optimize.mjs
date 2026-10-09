@@ -72,7 +72,7 @@ const THUMBNAIL_QUALITY = 82;
 const BASIS_SOURCE = resolve(root, 'node_modules', 'three', 'examples', 'jsm', 'libs', 'basis');
 
 /** What optimize.mjs owns inside the output folder. Everything here is deleted and rewritten, and
- *  nothing else is touched, so a sibling folder written by another goal survives a run. */
+ *  nothing else is touched, so unrelated sibling folders survive a run. */
 const OWNED_OUTPUTS = [
   'rotunda.glb',
   'plinth.glb',
