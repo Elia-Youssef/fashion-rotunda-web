@@ -6,7 +6,7 @@ import type { TierSettings } from '../../src/tiers/table';
 
 // The decision the chain follows, pinned against TIERS itself so the table stays the one source:
 // every tier x touch x backend combination, plus the invariants the chain relies on.
-// The rows come from Appendix D: antialiasing 'msaa' on base, 'traa' on mid and high; ao
+// The agreed tier rows: antialiasing 'msaa' on base, 'traa' on mid and high; ao
 // 'gtao-half-desktop-only' on base, 'gtao-half' on mid and high; SSR on high WebGPU while raw SSGI
 // remains available only through the explicit ?post=gi diagnostic slice. Neither compute effect
 // runs on WebGL 2.

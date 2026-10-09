@@ -137,7 +137,7 @@ describe('the token contract on the component stylesheets', () => {
     if (frozenHash !== undefined) {
       it(`${sheet} remains byte-identical frozen CSS`, () => {
         const css = readFileSync(join(UI_DIR, sheet), 'utf8');
-        expect(sha256(css), `${sheet} may not change in UI-6`).toBe(frozenHash);
+        expect(sha256(css), `${sheet} keeps its approved bytes`).toBe(frozenHash);
       });
     } else {
       it(`${sheet} carries no literal outside the token sheet`, () => {

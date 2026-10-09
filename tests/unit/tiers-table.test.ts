@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { TIERS, TIER_ORDER } from '../../src/tiers/table';
 
-// Appendix D pinned cell by cell: 13 settings x 3 tiers = 39 assertions. If the plan changes,
-// this test and only then src/tiers/table.ts change together.
-describe('TIERS table matches Appendix D', () => {
+// The agreed tier values pinned cell by cell: 13 settings x 3 tiers = 39 assertions. A tier change
+// edits this test and src/tiers/table.ts together, never the table alone.
+describe('TIERS table matches the agreed tier values', () => {
   it('pins pixelRatioCap', () => {
     expect(TIERS.base.pixelRatioCap).toBe(1.5);
     expect(TIERS.mid.pixelRatioCap).toBe(2);
