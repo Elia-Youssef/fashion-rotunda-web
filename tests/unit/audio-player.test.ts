@@ -143,7 +143,6 @@ function fakeWorld(): FakeWorld {
   const buses = {
     context,
     music: new FakeGain(),
-    voice: new FakeGain(),
   } as unknown as AudioBuses;
   let unlockCount = 0;
   const engine: AudioEngine = {
@@ -402,33 +401,6 @@ describe('createMusicPlayer.toggle and armed', () => {
     // A press while armed means the visitor does not want the music that was going to start.
     await player.toggle();
     expect(player.state).toBe('off');
-  });
-});
-
-describe('createMusicPlayer.setDucked', () => {
-  it('ramps to a quarter of the level and back', async () => {
-    const world = fakeWorld();
-    const player = mountPlayer(world, []);
-    await player.play();
-
-    const calls = world.context.gains[0].gain.calls;
-    player.setDucked(true);
-    expect(calls.at(-3)).toEqual(['cancel', Number.NaN, 0]);
-    expect(calls.at(-2)).toEqual(['set', 0.5, 0]);
-    expect(calls.at(-1)).toEqual(['ramp', 0.125, 0.4]);
-
-    player.setDucked(false);
-    expect(calls.at(-1)).toEqual(['ramp', 0.5, 0.4]);
-  });
-
-  it('records the duck for the next start when nothing is playing', async () => {
-    const world = fakeWorld();
-    const player = mountPlayer(world, []);
-    player.setDucked(true);
-    await player.play();
-    const calls = world.context.gains[0].gain.calls;
-    expect(calls[0]).toEqual(['set', 0, 0]);
-    expect(calls[1], 'the fade in lands on the ducked level').toEqual(['ramp', 0.125, 0.4]);
   });
 });
 

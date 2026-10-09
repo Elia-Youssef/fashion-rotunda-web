@@ -30,7 +30,7 @@ import { createGradientSkyTexture, environmentSkyPalette, visibleSkyPalette } fr
 
 export interface Environment {
   texture: Texture;
-  /** Assigns the map and its strength. Intensity comes from the rig's sky entry, through skyIntensity(). */
+  /** Assigns the map and its strength. Intensity comes from daylightParameters(...).skyIntensity. */
   apply(scene: Scene, intensity: number, backgroundIntensity?: number): void;
   dispose(): void;
 }

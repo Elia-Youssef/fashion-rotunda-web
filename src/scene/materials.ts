@@ -10,16 +10,6 @@ import type { Material, Object3D } from 'three/webgpu';
 
 export const DOME_GLASS_MATERIAL = 'M_Glass_Flat_SM_Dome_A';
 
-/**
- * The selected default: physical transmission is enabled for the dome on every tier.
- * Base p95 measurements remain pending, so this is not a claim that every tier is inside budget.
- *
- * This is deliberately not named for Base. Tuning has no tier input, so a false value would be a
- * global fallback, not a Base-only policy. A future constrained-device policy must make that
- * decision before calling this module and pass it explicitly.
- */
-export const DOME_TRANSMISSION_ENABLED = true;
-
 export interface MaterialTuning {
   transmission?: number;
   thickness?: number;
@@ -91,17 +81,8 @@ const TUNING_TABLE: Readonly<Record<string, MaterialTuning>> = {
   },
 };
 
-/** Global blend fallback for hardware that cannot afford the dome transmission target. */
-const DOME_GLASS_BASE_FALLBACK: MaterialTuning = {
-  roughness: 0.05,
-  envMapIntensity: 2.0,
-};
-
 /** The tuning for one material by its glTF name, or null when the material ships as exported. */
 export function tuningFor(materialName: string): MaterialTuning | null {
-  if (materialName === DOME_GLASS_MATERIAL && !DOME_TRANSMISSION_ENABLED) {
-    return DOME_GLASS_BASE_FALLBACK;
-  }
   const tuning = TUNING_TABLE[materialName];
   return tuning ?? null;
 }

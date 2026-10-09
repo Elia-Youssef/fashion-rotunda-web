@@ -95,7 +95,7 @@ export interface MusicPlayerOptions {
   trackId: string | null;
   /** The loop's level on its bus, 0 to 1. */
   level: number;
-  /** Ramp length for start, stop and ducking, milliseconds. */
+  /** Ramp length for start and stop, milliseconds. */
   fadeMs: number;
   onStateChange: (state: MusicState, detail: string | null) => void;
 }
@@ -113,8 +113,6 @@ export interface MusicPlayer {
    * on", so a press on it asks for the music that was going to start to stop.
    */
   toggle(): Promise<void>;
-  /** Lowers the loop to a quarter of its level under a voice, and restores it. */
-  setDucked(on: boolean): void;
   dispose(): void;
 }
 
@@ -145,7 +143,6 @@ export function createMusicPlayer(options: MusicPlayerOptions): MusicPlayer {
   let source: AudioBufferSourceNode | null = null;
   let sourceGain: GainNode | null = null;
   let loopDuration: number | null = null;
-  let ducked = false;
   /** Seconds into the loop: the offset the next source starts from, and the reading while off. */
   let position = 0;
   let startedAt = 0;
@@ -155,11 +152,7 @@ export function createMusicPlayer(options: MusicPlayerOptions): MusicPlayer {
     onStateChange(state, detail);
   }
 
-  function targetGain(): number {
-    return ducked ? level / 4 : level;
-  }
-
-  /** One gain ramp helper for start, stop and ducking: pin the current value, ramp to the target. */
+  /** Pin the current gain value, then ramp to the target over fadeMs. */
   function rampGain(gain: GainNode, context: AudioContext, to: number): void {
     const now = context.currentTime;
     gain.gain.cancelScheduledValues(now);
@@ -251,7 +244,7 @@ export function createMusicPlayer(options: MusicPlayerOptions): MusicPlayer {
     node.loopEnd = track.duration;
     const gain = context.createGain();
     gain.gain.setValueAtTime(0, context.currentTime);
-    gain.gain.linearRampToValueAtTime(targetGain(), context.currentTime + fadeMs / 1000);
+    gain.gain.linearRampToValueAtTime(level, context.currentTime + fadeMs / 1000);
     node.connect(gain);
     gain.connect(audioBuses.music);
     node.start(0, position);
@@ -330,9 +323,7 @@ export function createMusicPlayer(options: MusicPlayerOptions): MusicPlayer {
     if (node !== null && gain !== null && context !== null && loopDuration !== null) {
       position = loopPosition(startedAt, position, context.currentTime, loopDuration);
       const now = context.currentTime;
-      gain.gain.cancelScheduledValues(now);
-      gain.gain.setValueAtTime(gain.gain.value, now);
-      gain.gain.linearRampToValueAtTime(0, now + fadeMs / 1000);
+      rampGain(gain, context, 0);
       node.stop(now + fadeMs / 1000);
     }
     source = null;
@@ -366,16 +357,6 @@ export function createMusicPlayer(options: MusicPlayerOptions): MusicPlayer {
         return;
       }
       await play();
-    },
-
-    setDucked(on: boolean): void {
-      ducked = on;
-      const gain = sourceGain;
-      const context = buses?.context ?? null;
-      if (gain === null || context === null) {
-        return;
-      }
-      rampGain(gain, context, targetGain());
     },
 
     dispose(): void {

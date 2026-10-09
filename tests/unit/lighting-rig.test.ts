@@ -8,16 +8,13 @@ import {
   daylightParameters,
   daylightSun,
   hexToLinearRgb,
-  intensityScale,
   kelvinToHex,
   kelvinTintToHex,
   linearRgbToHex,
   normalizeHexColor,
   parseRig,
   serializeRig,
-  skyIntensity,
   srgbToLinear,
-  sunDirection,
   updateDaylight,
   updateExposure,
   updateLight,
@@ -46,10 +43,6 @@ describe('DEFAULT_RIG', () => {
   it('starts at daylight 0.5 (neutral Day) and exposure 1', () => {
     expect(DEFAULT_RIG.daylight).toBe(0.5);
     expect(DEFAULT_RIG.exposure).toBe(1);
-  });
-
-  it('provides candela intensity scale for rect lights', () => {
-    expect(intensityScale('rect')).toEqual({ range: CANDELA_RANGE, step: 0.5, unit: 'cd' });
   });
 
   it('puts KeyLight at [2, 2.8, -2] metres: 15 cd, #ffffff, aimed down and inward', () => {
@@ -228,22 +221,6 @@ describe('Daylight and Atmosphere Coordination', () => {
   it('daylightSun returns consistent parameters matching daylightParameters', () => {
     const sun = daylightSun(0.5);
     expect(sun).toEqual(daylightParameters(0.5));
-  });
-
-  it('skyIntensity reads the rig daylight property', () => {
-    expect(skyIntensity(DEFAULT_RIG)).toBe(2.0);
-    const minRig = updateDaylight(DEFAULT_RIG, 0.0);
-    expect(skyIntensity(minRig)).toBe(1.0);
-    const maxRig = updateDaylight(DEFAULT_RIG, 1.0);
-    expect(skyIntensity(maxRig)).toBe(2.6);
-  });
-
-  it('sunDirection produces unit vectors for any valid degree', () => {
-    for (const deg of [0, 15, 45, 90, 130.483, 135, 180]) {
-      const dir = sunDirection(deg);
-      const len = Math.hypot(dir[0], dir[1], dir[2]);
-      expect(len).toBeCloseTo(1, 6);
-    }
   });
 
   it('isolates the three-point studio rig: daylight sweeps never alter Key, Fill, or Rim', () => {

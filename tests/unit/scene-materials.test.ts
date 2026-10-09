@@ -7,7 +7,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   DOME_GLASS_MATERIAL,
-  DOME_TRANSMISSION_ENABLED,
   applyTunings,
   applyTuning,
   tunedMaterialNames,
@@ -169,10 +168,6 @@ describe('materials tuning table', () => {
     for (const name of authoredNero) {
       expect(requireTuning(name)).toMatchObject({ clearcoat: 1.0, clearcoatRoughness: 0.1 });
     }
-  });
-
-  it('exports the global dome transmission decision', () => {
-    expect(typeof DOME_TRANSMISSION_ENABLED).toBe('boolean');
   });
 });
 

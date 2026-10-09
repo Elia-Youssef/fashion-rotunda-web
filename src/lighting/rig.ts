@@ -23,7 +23,6 @@ import {
 } from './units';
 
 export type RigStudioLightId = 'key' | 'fill' | 'back';
-export type RigLightId = RigStudioLightId;
 
 export interface RigLight {
   id: RigStudioLightId;
@@ -49,12 +48,6 @@ export interface Rig {
   daylight: number;
   /** Preserved tone mapping exposure (default 1.0). */
   exposure: number;
-}
-
-export interface IntensityScale {
-  range: readonly [number, number];
-  step: number;
-  unit: string;
 }
 
 export { CANDELA_RANGE } from './units';
@@ -223,20 +216,6 @@ function deriveSunArc(): { east: [number, number, number]; angleDeg: number } {
 
 const SUN_ARC = deriveSunArc();
 
-/**
- * Returns the direction vector the sun shines along for a given angle on its arc (0 east, 90 zenith, 180 west).
- */
-export function sunDirection(angleDeg: number): [number, number, number] {
-  const radians = (clamp(angleDeg, 0, 180) * Math.PI) / 180;
-  const cosine = Math.cos(radians);
-  const toSun: [number, number, number] = [
-    cosine * SUN_ARC.east[0],
-    Math.sin(radians),
-    cosine * SUN_ARC.east[2],
-  ];
-  return [-toSun[0], -toSun[1], -toSun[2]];
-}
-
 export interface DaylightParameters {
   /** Sun angle in degrees along arc: 130.4829 (Unreal reference). */
   angleDeg: number;
@@ -307,16 +286,6 @@ export function daylightParameters(daylight: number): DaylightParameters {
 /** Evaluates the active directional sun parameters for the runtime rig. */
 export function daylightSun(daylight: number): DaylightParameters {
   return daylightParameters(daylight);
-}
-
-/** Evaluates the sky environment intensity for a given rig. */
-export function skyIntensity(rig: Rig): number {
-  return daylightParameters(rig.daylight).skyIntensity;
-}
-
-export function intensityScale(kind: 'rect' = 'rect'): IntensityScale {
-  void kind;
-  return { range: CANDELA_RANGE, step: 0.5, unit: 'cd' };
 }
 
 function freezeRig(rig: Rig): Rig {

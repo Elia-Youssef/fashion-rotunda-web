@@ -20,19 +20,6 @@ export const KELVIN_RANGE: readonly [number, number] = [2700, 8000];
 /** The panel's intensity span for the rect and point lights: 0 to 50 candela. */
 export const CANDELA_RANGE: readonly [number, number] = [0, 50];
 
-/**
- * The panel's span for the sun, in lux. The Unreal level authors the sun at 7 (lights.json,
- * actor DirectionalLight), so the slider spans that value with room above it rather than the daylight
- * scale of an exterior at noon: this is a stylized interior.
- */
-export const SUN_LUX_RANGE: readonly [number, number] = [0, 20];
-
-/** The panel's span for the sky light, a unitless scale on the environment. Unreal authors it at 2. */
-export const SKY_SCALE_RANGE: readonly [number, number] = [0, 4];
-
-/** The sun angle the panel sweeps: 0 east, 90 zenith, 180 west. */
-export const SUN_ANGLE_RANGE: readonly [number, number] = [0, 180];
-
 /** Unreal is centimetres, three is metres. */
 export const UNREAL_CM_PER_M = 100;
 

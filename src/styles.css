@@ -521,25 +521,6 @@ footer .proof-panel__measure {
   min-height: var(--control-height);
 }
 
-/* The proof overlay's <pre> variant, selected by id on the root element. */
-.proof-overlay {
-  max-width: var(--card-width);
-  margin: var(--space-2) var(--space-3);
-  padding: var(--space-2);
-  /* The GPU name can be a whole driver string; it wraps instead of widening the panel. */
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-1);
-  background: var(--surface-chrome);
-  backdrop-filter: var(--blur-chrome);
-  -webkit-backdrop-filter: var(--blur-chrome);
-  font-family: var(--font-mono);
-  font-size: var(--type-sm);
-  line-height: 1.4;
-  color: var(--text-muted);
-}
-
 /* Poster path: the renderer never starts, so the still carries the scene and the words carry the
    explanation. The elements sit on top of the untouched canvas slot, not below it, because the
    page must not grow a second screen's worth of content. */

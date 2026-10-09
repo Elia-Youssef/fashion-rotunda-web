@@ -7,8 +7,6 @@ export interface AudioBuses {
   context: AudioContext;
   /** The loop's bus, a GainNode into the destination. */
   music: GainNode;
-  /** The unused voice bus, a GainNode into the destination. */
-  voice: GainNode;
 }
 
 export interface AudioEngine {
@@ -53,10 +51,8 @@ export function createAudioEngine(): AudioEngine {
       try {
         const context = new AudioContext();
         const music = context.createGain();
-        const voice = context.createGain();
         music.connect(context.destination);
-        voice.connect(context.destination);
-        buses = { context, music, voice };
+        buses = { context, music };
         // iOS reports 'interrupted' after a phone call; it reaches the listeners like any other
         // state and the next gesture's resume is the way out.
         context.onstatechange = () => {
