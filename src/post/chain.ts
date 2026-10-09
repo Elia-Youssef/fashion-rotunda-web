@@ -501,9 +501,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
         reflectNonMetals: true,
         camera,
       };
-      // SSRNode.d.ts line 62 types normalNode as Node<'vec3'>, but runtime SSRNode.js line 1142
-      // invokes normalNode.sample(uvS). A swizzled node (.rgb) lacks .sample(), so the underlying
-      // PassTextureNode must be passed, which is what the type assertion below allows.
+      // SSRNode.d.ts requires vec3; SSRNode.js:1142 samples this texture's RGB, so retain the sampler.
       const ssrNormalNode = prePass.getTextureNode() as unknown as Node<'vec3'>;
       ssrNode = ssr(
         scenePass.getTextureNode(),
@@ -573,6 +571,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
         3.0,
         bokehScaleUniform,
       ) as DepthOfFieldNodeFull;
+      // DepthOfFieldNode.d.ts omits TempNode<'vec4'>; DepthOfFieldNode.js:37 calls super('vec4').
       beautyAfterDoF = mix(beautyInput, dofNode as unknown as Node<'vec4'>, dofActiveUniform);
     }
 
@@ -582,6 +581,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
     let lutGradedNode: Node<'vec4'> | null = null;
     if (wanted.lut) {
       lutTexture = createLutTexture();
+      // Lut3DNode.d.ts omits TempNode<'vec4'>; Lut3DNode.js:28 calls super('vec4').
       lutGradedNode = lut3D(
         displayNode,
         texture3D(lutTexture),
