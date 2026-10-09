@@ -8,6 +8,7 @@ export const ffmpegExe: string;
 export const ffprobeExe: string;
 export const sourceDir: string;
 export const workDir: string;
+export const provenanceDir: string;
 export const contentDir: string;
 
 export function pipelineEnv(): NodeJS.ProcessEnv;

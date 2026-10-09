@@ -14,8 +14,6 @@ export default tseslint.config(
       '.worktrees/**',
       'public/**',
       'assets-src/**',
-      // Local planning and evidence: archived verification scripts in any module format, not product source.
-      'briefs/**',
       // Browser runs rewrite these folders while they work; linting them races the run.
       'test-results/**',
       'playwright-report/**',

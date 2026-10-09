@@ -46,7 +46,8 @@ function fixture(present: boolean) {
     fs.mkdirSync(resolve(path, '..'), { recursive: true });
     fs.writeFileSync(path, contents, 'utf8');
   }
-  return { root, sourceDir, contentDir, unrealProject, unrealEditorCmd };
+  const provenanceDir = resolve(root, 'custom-audit-output');
+  return { root, sourceDir, contentDir, unrealProject, unrealEditorCmd, provenanceDir };
 }
 
 // Include callback, sync, promise, stream and descriptor-based mutation entry points. Opening a
@@ -117,6 +118,7 @@ async function audit(args: string[], present: boolean) {
   vi.resetModules();
   // The real provenance helpers and entry point execute; only paths and dangerous APIs are replaced.
   const { exportEvidenceRoot, hashTree } = await import('../../pipeline/unreal/provenance.mjs');
+  expect(exportEvidenceRoot).toBe(paths.provenanceDir);
   evidenceRoot = exportEvidenceRoot;
   const before = [hashTree(paths.sourceDir), hashTree(paths.contentDir), hashTree(resolve(paths.root, 'project'))];
   process.argv = [originalArgv[0]!, resolve(paths.root, 'pipeline', 'unreal', 'run.mjs'), ...args];
@@ -165,9 +167,13 @@ describe('Unreal audit entry point I/O contract', () => {
       knownGoodUnchanged: true,
       isolatedOutputExists: false,
       resolvedPaths: {
+        evidenceRoot: result.paths.provenanceDir,
         repository: result.paths.root,
         editor: { path: result.paths.unrealEditorCmd, exists: present },
         authoritativeProject: { path: result.paths.unrealProject, exists: present },
+      },
+      plannedEnvironment: {
+        FR_EXPORT_EVIDENCE_ROOT: result.paths.provenanceDir,
       },
     });
     expect(report.knownGoodAfter).toEqual(report.knownGoodBefore);

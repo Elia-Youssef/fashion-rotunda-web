@@ -72,6 +72,9 @@ export const sourceDir = resolve(root, 'assets-src', 'source');
 /** Intermediate files: audits, cleaned meshes, pre-optimization GLBs. */
 export const workDir = resolve(root, 'assets-src', 'work');
 
+/** Local provenance runs; FR_PROVENANCE_DIR overrides the ignored intermediate-output default. */
+export const provenanceDir = resolve(process.env.FR_PROVENANCE_DIR ?? resolve(workDir, 'export-provenance'));
+
 /** What the page loads. Not public/assets/, which Vite hashes and caches for a year. */
 export const contentDir = resolve(root, 'public', 'content');
 

@@ -6,9 +6,9 @@ import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
 import { basename, isAbsolute, relative, resolve, sep } from 'node:path';
 
-import { contentDir, root, sourceDir } from '../config.mjs';
+import { contentDir, provenanceDir, sourceDir } from '../config.mjs';
 
-export const exportEvidenceRoot = resolve(root, 'briefs', 'reports', 'export-provenance');
+export const exportEvidenceRoot = provenanceDir;
 export const knownGoodTrees = Object.freeze([
   resolve(sourceDir, 'unreal'),
   contentDir,

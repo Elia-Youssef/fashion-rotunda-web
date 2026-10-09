@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { posix, relative, resolve } from 'node:path';
 import { stdout } from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -10,19 +10,9 @@ import vitestConfig from '../../vitest.config';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
 const UNIT_DIRECTORY = 'tests/unit';
-// Generated output, dependencies, local evidence and Git metadata are not repository source.
-const EXCLUDED_DIRECTORIES = new Set([
-  'node_modules', 'dist', 'briefs', '.worktrees', 'test-results', 'playwright-report', '.git',
-]);
-
-function repositoryFiles(directory = ''): string[] {
-  return readdirSync(resolve(ROOT, directory), { withFileTypes: true }).flatMap((entry) => {
-    const path = posix.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      return EXCLUDED_DIRECTORIES.has(entry.name) ? [] : repositoryFiles(path);
-    }
-    return entry.isFile() ? [path] : [];
-  });
+function repositoryFiles(): string[] {
+  return execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\0').filter(Boolean);
 }
 
 function inside(path: string, directory: string): boolean {

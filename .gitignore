@@ -37,6 +37,4 @@ old-docs/
 /.*/
 !/.github/
 
-# Local planning records and worktrees
-briefs/
 .worktrees/
