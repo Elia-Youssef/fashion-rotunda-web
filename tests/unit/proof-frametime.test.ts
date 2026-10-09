@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FrameTimes } from '../../src/proof/frametime';
 
 describe('FrameTimes', () => {
@@ -64,5 +64,78 @@ describe('FrameTimes', () => {
     frames.push(9);
     expect(frames.count).toBe(1);
     expect(frames.p95()).toBe(9);
+  });
+
+  it('matches the original copy and sort over 10000 generated sequences, wraps and refills', () => {
+    // Fixed-seed LCG makes failures reproducible; modes exercise numeric sort's stable ties and NaN.
+    let seed = 0x12345678;
+    const random = (): number => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 2 ** 32;
+    };
+    for (let sequence = 0; sequence < 10_000; sequence += 1) {
+      const capacity = sequence % 1000 === 0 ? 240 : 1 + Math.floor(random() * 16);
+      const frames = new FrameTimes(capacity);
+      const samples = new Array<number>(capacity);
+      let next = 0;
+      let filled = 0;
+      const actual: number[] = [];
+      const expected: number[] = [];
+      for (let i = 0; i < capacity * 3 + 3; i += 1) {
+        if (i === capacity * 2 + 1) {
+          frames.clear();
+          next = 0;
+          filled = 0;
+          actual.push(frames.p50(), frames.p95());
+          expected.push(0, 0);
+        }
+        const value = [
+          random() * 100,
+          i,
+          -i,
+          7,
+          i % capacity === 0 ? 1e10 : 0,
+          [NaN, Infinity, -Infinity, -0, 0, 1][i % 6],
+        ][sequence % 6];
+        frames.push(value);
+        samples[next] = value;
+        next = (next + 1) % capacity;
+        filled = Math.min(filled + 1, capacity);
+        const sorted = samples.slice(0, filled).sort((a, b) => a - b);
+        expected.push(sorted[Math.ceil((50 * filled) / 100) - 1], sorted[Math.ceil((95 * filled) / 100) - 1]);
+        // Repeat reads and alternate the first reader to exercise the shared cached window.
+        if (i % 2 === 0) frames.p95();
+        actual.push(frames.p50(), frames.p95());
+      }
+      expect(actual, `sequence ${sequence}, capacity ${capacity}`).toEqual(expected);
+    }
+  });
+
+  it('sorts one reusable scratch at most once per new sample, including clear and wrap', () => {
+    const frames = new FrameTimes(3);
+    const sort = vi.spyOn(Array.prototype, 'sort');
+    const counts: number[] = [];
+    let contexts: unknown[];
+    try {
+      frames.p50(); frames.p95();
+      counts.push(sort.mock.calls.length);
+      for (let i = 0; i < 8; i += 1) {
+        frames.push(8 - i);
+        frames.p95(); frames.p50(); frames.p95();
+        counts.push(sort.mock.calls.length);
+      }
+      frames.clear();
+      frames.p50(); frames.p95();
+      counts.push(sort.mock.calls.length);
+      frames.push(9);
+      frames.push(10);
+      frames.p50(); frames.p95();
+      counts.push(sort.mock.calls.length);
+      contexts = [...sort.mock.contexts];
+    } finally {
+      sort.mockRestore();
+    }
+    expect(counts).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 8, 9]);
+    expect(new Set(contexts).size).toBe(1);
   });
 });

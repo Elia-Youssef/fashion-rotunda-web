@@ -190,6 +190,53 @@ function switchOrder(ids: string[], startId: string, count: number): string[] {
   return order;
 }
 
+/**
+ * The data-governor bridge: fixed-order, bounded tokens read by the proof snapshot, the panel and
+ * the e2e suite. 'off' means no governor runs this page (WebGL 2, a forced `?post=` slice, or
+ * pass-through). Scalar readings are formatted only when they change, and the immutable event
+ * history is serialized once per history version instead of on every frame.
+ */
+function createGovernorPublisher(dataset: DOMStringMap): (diagnostics: GovernorDiagnostics | null) => void {
+  let previousVersion = -1;
+  let historyText = '[]';
+  let previousBudget: number | null = null;
+  let previousThreshold: number | null = null;
+  let budgetText = '';
+  let thresholdText = '';
+
+  return (diagnostics): void => {
+    let status = 'off';
+    if (diagnostics !== null) {
+      if (previousBudget !== diagnostics.budgetMs) {
+        previousBudget = diagnostics.budgetMs;
+        budgetText = diagnostics.budgetMs.toFixed(1);
+      }
+      if (previousThreshold !== diagnostics.recoveryThresholdMs) {
+        previousThreshold = diagnostics.recoveryThresholdMs;
+        thresholdText = diagnostics.recoveryThresholdMs.toFixed(2);
+      }
+      const p95 = diagnostics.lastP95Ms === null ? 'none' : diagnostics.lastP95Ms.toFixed(1);
+      status = `level=${diagnostics.level};activity=${diagnostics.activity}` +
+        `;eligible=${diagnostics.recoveryEligible ? '1' : '0'}` +
+        `;cooldown=${Math.ceil(diagnostics.cooldownRemainingMs)}` +
+        `;patience=${diagnostics.consecutiveOverBudget}/${diagnostics.patience}` +
+        `;qualify=${Math.floor(diagnostics.recoveryElapsedMs)}/${diagnostics.recoveryQualificationMs}` +
+        `;p95=${p95};budget=${budgetText};threshold=${thresholdText}`;
+      if (previousVersion !== diagnostics.historyVersion) {
+        previousVersion = diagnostics.historyVersion;
+        historyText = JSON.stringify(diagnostics.events);
+      }
+    }
+    if (dataset.governor !== status) {
+      dataset.governor = status;
+    }
+    const log = diagnostics === null ? '[]' : historyText;
+    if (dataset.governorLog !== log) {
+      dataset.governorLog = log;
+    }
+  };
+}
+
 async function main(): Promise<void> {
   const showLobby = lobbyWanted(search);
   const lobbyElement = document.getElementById('entry-lobby');
@@ -670,6 +717,7 @@ async function main(): Promise<void> {
    * "off". The committed governor record rides the same per-frame publish, so a decision reaches
    * the canvas and the proof panel only after render() has applied it.
    */
+  const publishGovernor = createGovernorPublisher(canvas.dataset);
   function publishPostState(): void {
     const on = chain?.features ?? null;
     const value =
@@ -691,38 +739,7 @@ async function main(): Promise<void> {
     if (canvas.dataset.post !== value) {
       canvas.dataset.post = value;
     }
-    const diagnostics = chain?.governorDiagnostics ?? null;
-    const governorStatus = formatGovernorStatus(diagnostics);
-    if (canvas.dataset.governor !== governorStatus) {
-      canvas.dataset.governor = governorStatus;
-    }
-    const governorLog = diagnostics === null ? '[]' : JSON.stringify(diagnostics.events);
-    if (canvas.dataset.governorLog !== governorLog) {
-      canvas.dataset.governorLog = governorLog;
-    }
-  }
-
-  /**
-   * The data-governor bridge: fixed-order, bounded tokens read by the proof snapshot,
-   * the panel and the e2e suite. 'off' means no governor runs this page (WebGL 2, a forced
-   * `?post=` slice, or pass-through).
-   */
-  function formatGovernorStatus(diagnostics: GovernorDiagnostics | null): string {
-    if (diagnostics === null) {
-      return 'off';
-    }
-    const p95 = diagnostics.lastP95Ms === null ? 'none' : diagnostics.lastP95Ms.toFixed(1);
-    return [
-      `level=${diagnostics.level}`,
-      `activity=${diagnostics.activity}`,
-      `eligible=${diagnostics.recoveryEligible ? '1' : '0'}`,
-      `cooldown=${Math.ceil(diagnostics.cooldownRemainingMs)}`,
-      `patience=${diagnostics.consecutiveOverBudget}/${diagnostics.patience}`,
-      `qualify=${Math.floor(diagnostics.recoveryElapsedMs)}/${diagnostics.recoveryQualificationMs}`,
-      `p95=${p95}`,
-      `budget=${diagnostics.budgetMs.toFixed(1)}`,
-      `threshold=${diagnostics.recoveryThresholdMs.toFixed(2)}`,
-    ].join(';');
+    publishGovernor(chain?.governorDiagnostics ?? null);
   }
 
   /**

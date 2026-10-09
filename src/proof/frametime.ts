@@ -1,6 +1,7 @@
 // Frame work-time statistics for the proof panel and the resolution scaler.
 
 const DEFAULT_CAPACITY = 240;
+const ascending = (a: number, b: number): number => a - b;
 
 /**
  * Ring buffer of frame work times (render call duration only, never the wait between frames).
@@ -8,14 +9,18 @@ const DEFAULT_CAPACITY = 240;
  */
 export class FrameTimes {
   private readonly samples: number[];
+  private readonly sorted: number[];
+  private dirty = false;
   private next = 0;
   private filled = 0;
 
   constructor(capacity?: number) {
     this.samples = new Array<number>(capacity ?? DEFAULT_CAPACITY);
+    this.sorted = new Array<number>(this.samples.length);
   }
 
   push(workMs: number): void {
+    this.dirty = true;
     this.samples[this.next] = workMs;
     this.next = (this.next + 1) % this.samples.length;
     if (this.filled < this.samples.length) {
@@ -38,6 +43,7 @@ export class FrameTimes {
   clear(): void {
     this.next = 0;
     this.filled = 0;
+    this.dirty = false;
   }
 
   /**
@@ -55,7 +61,15 @@ export class FrameTimes {
   }
 
   private ordered(): number[] {
-    // While the buffer has not wrapped, the valid samples are the first `filled` slots.
-    return this.samples.slice(0, this.filled).sort((a, b) => a - b);
+    if (this.dirty) {
+      // Sort only the valid prefix, using the ring's physical order just as the copied window did.
+      this.sorted.length = this.filled;
+      for (let i = 0; i < this.filled; i += 1) {
+        this.sorted[i] = this.samples[i];
+      }
+      this.sorted.sort(ascending);
+      this.dirty = false;
+    }
+    return this.sorted;
   }
 }

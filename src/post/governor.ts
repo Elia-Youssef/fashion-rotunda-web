@@ -24,6 +24,8 @@ export const LEVEL_CHANGE_COOLDOWN_MS = 10_000;
 export const RECOVERY_MAX_SAMPLE_GAP_MS = 500;
 /** The governor-owned change log is capped; the oldest entry is dropped first. */
 export const GOVERNOR_EVENT_LOG_CAP = 8;
+// Each history snapshot has a distinct version, including a newly restored governor's first snapshot.
+let nextHistoryVersion = 0;
 
 export interface GovernorOptions {
   budgetMs: number;
@@ -84,6 +86,8 @@ export interface GovernorState {
 
 /** What the proof panel and the e2e diagnostics read; every number is committed state. */
 export interface GovernorDiagnostics {
+  /** Unique to this immutable history snapshot; changes on a commit or governor replacement. */
+  readonly historyVersion: number;
   level: EnhancedLevel;
   /** Whether the last observed sample's stream counted toward recovery. */
   recoveryEligible: boolean;
@@ -119,7 +123,10 @@ export interface Governor {
   readonly ladder: readonly EnhancedLevel[];
   /** A defensive snapshot for an internal post-chain rebuild. */
   readonly state: GovernorState;
-  /** Committed diagnostic record; nowMs defaults to the last observed sample's time. */
+  /**
+   * Borrowed, read-only scalar view; read immediately or spread to retain a snapshot.
+   * nowMs defaults to the last observed sample's time. History is an immutable snapshot.
+   */
   diagnostics(nowMs?: number): GovernorDiagnostics;
   /**
    * Invalidates the recovery measurement stream when lifecycle eligibility is lost. It preserves
@@ -279,13 +286,42 @@ export function createGovernor(options: GovernorOptions): Governor {
   let lastP95Ms = initialState?.lastP95Ms ?? null;
   let lastEligible = initialState?.lastSampleEligible ?? false;
   let lastObservedAtMs = initialState?.lastObservedAtMs ?? 0;
-  const events: GovernorEvent[] = initialState === undefined ? [] : [...initialState.events];
+  const events: GovernorEvent[] = initialState === undefined
+    ? []
+    : initialState.events.map((event) => Object.freeze({ ...event }));
+  let historyVersion = nextHistoryVersion++;
+  let history: readonly GovernorEvent[] = Object.freeze([...events]);
+  let diagnosticsAtMs = lastObservedAtMs;
+  const readings: GovernorDiagnostics = Object.freeze({
+    get historyVersion() { return historyVersion; },
+    get level() { return ladder[currentIndex]; },
+    get recoveryEligible() { return lastEligible; },
+    get activity(): GovernorDiagnostics['activity'] {
+      if (readings.cooldownRemainingMs > 0) return 'cooldown';
+      if (consecutiveOverBudget > 0) return 'downgrade-patience';
+      if (recoveryStartedAtMs !== null) return 'recovery-qualifying';
+      return 'observing';
+    },
+    get consecutiveOverBudget() { return consecutiveOverBudget; },
+    patience,
+    get cooldownRemainingMs() { return Math.max(0, cooldownUntilMs - diagnosticsAtMs); },
+    get recoveryElapsedMs() {
+      return recoveryStartedAtMs === null ? 0 : Math.max(0, diagnosticsAtMs - recoveryStartedAtMs);
+    },
+    recoveryQualificationMs: RECOVERY_QUALIFICATION_MS,
+    recoveryThresholdMs,
+    budgetMs,
+    get lastP95Ms() { return lastP95Ms; },
+    get events() { return history; },
+  });
 
   function pushEvent(event: GovernorEvent): void {
-    events.push(event);
+    events.push(Object.freeze(event));
     if (events.length > GOVERNOR_EVENT_LOG_CAP) {
       events.splice(0, events.length - GOVERNOR_EVENT_LOG_CAP);
     }
+    history = Object.freeze([...events]);
+    historyVersion = nextHistoryVersion++;
   }
 
   /** Exactly one ladder step, plus every reset and cooldown the change implies. */
@@ -430,32 +466,8 @@ export function createGovernor(options: GovernorOptions): Governor {
     },
 
     diagnostics(nowMs?: number): GovernorDiagnostics {
-      const at = nowMs ?? lastObservedAtMs;
-      const cooldownRemainingMs = Math.max(0, cooldownUntilMs - at);
-      const recoveryElapsedMs =
-        recoveryStartedAtMs === null ? 0 : Math.max(0, at - recoveryStartedAtMs);
-      let activity: GovernorDiagnostics['activity'] = 'observing';
-      if (cooldownRemainingMs > 0) {
-        activity = 'cooldown';
-      } else if (consecutiveOverBudget > 0) {
-        activity = 'downgrade-patience';
-      } else if (recoveryStartedAtMs !== null) {
-        activity = 'recovery-qualifying';
-      }
-      return {
-        level: ladder[currentIndex],
-        recoveryEligible: lastEligible,
-        activity,
-        consecutiveOverBudget,
-        patience,
-        cooldownRemainingMs,
-        recoveryElapsedMs,
-        recoveryQualificationMs: RECOVERY_QUALIFICATION_MS,
-        recoveryThresholdMs,
-        budgetMs,
-        lastP95Ms,
-        events: events.map((event) => ({ ...event })),
-      };
+      diagnosticsAtMs = nowMs ?? lastObservedAtMs;
+      return readings;
     },
 
     invalidateRecovery(): void {
