@@ -275,44 +275,66 @@ async function expectRendererOnlyScreenshot(
   canvas: Locator,
   name: string,
 ): Promise<void> {
-  await page.evaluate(
-    ({ attribute, selectors }) => {
-      const id = 'renderer-baseline-chrome-mask';
-      if (document.getElementById(id) === null) {
-        const style = document.createElement('style');
-        style.id = id;
-        style.textContent = `
-          html[${attribute}] body > :not(main),
-          html[${attribute}] main > :not(#shell-stage),
-          html[${attribute}] #shell-stage > :not(canvas#scene) {
-            visibility: hidden !important;
-          }
-        `;
-        document.head.appendChild(style);
-      }
-      document.documentElement.setAttribute(attribute, 'true');
-
-      // A direct DOM assertion keeps this renderer-only contract independent of image pixels.
-      for (const selector of selectors) {
-        for (const element of document.querySelectorAll<HTMLElement>(selector)) {
-          if (getComputedStyle(element).visibility !== 'hidden') {
-            throw new Error(`renderer baseline chrome remained visible: ${selector}`);
-          }
-        }
-      }
-    },
-    { attribute: RENDERER_CAPTURE_ATTRIBUTE, selectors: RENDERER_ONLY_CHROME_SELECTORS },
-  );
+  // Keep element references in the page, including nodes detached during the screenshot.
+  const previousVisibility = await page.evaluateHandle(() => {
+    const elements = document.querySelectorAll<HTMLElement>(
+      'body > :not(main), main > :not(#shell-stage), #shell-stage > :not(canvas#scene)',
+    );
+    return [...elements].map((element) => ({
+      element,
+      value: element.style.getPropertyValue('visibility'),
+      priority: element.style.getPropertyPriority('visibility'),
+    }));
+  });
 
   try {
+    await page.evaluate(
+      ({ attribute, selectors, previous }) => {
+        for (const { element } of previous) {
+          element.style.setProperty('visibility', 'hidden', 'important');
+        }
+        document.documentElement.setAttribute(attribute, 'true');
+
+        // A direct DOM assertion keeps this renderer-only contract independent of image pixels.
+        for (const selector of selectors) {
+          for (const element of document.querySelectorAll<HTMLElement>(selector)) {
+            if (getComputedStyle(element).visibility !== 'hidden') {
+              throw new Error(`renderer baseline chrome remained visible: ${selector}`);
+            }
+          }
+        }
+      },
+      {
+        attribute: RENDERER_CAPTURE_ATTRIBUTE,
+        selectors: RENDERER_ONLY_CHROME_SELECTORS,
+        previous: previousVisibility,
+      },
+    );
     await expect(canvas).toHaveScreenshot(name, {
       maxDiffPixelRatio: 0.02,
       threshold: 0.2,
     });
   } finally {
-    await page.evaluate((attribute) => {
-      document.documentElement.removeAttribute(attribute);
-    }, RENDERER_CAPTURE_ATTRIBUTE);
+    try {
+      await page.evaluate(({ attribute, previous }) => {
+        for (const { element, value, priority } of previous) {
+          if (value === '') {
+            element.style.removeProperty('visibility');
+          } else {
+            element.style.setProperty('visibility', value, priority);
+          }
+          if (
+            element.style.getPropertyValue('visibility') !== value ||
+            element.style.getPropertyPriority('visibility') !== priority
+          ) {
+            throw new Error('renderer capture did not restore inline visibility');
+          }
+        }
+        document.documentElement.removeAttribute(attribute);
+      }, { attribute: RENDERER_CAPTURE_ATTRIBUTE, previous: previousVisibility });
+    } finally {
+      await previousVisibility.dispose();
+    }
   }
 
   // Restoration is part of the contract: later actions and dedicated UI snapshots must see the
