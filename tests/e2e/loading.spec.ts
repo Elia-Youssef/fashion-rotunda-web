@@ -1,7 +1,14 @@
 import { expect, test, type ConsoleMessage } from '@playwright/test';
 
+import { holdFirstRequest } from './support/held-request';
+
 // Opaque entry lobby on a real load.
 // WebGL2 project runs headless, ensuring deterministic test execution.
+
+// The held first rotunda request keeps the boot in loading until the test releases it, so the
+// loading phase is observed while held; 30 s covers a slow boot start under four software workers.
+const LOADING_HOLD_TIMEOUT_MS = 30_000;
+
 test('gates the experience until the visitor activates Load Experience', async ({ page }) => {
   test.skip(test.info().project.name !== 'webgl2', 'runs headless, where no pointer can enter the gate');
   const messages: ConsoleMessage[] = [];
@@ -13,11 +20,9 @@ test('gates the experience until the visitor activates Load Experience', async (
     if (new URL(request.url()).pathname.endsWith('.hdr')) hdrRequests.push(request.url());
   });
 
-  // Delay the rotunda slightly so the in-flight loading state is observable
-  await page.route('**/content/rotunda.glb', async (route) => {
-    await page.waitForTimeout(1000);
-    await route.continue();
-  });
+  // Hold the rotunda so the loading surface stays observable until it is asserted, instead of a
+  // fixed one-second delay racing the assertions that follow the click.
+  const rotunda = await holdFirstRequest(page, '**/content/rotunda.glb', LOADING_HOLD_TIMEOUT_MS);
 
   await page.goto('/?webgl=1');
   const lobby = page.locator('#entry-lobby');
@@ -35,10 +40,14 @@ test('gates the experience until the visitor activates Load Experience', async (
   // 2. Click "Load Experience" to start loading
   await loadButton.click();
 
-  // 3. Immediately transitions to loading state
+  // 3. Loading state observed while the rotunda request is held in flight
   await expect(lobby).toHaveAttribute('data-state', 'loading');
   await expect(loadButton).toBeDisabled();
   await expect(lobby.locator('.entry-lobby__loading-pane')).toBeVisible();
+
+  // The loading surface was observed; release the rotunda so the load can finish.
+  await rotunda.release();
+  await rotunda.waitUntilContinued();
 
   // 4. Progress bar reaches completion
   const readProgress = async (): Promise<number> =>
@@ -98,6 +107,10 @@ test('counts and fetches the HDR once under the ?sky=hdr diagnostic', async ({ p
 test('activates Load Experience on Enter from the keyboard', async ({ page }) => {
   test.skip(test.info().project.name !== 'webgl2', 'runs headless, where no pointer can enter the gate');
 
+  // Hold the rotunda so the loading state after the Enter press is observed while held, instead of
+  // raced against the content that ends it.
+  const rotunda = await holdFirstRequest(page, '**/content/rotunda.glb', LOADING_HOLD_TIMEOUT_MS);
+
   await page.goto('/?webgl=1');
   const lobby = page.locator('#entry-lobby');
   const loadButton = lobby.locator('#lobby-load-btn');
@@ -107,6 +120,8 @@ test('activates Load Experience on Enter from the keyboard', async ({ page }) =>
 
   await loadButton.press('Enter');
   await expect(lobby).toHaveAttribute('data-state', 'loading');
+  await rotunda.release();
+  await rotunda.waitUntilContinued();
   await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
   await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'ready');
   await expect(lobby).toBeHidden();

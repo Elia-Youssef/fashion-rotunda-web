@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 import type { ConsoleMessage, Locator, Page } from '@playwright/test';
 
+import { holdFirstRequest } from './support/held-request';
+
 // E2E transition verification suite for two-stage stable-frame black reveal.
 // Tests run on WebGL2 and WebGPU projects where available.
 
@@ -88,6 +90,11 @@ async function enterExperience(lobby: Locator, canvas: Locator, backend: Backend
 // 90 s test budget, so a handshake that never completes still fails promptly.
 const HANDSHAKE_TIMEOUT_MS = 10_000;
 
+// The held first rotunda request keeps the boot in loading until the test releases it, so the
+// loading phase below is observed while held; 30 s covers a slow boot start under four software
+// workers, and sits far below the 90 s test budget.
+const LOADING_HOLD_TIMEOUT_MS = 30_000;
+
 // Waits until the handshake is parked at the `?freeze=black-hold` seam with its two stable frames.
 // `stableFrames` only grows from 0 to 2 while the veil reads black-hold, and the seam then holds it
 // at 2 until unfreeze() or a disruption. `timestamps.holdEnd` is recorded immediately before the
@@ -122,9 +129,16 @@ test.describe('Scene Reveal Transition', () => {
 
     const { backend, lobby, veil, canvas } = await openTransition(page);
 
+    // The held rotunda request keeps the boot in loading, so the loading phase is observed while
+    // it is held instead of raced against the content that ends it.
+    const rotunda = await holdFirstRequest(page, '**/content/rotunda.glb', LOADING_HOLD_TIMEOUT_MS);
+
     // Click load
     await enterExperience(lobby, canvas, backend);
+    await rotunda.waitUntilEntered();
     await expect(lobby).toHaveAttribute('data-state', 'loading');
+    await rotunda.release();
+    await rotunda.waitUntilContinued();
 
     // Wait for full transition to revealed
     await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });

@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { waitForSceneInitialization } from './support/ready';
+
 // Entry lobby E2E verification.
 // WebGL2 project runs headless and verifies the deferred boot contract,
 // zero network activity before user gesture, responsive viewports,
@@ -11,6 +13,10 @@ const VIEWPORTS = [
   { name: 'phone', width: 390, height: 844 },
   { name: 'landscape', width: 844, height: 390 },
 ] as const;
+
+// The final scene hook mounts after the reveal, so it is the initialized state the after-boot
+// checks observe; the budget is the same one the reveal waits in this file share.
+const INITIALIZED_TIMEOUT = 60_000;
 
 function skipUnlessWebgl2(): void {
   test.skip(test.info().project.name !== 'webgl2', 'runs on headless webgl2');
@@ -84,7 +90,9 @@ test('proves deferred load: zero /content/ or music requests before user gesture
   skipUnlessWebgl2();
   const watcher = watchRequests(page);
 
-  await page.goto('/?webgl=1&gate=on');
+  // freeze=ready-hidden holds the intermediate lobby phase at the test seam, so the ready-hidden
+  // assertion below observes the phase itself instead of racing its automatic 250 ms advance.
+  await page.goto('/?webgl=1&e2e=1&gate=on&freeze=ready-hidden');
   const lobby = page.locator('#entry-lobby');
   await expect(lobby).toHaveAttribute('data-state', 'idle');
 
@@ -173,7 +181,9 @@ test('proves music preference persistence: Music off fetches no audio during or 
   skipUnlessWebgl2();
   const watcher = watchRequests(page);
 
-  await page.goto('/?webgl=1&gate=on');
+  // freeze=ready-hidden holds the intermediate lobby phase at the test seam; after the assertion
+  // below the unfreeze lets the boot run on to the real revealed and initialized state.
+  await page.goto('/?webgl=1&e2e=1&gate=on&freeze=ready-hidden');
   const lobby = page.locator('#entry-lobby');
   const musicSwitch = lobby.locator('.entry-lobby__music-switch');
 
@@ -185,11 +195,15 @@ test('proves music preference persistence: Music off fetches no audio during or 
   const loadBtn = lobby.locator('#lobby-load-btn');
   await loadBtn.click();
 
-  // Wait for ready-hidden
+  // The held phase: ready-hidden stays observable until the test releases it.
   await expect(lobby).toHaveAttribute('data-state', 'ready-hidden', { timeout: 60_000 });
+  await page.evaluate(() => window.archvizTransitionSeam?.unfreeze());
 
-  // Wait extra to verify no delayed audio requests fire
-  await page.waitForTimeout(2000);
+  // The zero-audio reading observes the actual end of boot, not a fixed delay after ready-hidden:
+  // the watcher accumulates every request since the goto, so one reading at the initialized state
+  // covers during and after the boot, however long the boot takes.
+  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  await waitForSceneInitialization(page, INITIALIZED_TIMEOUT);
 
   expect(watcher.musicUrls(), 'music=off resulted in zero audio requests').toEqual([]);
 

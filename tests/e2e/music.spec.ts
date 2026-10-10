@@ -13,6 +13,17 @@ function skipUnlessWebgl2(): void {
 const PLAYING_TIMEOUT = 15_000;
 // The content set is about 35 MB before the scene is ready, the same wait the smoke suite uses.
 const SCENE_READY_TIMEOUT = 60_000;
+// The audio-clock polls wait for the loop position itself, so the budget covers fetch, decode and
+// start, the same wait as becoming playing, and never assumes wall time equals play time.
+const PROGRESS_TIMEOUT = 15_000;
+// One second of loop position proves the decoded source drives the clock.
+const INITIAL_PROGRESS_S = 1;
+// The pause tolerance is unchanged: the in-page gap between the pointerdown capture and the
+// synchronous freeze in the click handler is a few milliseconds, so 0.6 s no longer has to hide
+// protocol round-trip latency.
+const PAUSE_LATENCY_S = 0.6;
+// A deliberate interval the frozen position must survive unchanged.
+const PAUSE_OBSERVE_MS = 1_000;
 
 function switchButton(page: Page) {
   return page.locator('header button.music-switch');
@@ -141,21 +152,58 @@ test('keeps the position across a pause and a resume', async ({ page }) => {
       return hooks.position();
     });
 
-  await page.waitForTimeout(1500);
+  // Prerequisite: the decoded source actually plays. The audio clock is polled past one second of
+  // the loop instead of a fixed wait that assumes a wall-clock second is a second of audio.
+  await expect
+    .poll(readPosition, {
+      message: 'the audio clock advances past one second of the loop',
+      timeout: PROGRESS_TIMEOUT,
+    })
+    .toBeGreaterThan(INITIAL_PROGRESS_S);
   const p1 = await readPosition();
-  expect(p1, 'a second and a half in').toBeGreaterThan(1);
+
+  // Record the audio clock inside the page at the pause click itself: a window capture listener
+  // runs before the switch's own click handler, and pause() freezes the position synchronously in
+  // that handler, so this reading brackets the same dispatch the freeze belongs to.
+  await page.evaluate(() => {
+    const hooks = window.archvizMusic;
+    if (hooks === undefined) {
+      throw new Error('the music e2e hook is missing');
+    }
+    window.addEventListener(
+      'pointerdown',
+      () => {
+        document.documentElement.dataset.musicPauseClickPosition = String(hooks.position());
+      },
+      { once: true, capture: true },
+    );
+  });
 
   await button.click();
   await expect(button).toHaveAttribute('data-music', 'off');
-  await page.waitForTimeout(1000);
+  const clickReading = await page.getAttribute('html', 'data-music-pause-click-position');
+  expect(clickReading, 'the pause click was captured inside the page').not.toBeNull();
+  const clickPosition = Number(clickReading);
   const p2 = await readPosition();
   expect(p2, 'the frozen reading is not before the pause').toBeGreaterThanOrEqual(p1);
-  // The freeze happens at the click, not at the end of the 0.4 s fade.
-  expect(p2, 'the frozen reading is within the click latency of p1').toBeLessThan(p1 + 0.6);
+  expect(p2, 'the frozen reading is not before the click reading').toBeGreaterThanOrEqual(clickPosition);
+  // The freeze happens at the click, not at the end of the 0.4 s fade; the tolerance is unchanged
+  // and now covers only the in-page gap between the capture and the freeze.
+  expect(p2, 'the frozen reading is within the click latency').toBeLessThan(clickPosition + PAUSE_LATENCY_S);
+  // Prerequisite: a deliberate interval the freeze must survive. A source that kept running would
+  // move the reading past the frozen value inside it.
+  await page.waitForTimeout(PAUSE_OBSERVE_MS);
+  expect(await readPosition(), 'the position stays frozen through the pause').toBe(p2);
 
   await button.click();
-  await page.waitForTimeout(1000);
-  const p3 = await readPosition();
-  expect(p3, 'the resume continues from where it stopped').toBeGreaterThan(p2);
+  // Prerequisites: the resumed source really plays, then the audio clock itself passes the frozen
+  // value, instead of a fixed wait assuming wall time equals play time.
+  await expect(button).toHaveAttribute('data-music', 'playing', { timeout: PLAYING_TIMEOUT });
+  await expect
+    .poll(readPosition, {
+      message: 'the resume continues past the frozen position',
+      timeout: PROGRESS_TIMEOUT,
+    })
+    .toBeGreaterThan(p2);
   expectClean();
 });
