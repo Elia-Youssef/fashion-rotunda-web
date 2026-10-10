@@ -1,6 +1,21 @@
 import { expect, test } from '@playwright/test';
 
 const SCENE_READY_TIMEOUT = 60_000;
+// The turntable publishes its yaw from rendered frames (mount.ts writeYaw inside update), so every
+// progress check polls the published yaw past an earlier reading instead of sampling once.
+const YAW_POLL_TIMEOUT_MS = 5_000;
+// The loop wakes for WAKE_MS, 4 s (src/main.ts), after any input. Waiting past that expiry is the
+// temporal contract of the wake-window case: the progress it demands is rendered after the window.
+const WAKE_WINDOW_EXPIRY_WAIT_MS = 6_000;
+// The held-pointer handshake: walkthrough.ts moves the foot only in its update, so the proof must
+// arrive in a rendered frame while both synthetic pointers are still down.
+const TOUCH_MOVE_TIMEOUT_MS = 5_000;
+// The held joystick must walk the foot at least this far from the baseline. 0.05 m is 36 ms of the
+// 1.4 m/s walk speed, a few rendered frames, so a healthy held drag reaches it well inside the
+// poll budget. A straight-up drag also reports an x of about 6e-17 (joystick.ts takes cos(-pi/2)),
+// and the walkthrough normalizes only above length 1, so that drift moves the foot under 5e-13 m
+// across the whole budget; a strict inequality accepted it, this threshold rejects it.
+const MIN_HELD_STEP_M = 0.05;
 
 // Camera and turntable through the real page: a drag orbits the inspection camera, the turntable turns the
 // look while it runs, and the loop goes back to sleep once both are still. Reads and the toggle go
@@ -48,11 +63,16 @@ test('the turntable turns the look and the loop settles once it stops', async ({
   await page.evaluate(() => {
     window.archvizCamera?.turntable.toggle();
   });
-  await expect.poll(readYaw, { timeout: 5_000 }).toBeGreaterThan(0.1);
+  await expect.poll(readYaw, { timeout: YAW_POLL_TIMEOUT_MS }).toBeGreaterThan(0.1);
   const first = await readYaw();
-  await page.waitForTimeout(400);
+  // Prerequisite: a rendered frame publishing a yaw past `first`, since the yaw advances only in update.
+  await expect
+    .poll(readYaw, {
+      timeout: YAW_POLL_TIMEOUT_MS,
+      message: 'the yaw keeps advancing while the turntable runs',
+    })
+    .toBeGreaterThan(first);
   const second = await readYaw();
-  expect(second, 'the yaw keeps advancing while the turntable runs').toBeGreaterThan(first);
 
   // One hover, no button, which the orbit ignores and main.ts's wake() answers by arming its
   // four-second window. Without an input the window is never armed after the load and the wait
@@ -63,11 +83,23 @@ test('the turntable turns the look and the loop settles once it stops', async ({
     throw new Error('the canvas has no box to hover over');
   }
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.waitForTimeout(6_000);
+  // Prerequisite: the four-second wake window has expired; this long wait is kept as that contract.
+  await page.waitForTimeout(WAKE_WINDOW_EXPIRY_WAIT_MS);
+  // Prerequisite: a rendered frame after expiry publishing a yaw past the pre-window `second`.
+  await expect
+    .poll(readYaw, {
+      timeout: YAW_POLL_TIMEOUT_MS,
+      message: 'the yaw advanced past the wake window',
+    })
+    .toBeGreaterThan(second);
   const late = await readYaw();
-  expect(late, 'the yaw advanced past the wake window').toBeGreaterThan(second);
-  await page.waitForTimeout(400);
-  expect(await readYaw(), 'and is still advancing after it').toBeGreaterThan(late);
+  // Prerequisite: a rendered frame publishing a yaw past `late`.
+  await expect
+    .poll(readYaw, {
+      timeout: YAW_POLL_TIMEOUT_MS,
+      message: 'and is still advancing after it',
+    })
+    .toBeGreaterThan(late);
 
   await page.evaluate(() => {
     window.archvizCamera?.turntable.toggle();
@@ -181,6 +213,22 @@ test('the real collision GLB blocks normal and sprint routes around the plinth a
   }
 });
 
+/** Horizontal distance between two walk readings' feet, or null when either reading is missing. */
+function footDistance(
+  after: [number, number, number] | undefined,
+  before: [number, number, number] | undefined,
+): number | null {
+  if (after === undefined || before === undefined) {
+    return null;
+  }
+  return Math.hypot(after[0] - before[0], after[2] - before[2]);
+}
+
+/** True when the yaw rose past the baseline: the drag moves right, and rightward pixels raise yaw. */
+function yawTurned(after: number | undefined, before: number | undefined): boolean {
+  return after !== undefined && before !== undefined && after > before;
+}
+
 test.describe('touch walkthrough controls', () => {
   // Boot at the normal test size, then resize to the landscape-phone target below. Chromium's
   // software WebGL loader cannot boot this scene with a touch-emulation GPU profile, but the
@@ -219,40 +267,53 @@ test.describe('touch walkthrough controls', () => {
       yaw: window.archvizCamera?.walk?.yaw,
     }));
 
-    await joystick.dispatchEvent('pointerdown', {
-      pointerId: 1,
-      pointerType: 'touch',
-      clientX: joyBox.x + joyBox.width / 2,
-      clientY: joyBox.y + joyBox.height / 2,
-    });
-    await joystick.dispatchEvent('pointermove', {
-      pointerId: 1,
-      pointerType: 'touch',
-      clientX: joyBox.x + joyBox.width / 2,
-      clientY: joyBox.y + 8,
-    });
-    await canvas.dispatchEvent('pointerdown', {
-      pointerId: 2,
-      pointerType: 'touch',
-      clientX: canvasBox.x + canvasBox.width * 0.8,
-      clientY: canvasBox.y + canvasBox.height / 2,
-    });
-    await canvas.dispatchEvent('pointermove', {
-      pointerId: 2,
-      pointerType: 'touch',
-      clientX: canvasBox.x + canvasBox.width * 0.9,
-      clientY: canvasBox.y + canvasBox.height / 2,
-    });
-    await page.waitForTimeout(400);
-    await joystick.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'touch' });
-    await canvas.dispatchEvent('pointerup', { pointerId: 2, pointerType: 'touch' });
+    // Prerequisite: a rendered frame applying the held joystick translation, since walkthrough.ts
+    // moves the foot only in update; one atomic read must show a real step past MIN_HELD_STEP_M
+    // and the look drag's yaw turn while both pointers are still down.
+    const heldGestureApplied = async (): Promise<boolean> => {
+      const pose = await page.evaluate(() => ({
+        foot: window.archvizCamera?.walk?.foot,
+        yaw: window.archvizCamera?.walk?.yaw,
+      }));
+      const step = footDistance(pose.foot, before.foot);
+      return step !== null && step >= MIN_HELD_STEP_M && yawTurned(pose.yaw, before.yaw);
+    };
 
-    const after = await page.evaluate(() => ({
-      foot: window.archvizCamera?.walk?.foot,
-      yaw: window.archvizCamera?.walk?.yaw,
-    }));
-    expect(after.foot).not.toEqual(before.foot);
-    expect(after.yaw).not.toBe(before.yaw);
+    try {
+      await joystick.dispatchEvent('pointerdown', {
+        pointerId: 1,
+        pointerType: 'touch',
+        clientX: joyBox.x + joyBox.width / 2,
+        clientY: joyBox.y + joyBox.height / 2,
+      });
+      await joystick.dispatchEvent('pointermove', {
+        pointerId: 1,
+        pointerType: 'touch',
+        clientX: joyBox.x + joyBox.width / 2,
+        clientY: joyBox.y + 8,
+      });
+      await canvas.dispatchEvent('pointerdown', {
+        pointerId: 2,
+        pointerType: 'touch',
+        clientX: canvasBox.x + canvasBox.width * 0.8,
+        clientY: canvasBox.y + canvasBox.height / 2,
+      });
+      await canvas.dispatchEvent('pointermove', {
+        pointerId: 2,
+        pointerType: 'touch',
+        clientX: canvasBox.x + canvasBox.width * 0.9,
+        clientY: canvasBox.y + canvasBox.height / 2,
+      });
+      await expect
+        .poll(heldGestureApplied, {
+          timeout: TOUCH_MOVE_TIMEOUT_MS,
+          message: 'the held pointers walked the foot and turned the yaw in a rendered frame',
+        })
+        .toBe(true);
+    } finally {
+      await joystick.dispatchEvent('pointerup', { pointerId: 1, pointerType: 'touch' });
+      await canvas.dispatchEvent('pointerup', { pointerId: 2, pointerType: 'touch' });
+    }
   });
 });
 
