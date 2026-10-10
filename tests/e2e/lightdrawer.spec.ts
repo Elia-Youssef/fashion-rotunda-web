@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { waitForSceneInitialization } from './support/ready';
+import { assertCanvasPreserved, nextProofReading, stableDrawCalls } from './support/preservation';
 import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 
 const SCENE_READY_TIMEOUT = 60_000;
@@ -46,18 +47,6 @@ interface ErrorLog {
   page: string[];
 }
 
-interface CanvasReading {
-  box: { x: number; y: number; width: number; height: number };
-  backing: { width: number; height: number };
-  backend: string | null;
-  tier: string | null;
-  scale: string | null;
-  look: string | null;
-  variant: string | null;
-  camera: string | null;
-  post: string | null;
-}
-
 function skipUnlessWebgl2(): void {
   test.skip(test.info().project.name !== 'webgl2', 'DOM behavior is covered once on WebGL2');
 }
@@ -94,24 +83,6 @@ async function installSafeArea(page: Page): Promise<void> {
     root.style.setProperty('--safe-area-bottom', `${insets.bottom}px`);
     root.style.setProperty('--safe-area-left', `${insets.left}px`);
   }, SAFE_AREA);
-}
-
-async function canvasReading(canvas: Locator): Promise<CanvasReading> {
-  return canvas.evaluate((node) => {
-    const element = node as HTMLCanvasElement;
-    const rect = element.getBoundingClientRect();
-    return {
-      box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
-      backing: { width: element.width, height: element.height },
-      backend: element.dataset.backend ?? null,
-      tier: element.dataset.tier ?? null,
-      scale: element.dataset.scale ?? null,
-      look: element.dataset.look ?? null,
-      variant: element.dataset.variant ?? null,
-      camera: element.dataset.camera ?? null,
-      post: element.dataset.post ?? null,
-    };
-  });
 }
 
 async function assertHitAndSafe(
@@ -268,10 +239,11 @@ test.describe('simplified Light Control drawer and rig', () => {
       skipUnlessWebgl2();
       const errors = watchErrors(page);
       await page.setViewportSize(viewport);
-      const canvas = await openScene(page);
+      await openScene(page);
       const toggle = page.locator('#shell-light-toggle');
       const panel = page.locator('#shell-light-panel');
-      const before = await canvasReading(canvas);
+      await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
+      const before = (await nextProofReading(page)).canvas;
 
       await expect(toggle).toBeVisible();
       await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -286,13 +258,14 @@ test.describe('simplified Light Control drawer and rig', () => {
       await expect(toggle).toHaveAttribute('aria-expanded', 'true');
       await expect(panel).toBeVisible();
       await expect(panel.locator('[data-light]')).toHaveCount(4);
-      const after = await canvasReading(canvas);
-      expect(after, 'opening changes no canvas/runtime identity field').toEqual(before);
+      const after = (await nextProofReading(page)).canvas;
+      assertCanvasPreserved(before, after, 'opening');
 
       if (viewport.sheet) await page.locator('#shell-light-row .shell-sheet__close').click();
       else await toggle.click();
       await expect(panel).toBeHidden();
       await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      assertCanvasPreserved(before, (await nextProofReading(page)).canvas, 'closing');
       expectNoErrors(errors);
     });
   }
@@ -822,9 +795,17 @@ test.describe('simplified Light Control drawer and rig', () => {
       `v2;key,${enabled.key ? 1 : 0},${intensities.key},ffffff;fill,${enabled.fill ? 1 : 0},${intensities.fill},ffffff;back,${enabled.back ? 1 : 0},${intensities.back},ffffff;day,0.5`;
 
     await expectDefaultRigWithoutUrl(page, expectedRig());
-    await expect.poll(() => proofDrawCalls(page), { timeout: 30_000 }).toBeGreaterThan(0);
-    const baselineDrawCalls = await proofDrawCalls(page);
-    expect(baselineDrawCalls, 'proof panel publishes the Key-only draw-call baseline').not.toBeNull();
+    await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
+    // The panel may still show an empty warm-up frame. Compare two actual refreshes after
+    // initialization, including scale/post, rather than polling the same stale text twice.
+    let previous = await nextProofReading(page);
+    let baselineDrawCalls: number | null = null;
+    await expect.poll(async () => {
+      const current = await nextProofReading(page);
+      baselineDrawCalls = stableDrawCalls(previous, current);
+      previous = current;
+      return baselineDrawCalls;
+    }, { timeout: 30_000 }).not.toBeNull();
     if (baselineDrawCalls === null) throw new Error('missing Key-only draw-call baseline');
 
     const panel = page.locator('#shell-light-panel');
