@@ -4,7 +4,7 @@
 // ATTRACT_HOLD_MS (4 s). Any user input stops the tour immediately and restarts the idle clock.
 // Reduced motion cuts immediately (moveMs treated as 0). Disabled by default on touch.
 
-import { blendPose } from './blend';
+import { blendPoseInto, copyPose } from './blend';
 import type { Pose } from './blend';
 import type { NamedView } from './presets';
 
@@ -22,13 +22,23 @@ export interface AttractOptions {
   now?: () => number;
 }
 
+export interface AttractReading {
+  pose: Pose;
+  viewId: string;
+  fov: number;
+}
+
 export interface AttractHandle {
   readonly running: boolean;
   readonly enabled: boolean;
   setEnabled(on: boolean): void;
   noteInput(): void; // any input: stops a running tour, restarts the idle clock
-  /** Called every frame while running or waiting; returns the pose to show, or null to leave the camera. */
-  tick(): { pose: Pose; viewId: string; fov: number } | null;
+  /**
+   * Called every frame while running or waiting; returns the pose to show, or null to leave the
+   * camera. The reading is owned by the handle and rewritten by the next tick, so a caller
+   * consumes it before ticking again and copies it if it must outlive the tick.
+   */
+  tick(): AttractReading | null;
 }
 
 type TourPhase = 'move' | 'hold';
@@ -51,6 +61,22 @@ export function createAttract(options: AttractOptions): AttractHandle {
   let phaseStartTime = 0;
   let sourceIndex = 0;
   let targetIndex = 0;
+
+  // The tick reading and its pose are owned here and written in place: a tour frame must not
+  // allocate a pose, a result object or an array. The tour leg reads the view presets directly
+  // as blend endpoints; a NamedView carries exactly the position and target a Pose needs.
+  const reading: AttractReading = {
+    pose: { position: [0, 0, 0], target: [0, 0, 0] },
+    viewId: '',
+    fov: 0,
+  };
+
+  function report(pose: Pose, viewId: string, fov: number): AttractReading {
+    copyPose(pose, reading.pose);
+    reading.viewId = viewId;
+    reading.fov = fov;
+    return reading;
+  }
 
   function stop(): void {
     isRunning = false;
@@ -80,7 +106,7 @@ export function createAttract(options: AttractOptions): AttractHandle {
       stop();
     },
 
-    tick(): { pose: Pose; viewId: string; fov: number } | null {
+    tick(): AttractReading | null {
       if (!isEnabled || views.length === 0) {
         return null;
       }
@@ -103,29 +129,19 @@ export function createAttract(options: AttractOptions): AttractHandle {
       const targetView = views[targetIndex];
       const sourceView = views[sourceIndex];
 
-      const fromPose: Pose = {
-        position: sourceView.position,
-        target: sourceView.target,
-      };
-      const toPose: Pose = {
-        position: targetView.position,
-        target: targetView.target,
-      };
-
       if (phase === 'move') {
         const elapsed = currentTime - phaseStartTime;
         if (elapsed >= moveMs) {
           phase = 'hold';
           phaseStartTime = currentTime;
-          return { pose: toPose, viewId: targetView.id, fov: targetView.fov };
+          return report(targetView, targetView.id, targetView.fov);
         }
         const t = moveMs > 0 ? elapsed / moveMs : 1;
-        const currentPose = blendPose(fromPose, toPose, t);
-        return {
-          pose: currentPose,
-          viewId: targetView.id,
-          fov: sourceView.fov + (targetView.fov - sourceView.fov) * easeProgress(elapsed, moveMs),
-        };
+        blendPoseInto(sourceView, targetView, t, reading.pose);
+        reading.viewId = targetView.id;
+        reading.fov =
+          sourceView.fov + (targetView.fov - sourceView.fov) * easeProgress(elapsed, moveMs);
+        return reading;
       }
 
       // 'hold' phase
@@ -139,22 +155,14 @@ export function createAttract(options: AttractOptions): AttractHandle {
         const nextView = views[targetIndex];
         const heldView = views[sourceIndex];
         if (moveMs === 0) {
-          return {
-            pose: { position: nextView.position, target: nextView.target },
-            viewId: nextView.id,
-            fov: nextView.fov,
-          };
+          return report(nextView, nextView.id, nextView.fov);
         }
         // Start the next glide from the view just held. Returning the destination here flashes it
         // for one frame, then the following frame jumps backwards to the beginning of the glide.
-        return {
-          pose: { position: heldView.position, target: heldView.target },
-          viewId: nextView.id,
-          fov: heldView.fov,
-        };
+        return report(heldView, nextView.id, heldView.fov);
       }
 
-      return { pose: toPose, viewId: targetView.id, fov: targetView.fov };
+      return report(targetView, targetView.id, targetView.fov);
     },
   };
 }

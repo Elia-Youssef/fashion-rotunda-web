@@ -1,6 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PROOF_POSITION, PROOF_TARGET, runProofOrbit } from '../../src/proof/orbit-run';
+import golden from '../fixtures/camera-pose-golden.json';
+
+/** The run reuses one position tuple across ticks; a recorded pose is a copy taken at the tick. */
+function recordPose(position: [number, number, number]): [number, number, number] {
+  return [position[0], position[1], position[2]];
+}
 
 afterEach(() => {
   vi.useRealTimers();
@@ -111,8 +117,8 @@ describe('runProofOrbit', () => {
 
     const promise = runProofOrbit({
       setPose: (pos, tgt) => {
-        poses.push(pos);
-        targets.push(tgt);
+        poses.push(recordPose(pos));
+        targets.push(recordPose(tgt));
       },
       proofPosition,
       proofTarget,
@@ -162,7 +168,7 @@ describe('runProofOrbit', () => {
     const poses: [number, number, number][] = [];
 
     await runProofOrbit({
-      setPose: (pos) => poses.push(pos),
+      setPose: (pos) => poses.push(recordPose(pos)),
       proofPosition,
       proofTarget,
       durationMs: 0,
@@ -171,5 +177,81 @@ describe('runProofOrbit', () => {
     });
 
     expect(poses).toEqual([proofPosition]);
+  });
+
+  it('reuses one position tuple across every setPose call', async () => {
+    const proofPosition: [number, number, number] = [0, 1.7, 4.2];
+    const proofTarget: [number, number, number] = [0, 1, 0];
+    const identities: unknown[] = [];
+    let clock = 0;
+    const callbacks: (() => void)[] = [];
+
+    const promise = runProofOrbit({
+      setPose: (pos) => {
+        identities.push(pos);
+      },
+      proofPosition,
+      proofTarget,
+      durationMs: 10_000,
+      onFrame: () => {},
+      now: () => clock,
+      scheduler: {
+        request: (callback) => {
+          callbacks.push(callback);
+          return callbacks.length;
+        },
+        cancel: () => {},
+      },
+    });
+
+    for (let step = 1; step <= 10; step += 1) {
+      clock = step * 1000;
+      callbacks.shift()?.();
+    }
+    await promise;
+
+    expect(identities).toHaveLength(11);
+    for (const entry of identities) {
+      expect(entry).toBe(identities[0]);
+    }
+  });
+
+  it('replays the recorded ten-second pose sequence exactly', async () => {
+    const recorded = golden.proofOrbit;
+    const calls: { position: [number, number, number]; target: [number, number, number] }[] = [];
+    let frameCalls = 0;
+    let clock = 0;
+    const callbacks: (() => void)[] = [];
+
+    const promise = runProofOrbit({
+      setPose: (position, target) => {
+        calls.push({ position: recordPose(position), target: recordPose(target) });
+      },
+      proofPosition: [recorded.proofPosition[0], recorded.proofPosition[1], recorded.proofPosition[2]],
+      proofTarget: [recorded.proofTarget[0], recorded.proofTarget[1], recorded.proofTarget[2]],
+      durationMs: recorded.durationMs,
+      onFrame: () => {
+        frameCalls += 1;
+      },
+      now: () => clock,
+      scheduler: {
+        request: (callback) => {
+          callbacks.push(callback);
+          return callbacks.length;
+        },
+        cancel: () => {},
+      },
+    });
+
+    for (const moment of recorded.steps) {
+      clock = moment;
+      const callback = callbacks.shift();
+      expect(callback).toBeDefined();
+      callback?.();
+    }
+    await promise;
+
+    expect(frameCalls).toBe(recorded.frameCalls);
+    expect(calls).toEqual(recorded.setPoseCalls);
   });
 });

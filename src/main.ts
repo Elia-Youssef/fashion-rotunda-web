@@ -665,6 +665,7 @@ async function main(): Promise<void> {
         // the module constants are the fallback and are pinned to the catalogue by a unit test.
         const view = proofView;
         await runProofOrbit({
+          // The run reuses one position tuple across ticks; setPose consumes it synchronously.
           setPose: (pos, tgt) => mount.orbit.setPose(pos, tgt),
           proofPosition: view === null ? PROOF_POSITION : view.position,
           proofTarget: view === null ? PROOF_TARGET : view.target,

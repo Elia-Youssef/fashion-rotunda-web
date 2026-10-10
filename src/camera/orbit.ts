@@ -47,6 +47,13 @@ export interface OrbitHandle {
     ms?: number,
     fov?: number,
   ): Promise<void>;
+  /**
+   * Places the camera at a pose immediately, like moveTo, without becoming the pose reset()
+   * returns to. Runs on math workspace this control owns: no Vector3, no Spherical and no
+   * promise are constructed per call, so per-frame callers (the attract tour, the proof orbit)
+   * allocate nothing here. Clamps to the limits and finishes any glide in flight.
+   */
+  placeAt(position: [number, number, number], target: [number, number, number], fov?: number): void;
   /** Enables or disables input processing. */
   setEnabled(on: boolean): void;
   /** back to the pose it was created or last setPose'd with */
@@ -132,6 +139,53 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
   }
   let activeGlide: ActiveGlide | null = null;
 
+  // Scratch for the synchronous pose paths (placeAt, setPose): the attract tour and the proof
+  // orbit apply a pose every frame, so those paths construct no Vector3 and no Spherical.
+  const scratchTarget = new Vector3();
+  const scratchOffset = new Vector3();
+  const scratchSpherical = new Spherical();
+
+  /** Resolves and forgets the glide in flight, if any. Shared by every path that supersedes one. */
+  function finishGlide(): void {
+    if (activeGlide !== null) {
+      const finish = activeGlide.resolve;
+      activeGlide = null;
+      finish();
+    }
+  }
+
+  /**
+   * Applies a pose immediately from the scratch workspace: target and clamped spherical into
+   * the live state, optional fov, one apply. The caller has finished writing the scratch first,
+   * so a re-entrant pose change from onChange cannot see half-written scratch.
+   */
+  function applyImmediate(fov: number | undefined, withResetAnchor: boolean): void {
+    target.copy(scratchTarget);
+    spherical.copy(scratchSpherical);
+    if (withResetAnchor) {
+      resetSpherical.copy(spherical);
+      resetTarget.copy(target);
+    }
+    pendingTheta = 0;
+    pendingPhi = 0;
+    if (fov !== undefined) {
+      applyFov(fov);
+    }
+    apply();
+  }
+
+  /** Reads a position and target into the scratch and clamps the resulting spherical. */
+  function readPoseIntoScratch(
+    position: [number, number, number],
+    poseTarget: [number, number, number],
+  ): void {
+    scratchTarget.set(poseTarget[0], poseTarget[1], poseTarget[2]);
+    scratchOffset.set(position[0], position[1], position[2]).sub(scratchTarget);
+    scratchSpherical.setFromVector3(scratchOffset);
+    scratchSpherical.phi = clampPhi(scratchSpherical.phi);
+    scratchSpherical.radius = clampDistance(scratchSpherical.radius);
+  }
+
   function clampPhi(phi: number): number {
     return MathUtils.clamp(phi, limits.minPolar, limits.maxPolar);
   }
@@ -205,11 +259,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     if (!isEnabled) {
       return;
     }
-    if (activeGlide !== null) {
-      const finish = activeGlide.resolve;
-      activeGlide = null;
-      finish();
-    }
+    finishGlide();
     if (event.pointerType === 'mouse' && event.button !== 0) {
       return; // the left button only; middle and right are not inspection inputs
     }
@@ -370,9 +420,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
           spherical.radius = clampDistance(spherical.radius);
           apply();
           if (t >= 1) {
-            const finish = activeGlide.resolve;
-            activeGlide = null;
-            finish();
+            finishGlide();
           }
         }
         return true;
@@ -409,23 +457,17 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     },
 
     setPose(position: [number, number, number], poseTarget: [number, number, number], fov?: number): void {
-      if (activeGlide !== null) {
-        const finish = activeGlide.resolve;
-        activeGlide = null;
-        finish();
-      }
-      target.set(...poseTarget);
-      spherical.setFromVector3(new Vector3(...position).sub(target));
-      spherical.phi = clampPhi(spherical.phi);
-      spherical.radius = clampDistance(spherical.radius);
-      resetSpherical.copy(spherical);
-      resetTarget.copy(target);
-      pendingTheta = 0;
-      pendingPhi = 0;
-      if (fov !== undefined) {
-        applyFov(fov);
-      }
-      apply();
+      finishGlide();
+      readPoseIntoScratch(position, poseTarget);
+      applyImmediate(fov, true);
+    },
+
+    placeAt(position: [number, number, number], poseTarget: [number, number, number], fov?: number): void {
+      finishGlide();
+      readPoseIntoScratch(position, poseTarget);
+      // glideTo at 0 ms applies the fov even when none was given, clamping the live value; keep
+      // that shape so placeAt and a zero-ms glide land on identical camera state.
+      applyImmediate(fov === undefined ? camera.fov : fov, false);
     },
 
     glideTo(
@@ -443,11 +485,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
         .add(destTarget);
       const destFov = fov === undefined ? camera.fov : clampFov(fov);
 
-      if (activeGlide !== null) {
-        const finish = activeGlide.resolve;
-        activeGlide = null;
-        finish();
-      }
+      finishGlide();
 
       if (ms <= 0) {
         target.copy(destTarget);
@@ -482,7 +520,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     },
 
     moveTo(position: [number, number, number], poseTarget: [number, number, number], fov?: number): void {
-      void this.glideTo(position, poseTarget, 0, fov);
+      this.placeAt(position, poseTarget, fov);
     },
 
     setEnabled(on: boolean): void {
@@ -495,11 +533,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
         dragging = false;
         pendingTheta = 0;
         pendingPhi = 0;
-        if (activeGlide !== null) {
-          const finish = activeGlide.resolve;
-          activeGlide = null;
-          finish();
-        }
+        finishGlide();
       }
     },
 
@@ -537,11 +571,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
       dragging = false;
       pendingTheta = 0;
       pendingPhi = 0;
-      if (activeGlide !== null) {
-        const finish = activeGlide.resolve;
-        activeGlide = null;
-        finish();
-      }
+      finishGlide();
     },
   };
 }

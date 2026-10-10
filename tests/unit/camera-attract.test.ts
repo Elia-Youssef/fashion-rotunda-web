@@ -1,5 +1,6 @@
 // Unit tests for the attract loop state machine with a fake clock.
-// Verifies idle start, input interruption, tour order, hold/move timing, and reduced motion.
+// Verifies idle start, input interruption, tour order, hold/move timing, reduced motion, the
+// reused tick reading, and exact replay against poses recorded from the allocating tour.
 
 import { describe, expect, it } from 'vitest';
 
@@ -10,6 +11,7 @@ import {
   createAttract,
 } from '../../src/camera/attract';
 import type { NamedView } from '../../src/camera/presets';
+import golden from '../fixtures/camera-pose-golden.json';
 
 const VIEWS: NamedView[] = [
   { id: 'proof', label: 'Proof', position: [0, 1.7, 4.2], target: [0, 1, 0], fov: 40 },
@@ -184,5 +186,76 @@ describe('attract loop state machine', () => {
     clock = 51_000;
     expect(attract.tick()).not.toBeNull();
     expect(attract.running).toBe(true);
+  });
+
+  it('hands out the same reading, pose and arrays on every tick', () => {
+    // The tour owns its reading and rewrites it per tick: nothing on a tour frame may allocate.
+    let clock = 0;
+    const attract = createAttract({
+      views: VIEWS,
+      idleMs: 1_000,
+      holdMs: 2_000,
+      moveMs: 1_000,
+      enabled: true,
+      reducedMotion: false,
+      now: () => clock,
+    });
+
+    clock = 1_000;
+    const first = attract.tick();
+    expect(first).not.toBeNull();
+    clock = 1_500;
+    const second = attract.tick();
+    clock = 2_500;
+    const third = attract.tick();
+    clock = 4_000;
+    const fourth = attract.tick();
+
+    expect(second).toBe(first);
+    expect(third).toBe(first);
+    expect(fourth).toBe(first);
+    expect(second?.pose).toBe(first?.pose);
+    expect(second?.pose.position).toBe(first?.pose.position);
+    expect(second?.pose.target).toBe(first?.pose.target);
+    // The reuse carries fresh values, not stale ones.
+    expect(third?.viewId).toBe('entrance');
+    expect(third?.pose.position[2]).toBeCloseTo(6.2, 5);
+  });
+
+  it.each([
+    ['normal tour', 'normal' as const],
+    ['reduced-motion tour', 'reduced' as const],
+  ])('replays the recorded %s pose for pose', (_name, key) => {
+    const recorded = golden.attract[key];
+    // The fixture must describe this test's views, or the replay would compare against a
+    // tour of some other scene.
+    expect(recorded.views).toEqual(VIEWS);
+
+    let clock = 0;
+    const attract = createAttract({
+      views: VIEWS,
+      idleMs: 1_000,
+      holdMs: 2_000,
+      moveMs: 3_000,
+      enabled: true,
+      reducedMotion: key === 'reduced',
+      now: () => clock,
+    });
+
+    recorded.schedule.forEach((moment, index) => {
+      clock = moment;
+      const reading = attract.tick();
+      const expected = recorded.ticks[index]?.reading;
+      expect(expected).toBeDefined();
+      if (expected === null) {
+        expect(reading).toBeNull();
+        return;
+      }
+      expect(reading).not.toBeNull();
+      expect(reading?.viewId).toBe(expected.viewId);
+      expect(reading?.fov).toBe(expected.fov);
+      expect(reading?.pose.position).toEqual(expected.pose.position);
+      expect(reading?.pose.target).toEqual(expected.pose.target);
+    });
   });
 });

@@ -10,7 +10,7 @@ import type { CatalogView } from '../catalog/catalog';
 import { prefersReducedMotion } from '../ui/announce';
 import { ATTRACT_HOLD_MS, ATTRACT_IDLE_MS, ATTRACT_MOVE_MS, createAttract } from './attract';
 import type { AttractHandle } from './attract';
-import { BLEND_MS, blendPose } from './blend';
+import { BLEND_MS, blendPoseInto, copyPose } from './blend';
 import type { Pose } from './blend';
 import { mountJoystick } from './joystick';
 import type { JoystickHandle } from './joystick';
@@ -76,6 +76,18 @@ const MAX_STEP_MS = 100;
 interface JoystickLayer {
   root: HTMLElement;
   dispose(): void;
+}
+
+/** True when two poses hold the same six numbers. */
+function samePose(a: Pose, b: Pose): boolean {
+  return (
+    a.position[0] === b.position[0] &&
+    a.position[1] === b.position[1] &&
+    a.position[2] === b.position[2] &&
+    a.target[0] === b.target[0] &&
+    a.target[1] === b.target[1] &&
+    a.target[2] === b.target[2]
+  );
 }
 
 /** Keeps the touch control inside the canvas rect when the shell flattens #shell-stage on tablet. */
@@ -358,8 +370,18 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     now: clock,
   });
 
+  // The pose and fov the tour last placed: a hold re-reports the same reading on every tick,
+  // and re-placing it would run the orbit apply path for an unchanged camera. The cache only
+  // describes camera state while the tour is driving, so it is voided on input and on every
+  // tick that finds the tour not driving; otherwise a restart on the same view would trust a
+  // placement the visitor has since overwritten.
+  const lastAttractPose: Pose = { position: [0, 0, 0], target: [0, 0, 0] };
+  let lastAttractFov = 0;
+  let attractPoseApplied = false;
+
   const onWindowInput = (): void => {
     attract.noteInput();
+    attractPoseApplied = false;
   };
   window.addEventListener('pointerdown', onWindowInput, { passive: true });
   window.addEventListener('pointermove', onWindowInput, { passive: true });
@@ -382,6 +404,8 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     resolve: () => void;
   }
   let activeBlend: ActiveBlend | null = null;
+  // The blend writes its interpolation here once per frame instead of allocating a fresh pose.
+  const blendDestination: Pose = { position: [0, 0, 0], target: [0, 0, 0] };
 
   function getWalkCameraPose(
     footPos: [number, number, number],
@@ -549,7 +573,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
         if (step > 0) {
           activeBlend.elapsedMs += step;
           const t = Math.min(1, activeBlend.elapsedMs / activeBlend.durationMs);
-          const blended = blendPose(activeBlend.fromPose, activeBlend.toPose, t);
+          const blended = blendPoseInto(activeBlend.fromPose, activeBlend.toPose, t, blendDestination);
           camera.position.set(...blended.position);
           camera.lookAt(...blended.target);
           loop.invalidate();
@@ -584,13 +608,27 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
         const tickResult = attract.tick();
         if (tickResult !== null) {
           canvas.dataset.attract = '1';
-          orbit.moveTo(tickResult.pose.position, tickResult.pose.target, tickResult.fov);
+          // Apply only what moved since the last placement, and keep holding either way so the
+          // hold still ends on time and any other animation keeps its frames.
+          const pose = tickResult.pose;
+          if (
+            !attractPoseApplied ||
+            tickResult.fov !== lastAttractFov ||
+            !samePose(pose, lastAttractPose)
+          ) {
+            copyPose(pose, lastAttractPose);
+            lastAttractFov = tickResult.fov;
+            attractPoseApplied = true;
+            orbit.placeAt(pose.position, pose.target, tickResult.fov);
+          }
           hold();
         } else {
           canvas.dataset.attract = '0';
+          attractPoseApplied = false;
         }
       } else {
         canvas.dataset.attract = '0';
+        attractPoseApplied = false;
       }
 
       if (!orbitMoving && !walkMoving && !turntable.running && !attract.running) {

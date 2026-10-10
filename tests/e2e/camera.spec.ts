@@ -16,6 +16,17 @@ const TOUCH_MOVE_TIMEOUT_MS = 5_000;
 // and the walkthrough normalizes only above length 1, so that drift moves the foot under 5e-13 m
 // across the whole budget; a strict inequality accepted it, this threshold rejects it.
 const MIN_HELD_STEP_M = 0.05;
+/**
+ * The camera travel the attract test demands before it accepts the tour as running. The tour's
+ * first leg glides the proof view [0, 1.7, 4.2] to the entrance view [0, 2.2, 6.2], the
+ * catalogue's second preset: 2.06 m of straight camera travel over ATTRACT_MOVE_MS (3 s),
+ * eased in and out. 0.25 m is 12 percent of that leg, which the ease reaches about 940 ms into
+ * the move, so the figure proves real placement work early in the leg while standing far above
+ * the orbit's spherical round-trip noise, on the order of 1e-15 m.
+ */
+const TOUR_MIN_MOVED_M = 0.25;
+/** Covers the 500 ms idle start, the eased 940 ms to the minimum travel, and slow-machine slack. */
+const TOUR_MOVE_TIMEOUT_MS = 15_000;
 
 // Camera and turntable through the real page: a drag orbits the inspection camera, the turntable turns the
 // look while it runs, and the loop goes back to sleep once both are still. Reads and the toggle go
@@ -375,8 +386,34 @@ test('attract loop tours presets when idle and cancels on input', async ({ page 
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
+  // The pose at rest, before the tour has started. The camera mounts on the proof view and
+  // nothing else moves it, and the tour starts ATTRACT_IDLE_MS (500 ms here) after the camera
+  // mounts, one or two frames after the scene reports ready, so this reading precedes the
+  // first placement.
+  const restPose = await page.evaluate((): [number, number, number] => {
+    const pos = window.archvizCamera?.orbit.position ?? [0, 0, 0];
+    return [pos[0], pos[1], pos[2]];
+  });
+
   // data-attract becomes 1 within 5 s
   await expect(canvas).toHaveAttribute('data-attract', '1', { timeout: 5_000 });
+
+  // The tour must actually move the camera, not only publish its state: a tour that never
+  // placed a pose still turned data-attract on. Poll the published orbit pose until it has
+  // travelled TOUR_MIN_MOVED_M from the rest pose (see the constant for the figure's origin).
+  await expect
+    .poll(async () => {
+      const pos = await page.evaluate((): [number, number, number] => {
+        const position = window.archvizCamera?.orbit.position ?? [0, 0, 0];
+        return [position[0], position[1], position[2]];
+      });
+      return Math.hypot(pos[0] - restPose[0], pos[1] - restPose[1], pos[2] - restPose[2]);
+    }, {
+      message: 'the attract tour never moved the camera',
+      timeout: TOUR_MOVE_TIMEOUT_MS,
+      intervals: [250],
+    })
+    .toBeGreaterThanOrEqual(TOUR_MIN_MOVED_M);
 
   // Synthetic pointermove sets data-attract to 0
   const box = await canvas.boundingBox();

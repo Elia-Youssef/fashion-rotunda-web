@@ -6,6 +6,10 @@ export interface OrbitFrameScheduler {
 }
 
 export interface OrbitRunOptions {
+  /**
+   * Applies one pose of the orbit. The position argument is a tuple the run owns and rewrites
+   * on every tick: consume it synchronously and never retain it past the call.
+   */
   setPose(position: [number, number, number], target: [number, number, number]): void;
   proofPosition: [number, number, number];
   proofTarget: [number, number, number];
@@ -75,7 +79,14 @@ export function runProofOrbit(options: OrbitRunOptions): Promise<void> {
     const dz0 = proofPosition[2] - proofTarget[2];
     const radius = Math.hypot(dx0, dz0);
     const initialTheta = Math.atan2(dx0, dz0);
-    const height = proofPosition[1];
+
+    // The position handed to setPose: written in place each tick, so a tick allocates no array.
+    // Starts at the opening pose; only x and z change while the orbit runs.
+    const currentPosition: [number, number, number] = [
+      proofPosition[0],
+      proofPosition[1],
+      proofPosition[2],
+    ];
 
     function schedule(): void {
       if (settled) return;
@@ -83,9 +94,9 @@ export function runProofOrbit(options: OrbitRunOptions): Promise<void> {
       else pendingTimeout = setTimeout(step, FALLBACK_FRAME_MS);
     }
 
-    function frame(position: [number, number, number]): void {
+    function frame(): void {
       if (settled) return;
-      setPose(position, proofTarget);
+      setPose(currentPosition, proofTarget);
       if (!settled) onFrame();
     }
 
@@ -96,7 +107,7 @@ export function runProofOrbit(options: OrbitRunOptions): Promise<void> {
     }
 
     if (durationMs <= 0) {
-      frame(proofPosition);
+      frame();
       complete();
       return;
     }
@@ -110,22 +121,25 @@ export function runProofOrbit(options: OrbitRunOptions): Promise<void> {
       const elapsed = now() - start;
       if (elapsed >= durationMs) {
         // Close the circle with the exact original pose.
-        frame(proofPosition);
+        currentPosition[0] = proofPosition[0];
+        currentPosition[1] = proofPosition[1];
+        currentPosition[2] = proofPosition[2];
+        frame();
         complete();
         return;
       }
 
       const progress = elapsed / durationMs;
       const theta = initialTheta + 2 * Math.PI * progress;
-      const x = proofTarget[0] + radius * Math.sin(theta);
-      const z = proofTarget[2] + radius * Math.cos(theta);
+      currentPosition[0] = proofTarget[0] + radius * Math.sin(theta);
+      currentPosition[2] = proofTarget[2] + radius * Math.cos(theta);
 
-      frame([x, height, z]);
+      frame();
       schedule();
     }
 
     // First frame starts at the initial pose.
-    frame(proofPosition);
+    frame();
     schedule();
   });
 }
