@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { ConsoleMessage, Page } from '@playwright/test';
+import { waitForTooltipInstallation } from './support/a11y-mount';
 
 // Onboarding, tooltips and accessibility pass.
 // Tests the first-visit onboarding card, Skip dismissal, the DOM tab walk order,
@@ -9,6 +10,9 @@ import type { ConsoleMessage, Page } from '@playwright/test';
 
 const SCENE_READY_TIMEOUT = 60_000;
 const SWITCH_TIMEOUT = 30_000;
+// The a11y module mounts after the ready attribute is published (after compilation and the first
+// drawn frame), so its waits use the scene-initialization budget instead of the assertion default.
+const A11Y_MOUNT_TIMEOUT = SCENE_READY_TIMEOUT;
 const SAFE_AREA = { top: 19, right: 23, bottom: 29, left: 17 } as const;
 
 // The longest run in the documented order is the thumbnail strip, seven looks plus the controls
@@ -72,9 +76,9 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
   await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
 
-  // 1. Onboarding card appears with the first step
+  // 1. Onboarding card appears with the first step; the a11y mount follows the ready attribute.
   const card = page.locator('.onboarding-card');
-  await expect(card).toBeVisible();
+  await expect(card).toBeVisible({ timeout: A11Y_MOUNT_TIMEOUT });
   const cardTitle = card.locator('.onboarding-card__title');
   await expect(cardTitle).toHaveText('Explore the room');
 
@@ -216,7 +220,9 @@ test('the onboarding card stays away under e2e without the flag', async ({ page 
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
-  // Other specs run under e2e=1 and must never meet the card.
+  // Other specs run under e2e=1 and must never meet the card. Two assertions: the a11y mount
+  // decides onboarding and must be installed first, then the card is asserted absent.
+  await waitForTooltipInstallation(page, A11Y_MOUNT_TIMEOUT);
   await expect(page.locator('.onboarding-card')).toHaveCount(0);
 });
 
@@ -233,6 +239,8 @@ test('the long GPU tooltip stays inside short landscape and dismisses without st
 
   const badge = page.locator('.badge');
   const tooltip = page.locator('#a11y-tooltip[role="tooltip"]');
+  // The tooltip listeners install with the a11y module after the ready attribute; an earlier hover is lost.
+  await waitForTooltipInstallation(page, A11Y_MOUNT_TIMEOUT);
   await badge.hover();
   await expect(tooltip).toBeVisible();
   const box = await tooltip.boundingBox();
@@ -268,7 +276,8 @@ for (const viewport of [
     await installSafeArea(page);
 
     const card = page.locator('.onboarding-card');
-    await expect(card).toBeVisible();
+    // Onboarding mounts with the a11y module after the ready attribute is published.
+    await expect(card).toBeVisible({ timeout: A11Y_MOUNT_TIMEOUT });
     await card.getByRole('button', { name: 'Next' }).click();
     await card.getByRole('button', { name: 'Next' }).click();
     await expect(card.locator('.onboarding-card__title')).toHaveText('Adjust lighting');

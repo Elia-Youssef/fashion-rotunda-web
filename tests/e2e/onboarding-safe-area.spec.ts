@@ -1,6 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 
 const SCENE_READY_TIMEOUT = 60_000;
+// Onboarding mounts with the a11y module after the ready attribute is published, so the card
+// waits for the scene-initialization budget instead of the assertion default.
+const A11Y_MOUNT_TIMEOUT = SCENE_READY_TIMEOUT;
 
 interface Box {
   x: number;
@@ -49,7 +52,8 @@ for (const viewport of [
       timeout: SCENE_READY_TIMEOUT,
     });
     const card = page.locator('.onboarding-card');
-    await expect(card).toBeVisible();
+    // Onboarding mounts with the a11y module after the ready attribute is published.
+    await expect(card).toBeVisible({ timeout: A11Y_MOUNT_TIMEOUT });
     // The Light guide is positioned when its step appears. Install non-zero insets before the
     // two transitions that reach it, as a browser with a physical cut-out has them at startup.
     await installSafeArea(page);

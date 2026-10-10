@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { waitForSceneInitialization } from './support/ready';
+import { waitForTooltipInstallation } from './support/a11y-mount';
 import { assertCanvasPreserved, nextProofReading, stableDrawCalls } from './support/preservation';
 import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 
@@ -514,6 +515,8 @@ test.describe('simplified Light Control drawer and rig', () => {
     const errors = watchErrors(page);
     await page.setViewportSize({ width: 1440, height: 900 });
     await openScene(page);
+    // The tooltip module installs after the ready attribute; the mouse-open branch would pass without it.
+    await waitForTooltipInstallation(page, SCENE_READY_TIMEOUT);
     const toggle = page.locator('#shell-light-toggle');
     const panel = page.locator('#shell-light-panel');
     const keySwitch = panel.locator('[data-light="key"] .lightpanel__switch');
