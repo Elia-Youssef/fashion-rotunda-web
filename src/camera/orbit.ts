@@ -138,6 +138,9 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     resolve: () => void;
   }
   let activeGlide: ActiveGlide | null = null;
+  // Interpolation must never mutate the glide endpoints, or another control's workspace.
+  const glidePosition = new Vector3();
+  const glideTarget = new Vector3();
 
   // Scratch for the synchronous pose paths (placeAt, setPose): the attract tour and the proof
   // orbit apply a pose every frame, so those paths construct no Vector3 and no Spherical.
@@ -255,6 +258,14 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     }
   }
 
+  /** The first two tracked pointers define the pinch, including when more fingers arrive. */
+  function readPinchSpread(): number {
+    const values = pointers.values();
+    const a = values.next().value!;
+    const b = values.next().value!;
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  }
+
   function onPointerDown(event: PointerEvent): void {
     if (!isEnabled) {
       return;
@@ -276,20 +287,20 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
       dragging = false;
       pendingTheta = 0;
       pendingPhi = 0;
-      const [a, b] = [...pointers.values()];
-      pinchSpread = Math.hypot(a.x - b.x, a.y - b.y);
+      pinchSpread = readPinchSpread();
     }
     capture(event.pointerId);
   }
 
   function onPointerMove(event: PointerEvent): void {
-    if (!isEnabled || !pointers.has(event.pointerId)) {
+    const pointer = pointers.get(event.pointerId);
+    if (!isEnabled || pointer === undefined) {
       return; // a hover, or a pointer this control never grabbed
     }
-    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    pointer.x = event.clientX;
+    pointer.y = event.clientY;
     if (pointers.size >= 2) {
-      const [a, b] = [...pointers.values()];
-      const spread = Math.hypot(a.x - b.x, a.y - b.y);
+      const spread = readPinchSpread();
       if (pinchSpread > 0 && spread > 0) {
         // Fingers apart dollies in, fingers together dollies out, by how much the spread changed.
         dollyBy(pinchSpread / spread);
@@ -319,7 +330,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     releaseCapture(event.pointerId);
     if (pointers.size === 1) {
       // The pinch is over; the surviving finger rotates again, anchored where it actually is.
-      const [remaining] = [...pointers.values()];
+      const remaining = pointers.values().next().value!;
       dragging = true;
       lastX = remaining.x;
       lastY = remaining.y;
@@ -411,8 +422,8 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
           activeGlide.elapsedMs += dtMs;
           const t = Math.min(1, activeGlide.elapsedMs / activeGlide.durationMs);
           const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-          const curPos = new Vector3().lerpVectors(activeGlide.startPos, activeGlide.destPos, eased);
-          const curTarget = new Vector3().lerpVectors(activeGlide.startTarget, activeGlide.destTarget, eased);
+          const curPos = glidePosition.lerpVectors(activeGlide.startPos, activeGlide.destPos, eased);
+          const curTarget = glideTarget.lerpVectors(activeGlide.startTarget, activeGlide.destTarget, eased);
           target.copy(curTarget);
           applyFov(MathUtils.lerp(activeGlide.startFov, activeGlide.destFov, eased));
           spherical.setFromVector3(curPos.sub(target));

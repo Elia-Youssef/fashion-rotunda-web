@@ -72,6 +72,10 @@ const LIMITS: OrbitLimits = {
 const DAMPING = 0.12;
 const TURNTABLE_DEGREES_PER_SECOND = 20;
 const MAX_STEP_MS = 100;
+const YAW_DECIMALS = 3;
+const YAW_HALF_STEP = 0.5 * 10 ** -YAW_DECIMALS;
+// Cover rounding in both the parsed decimal centre and the subtraction from the live yaw.
+const YAW_ROUNDING_ERROR_SCALE = 2;
 
 interface JoystickLayer {
   root: HTMLElement;
@@ -163,6 +167,8 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
 
   let holding = false;
   let appliedYaw = showroom.lookYaw;
+  let publishedYaw: string | undefined;
+  let publishedYawValue = Number.NaN;
   let currentMode: CameraMode = 'orbit';
   canvas.dataset.camera = 'orbit';
   canvas.dataset.attract = '0';
@@ -170,7 +176,23 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
   function writeYaw(yaw: number): void {
     appliedYaw = yaw;
     showroom.setLookYaw(yaw);
-    canvas.dataset.yaw = yaw.toFixed(3);
+    // Stay strictly inside the last decimal cell. Near its edges, let toFixed decide:
+    // multiplication followed by Math.round disagrees with it at binary rounding ties.
+    const roundingMargin = YAW_ROUNDING_ERROR_SCALE * Number.EPSILON *
+      Math.max(1, Math.abs(yaw), Math.abs(publishedYawValue));
+    if (
+      publishedYaw !== undefined &&
+      (yaw < 0) === publishedYaw.startsWith('-') &&
+      Math.abs(yaw - publishedYawValue) < YAW_HALF_STEP - roundingMargin
+    ) {
+      return;
+    }
+    const next = yaw.toFixed(YAW_DECIMALS);
+    if (next !== publishedYaw) {
+      canvas.dataset.yaw = next;
+      publishedYaw = next;
+      publishedYawValue = Number(next);
+    }
   }
 
   function hold(): void {

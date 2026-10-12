@@ -87,6 +87,40 @@ function pointer(type: string, x: number, y: number): void {
 }
 
 describe('mountCamera', () => {
+  it('publishes yaw only when its exact three-decimal value changes, including ties and reset', () => {
+    const { showroom, mount: current } = make({ search: '?attract=0' });
+    const observer = new MutationObserver(() => {});
+    observer.observe(canvas, { attributes: true, attributeFilter: ['data-yaw'] });
+    const format = vi.spyOn(Number.prototype, 'toFixed');
+    let previous: string | undefined;
+    const values = [
+      0.0001, 0.0002, 0.00049, 0.0005, 0.00051, 0.0015, 1.2345,
+      -0.0001, -0.0002, -0.0005, -0.0015, -1.2345,
+      1e20, 1e21, -1e21, Infinity, -Infinity, NaN, 0,
+    ];
+    for (const yaw of values) {
+      const expected = yaw.toFixed(3);
+      format.mockClear();
+      current.turntable.setYaw(yaw);
+      expect(canvas.dataset.yaw).toBe(expected);
+      expect(showroom.lookYaw).toBe(yaw);
+      expect(observer.takeRecords()).toHaveLength(expected !== previous ? 1 : 0);
+      if (yaw === 0.0002 || yaw === -0.0002) expect(format).not.toHaveBeenCalled();
+      previous = expected;
+    }
+    current.turntable.start();
+    for (let frame = 0; frame < 20; frame += 1) {
+      current.update(0.1);
+      expect(canvas.dataset.yaw).toBe(current.turntable.yaw.toFixed(3));
+      expect(showroom.lookYaw).toBe(current.turntable.yaw);
+    }
+    current.turntable.stop();
+    current.turntable.setYaw(0);
+    expect(canvas.dataset.yaw).toBe('0.000');
+    format.mockRestore();
+    observer.disconnect();
+  });
+
   it('uses the default idle delay for malformed attractIdle values', () => {
     expect(attractIdleMsFromSearch('?attractIdle=not-a-number')).toBe(60_000);
     expect(attractIdleMsFromSearch('?attractIdle=Infinity')).toBe(60_000);

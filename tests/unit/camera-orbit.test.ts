@@ -246,6 +246,56 @@ describe('createOrbit', () => {
     expect(readSpherical(target.orbit).theta).toBeCloseTo(-50 * 0.005, 9);
   });
 
+  it('retains pointer records without spreading pinch values and preserves capture and cancellation', () => {
+    const target = make({ ms: 1000 });
+    const capture = vi.fn();
+    const release = vi.fn();
+    target.element.setPointerCapture = capture;
+    target.element.releasePointerCapture = release;
+    const set = vi.spyOn(Map.prototype, 'set');
+    pointer(target, 'pointerdown', 100, 100, 1);
+    const entry = set.mock.calls.find(([id, value]) =>
+      id === 1 && value?.x === 100 && value?.y === 100);
+    expect(entry).toBeDefined();
+    const index = set.mock.calls.indexOf(entry!);
+    const tracked = set.mock.contexts[index] as Map<number, { x: number; y: number }>;
+    const first = tracked.get(1)!;
+    pointer(target, 'pointerdown', 300, 100, 2);
+    const second = tracked.get(2)!;
+    const iterate = vi.fn();
+    const values = tracked.values.bind(tracked);
+    const read = vi.spyOn(tracked, 'values').mockImplementation(() => {
+      const iterator = values();
+      const original = iterator[Symbol.iterator].bind(iterator);
+      iterator[Symbol.iterator] = () => { iterate(); return original(); };
+      return iterator;
+    });
+    pointer(target, 'pointermove', 250, 100, 2);
+    expect(tracked.get(2)).toBe(second);
+    expect(second).toEqual({ x: 250, y: 100 });
+    expect(readSpherical(target.orbit).radius).toBeCloseTo(PROOF_RADIUS * 200 / 150, 9);
+    pointer(target, 'pointerdown', 500, 100, 3);
+    pointer(target, 'pointermove', 600, 100, 3);
+    expect(readSpherical(target.orbit).radius).toBeCloseTo(PROOF_RADIUS * 200 / 150, 9);
+    pointer(target, 'pointercancel', 600, 100, 3);
+    pointer(target, 'pointermove', 999, 999, 9);
+    expect(tracked.size).toBe(2);
+    pointer(target, 'pointercancel', 250, 100, 2);
+    expect(release.mock.calls).toEqual([[3]]);
+    pointer(target, 'pointermove', 150, 100, 1);
+    expect(tracked.get(1)).toBe(first);
+    expect(first).toEqual({ x: 150, y: 100 });
+    expect(readSpherical(target.orbit).theta).toBeCloseTo(-0.25, 9);
+    expect(iterate).not.toHaveBeenCalled();
+    target.orbit.setEnabled(false);
+    expect(tracked.size).toBe(0);
+    pointer(target, 'pointermove', 200, 100, 1);
+    expect(first.x).toBe(150);
+    expect(capture.mock.calls).toEqual([[1], [2], [3]]);
+    read.mockRestore();
+    set.mockRestore();
+  });
+
   it('the arrow keys rotate, + and - dolly, and Home resets', () => {
     const target = make();
     key(target, 'ArrowLeft');
