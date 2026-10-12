@@ -10,6 +10,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  // restoreAllMocks covers spies only; unstubAllGlobals puts back a replaced performance object.
+  vi.unstubAllGlobals();
 });
 
 async function loadMarks(): Promise<typeof import('../../src/proof/marks')> {
@@ -36,6 +38,18 @@ function fakeResource(
     responseEnd,
     // Never called; PerformanceEntry declares toJSON so the fake must carry one.
     toJSON: (): FakeResourceEntry => entry,
+  };
+  return entry;
+}
+
+/** A User Timing measure shape, the entry type a look-switch timer records. */
+function fakeMeasure(startTime: number, duration: number): PerformanceEntry {
+  const entry: PerformanceEntry = {
+    name: 'look-switch',
+    entryType: 'measure',
+    startTime,
+    duration,
+    toJSON: (): PerformanceEntry => entry,
   };
   return entry;
 }
@@ -316,5 +330,36 @@ describe('scene-files scope', () => {
       ...fakeResource(`http://localhost/content/${file}`, 500, 20, 200), decodedBodySize: 1_000,
     }));
     expect(marks.sceneFilesPayload(entries, 50)).toEqual({ bytes: 600, budgetBytes: 10_000_000 });
+  });
+});
+
+describe('latestLookSwitchMs', () => {
+  it('returns null without a global performance object', async () => {
+    const marks = await loadMarks();
+    vi.stubGlobal('performance', undefined);
+    expect(marks.latestLookSwitchMs()).toBeNull();
+  });
+
+  it('returns null when performance cannot list entries by name', async () => {
+    const marks = await loadMarks();
+    vi.stubGlobal('performance', { now: (): number => 0 });
+    expect(marks.latestLookSwitchMs()).toBeNull();
+  });
+
+  it('returns null before any look-switch measure exists', async () => {
+    const marks = await loadMarks();
+    const entries = vi.spyOn(performance, 'getEntriesByName').mockReturnValue([]);
+    expect(marks.latestLookSwitchMs()).toBeNull();
+    expect(entries).toHaveBeenCalledWith('look-switch');
+  });
+
+  it('returns the last measure duration when several exist, not the first or the largest', async () => {
+    const marks = await loadMarks();
+    vi.spyOn(performance, 'getEntriesByName').mockReturnValue([
+      fakeMeasure(100, 120),
+      fakeMeasure(500, 900),
+      fakeMeasure(2000, 250),
+    ]);
+    expect(marks.latestLookSwitchMs()).toBe(250);
   });
 });
