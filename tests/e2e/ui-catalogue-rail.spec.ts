@@ -53,14 +53,23 @@ async function installSafeArea(page: Page): Promise<SafeArea> {
 }
 
 const LIGHT_BAR_RESERVE = 140;
+const RESIZE_TIMEOUT = 10_000;
 
-/** Resizes and waits until the page reports the new size; the reads that follow force layout. */
+/** Waits for both the viewport and the closed card's responsive sheet state before layout reads. */
 async function resizeTo(page: Page, width: number, height: number): Promise<void> {
   await page.setViewportSize({ width, height });
   await page.waitForFunction(
-    ([w, h]) => window.innerWidth === w && window.innerHeight === h,
+    ([w, h]) => {
+      if (window.innerWidth !== w || window.innerHeight !== h) return false;
+      // CSS can change before the shell's media-query change callback applies hidden.
+      const card = document.querySelector<HTMLElement>('#shell-card');
+      const sheetMode =
+        !matchMedia('(min-width: 768px)').matches ||
+        matchMedia('(max-height: 599px)').matches;
+      return card !== null && card.hidden === sheetMode;
+    },
     [width, height],
-    { timeout: 10_000 },
+    { timeout: RESIZE_TIMEOUT },
   );
 }
 
@@ -71,18 +80,33 @@ interface DesktopRailReading {
   clientHeight: number;
   sizes: { width: number; height: number }[];
   owned: boolean[];
+  owners: { look: string | null; hit: string | null; region: string | null }[];
   currentCount: number;
   documentScrolls: boolean;
 }
 
 async function readDesktopRail(page: Page): Promise<DesktopRailReading> {
   return page.locator('#looks').evaluate((el) => {
-    const owns = (button: Element): boolean => {
+    const hits = (button: Element) => {
       const r = button.getBoundingClientRect();
       const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-      return hit !== null && (hit === button || button.contains(hit));
+      const describe = (element: Element | null): string | null =>
+        element === null
+          ? null
+          : `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ''}${
+              [...element.classList].map((name) => `.${name}`).join('')
+            }`;
+      return {
+        owned: hit !== null && (hit === button || button.contains(hit)),
+        owner: {
+          look: button.getAttribute('data-look'),
+          hit: describe(hit),
+          region: describe(hit?.closest('[id]') ?? null),
+        },
+      };
     };
     const buttons = [...el.querySelectorAll('button')];
+    const centres = buttons.map(hits);
     const scroller = document.scrollingElement;
     const box = el.getBoundingClientRect();
     return {
@@ -94,7 +118,8 @@ async function readDesktopRail(page: Page): Promise<DesktopRailReading> {
         const r = b.getBoundingClientRect();
         return { width: r.width, height: r.height };
       }),
-      owned: buttons.map(owns),
+      owned: centres.map((centre) => centre.owned),
+      owners: centres.map((centre) => centre.owner),
       currentCount: el.querySelectorAll('button[aria-current="true"]').length,
       documentScrolls:
         scroller !== null &&
@@ -303,7 +328,10 @@ test.describe('Catalogue Rail Parity', () => {
           reading.scrollHeight,
           `${tag}: rail shows all seven looks without internal scrolling`,
         ).toBeLessThanOrEqual(reading.clientHeight);
-        expect(reading.owned, `${tag}: elementFromPoint owns every thumbnail centre`).toEqual(
+        expect(
+          reading.owned,
+          `${tag}: elementFromPoint owns every thumbnail centre; owners=${JSON.stringify(reading.owners)}`,
+        ).toEqual(
           Array.from({ length: 7 }, () => true),
         );
         if (vp.mode === 'fit') {
