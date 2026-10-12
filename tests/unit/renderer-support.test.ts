@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 // detectSupport must answer with no GPU of any kind present: jsdom ships neither navigator.gpu
-// nor a WebGL 2 context, which is exactly the baseline the no-poster path depends on.
+// nor a WebGL 2 context. Presence alone is not support either: the probes answer only when
+// WebGPU returns a live adapter and WebGL 2 returns a live context, which is exactly what a
+// browser with its graphics APIs disabled looks like.
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -19,6 +21,23 @@ function stubGetContext(context: unknown): void {
   });
 }
 
+function stubThrowingGetContext(): void {
+  Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+    value: (): WebGL2RenderingContext => {
+      throw new Error('context creation refused');
+    },
+    writable: true,
+    configurable: true,
+  });
+}
+
+function stubGpu(requestAdapter: () => Promise<unknown>): void {
+  Object.defineProperty(window.navigator, 'gpu', {
+    value: { requestAdapter },
+    configurable: true,
+  });
+}
+
 afterEach(() => {
   Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
     value: originalGetContext,
@@ -29,19 +48,44 @@ afterEach(() => {
 });
 
 describe('detectSupport', () => {
-  it('reports webgpu false when navigator.gpu is absent', () => {
+  it('reports no support when neither API is present', async () => {
     stubGetContext(null);
-    expect(detectSupport(window)).toEqual({ webgpu: false, webgl2: false });
+    await expect(detectSupport(window)).resolves.toEqual({ webgpu: false, webgl2: false });
   });
 
-  it('reports webgpu true when a gpu stub is present', () => {
+  it('counts WebGPU only when an adapter answers: null means it cannot start', async () => {
+    stubGpu(async () => null);
+    stubGetContext(null);
+    await expect(detectSupport(window)).resolves.toEqual({ webgpu: false, webgl2: false });
+  });
+
+  it('counts WebGPU when the adapter request resolves with an adapter', async () => {
+    stubGpu(async () => ({ info: { vendor: 'stub' } }));
+    stubGetContext(null);
+    await expect(detectSupport(window)).resolves.toEqual({ webgpu: true, webgl2: false });
+  });
+
+  it('treats a throwing adapter request as no WebGPU support', async () => {
+    stubGpu(async () => {
+      throw new Error('adapter enumeration failed');
+    });
+    stubGetContext(null);
+    await expect(detectSupport(window)).resolves.toEqual({ webgpu: false, webgl2: false });
+  });
+
+  it('treats a gpu property without a callable requestAdapter as no WebGPU support', async () => {
     Object.defineProperty(window.navigator, 'gpu', { value: {}, configurable: true });
     stubGetContext(null);
-    expect(detectSupport(window).webgpu).toBe(true);
+    await expect(detectSupport(window)).resolves.toEqual({ webgpu: false, webgl2: false });
   });
 
-  it('reports webgl2 true when the probe context answers non-null', () => {
+  it('reports webgl2 true when the probe context answers non-null', async () => {
     stubGetContext({});
-    expect(detectSupport(window)).toEqual({ webgpu: false, webgl2: true });
+    await expect(detectSupport(window)).resolves.toEqual({ webgpu: false, webgl2: true });
+  });
+
+  it('treats a throwing context probe as no WebGL 2 support', async () => {
+    stubThrowingGetContext();
+    await expect(detectSupport(window)).resolves.toEqual({ webgpu: false, webgl2: false });
   });
 });

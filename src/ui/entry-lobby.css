@@ -482,6 +482,12 @@
   outline-offset: var(--focus-offset) !important;
 }
 
+/* hidden must win on the lobby's buttons: each carries a display value of its own, which would
+   otherwise draw a button the markup means to remove (the unsupported pane hides the retry). */
+.entry-lobby button[hidden] {
+  display: none;
+}
+
 /* ==========================================================================
    Responsive Adaptations across 4 Target Viewports
    - 1440 x900 (Desktop default)
@@ -685,6 +691,44 @@
   visibility: visible;
   opacity: 1;
   pointer-events: auto;
+}
+
+/* Startup-failure notice: the no-lobby sibling of the error pane above. A terminal startup
+   failure shows it on the page body when no lobby owns the screen; it covers the stage, says
+   the one sentence, and offers the only recovery there is. */
+.startup-notice {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  background: var(--scrim);
+  color: var(--text);
+  text-align: center;
+  z-index: var(--z-loss-notice);
+}
+
+.startup-notice__title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.startup-notice__message {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.startup-notice__reload {
+  justify-self: center;
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--accent);
+  color: var(--accent-text);
+  font: inherit;
+  cursor: pointer;
 }
 
 /* Reduced Motion Compliance */

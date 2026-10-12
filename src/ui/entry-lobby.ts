@@ -57,6 +57,7 @@ export interface EntryLobby {
   setRevealing(): void;
   setRevealed(): void;
   setError(message: string): void;
+  setUnsupported(message: string): void;
   waitUntilReadyHidden(): Promise<void>;
   prepareForReveal(): void;
   dispose(): void;
@@ -417,14 +418,18 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
   }
   syncMusicSwitchUI();
 
-  // Unsupported browser mode handling
-  if (options.unsupportedMessage) {
+  /**
+   * The unsupported surface, shared by the mount-time knowledge (no API even exists) and the
+   * post-press knowledge (no backend can start): the error pane becomes a support explanation
+   * with no retry, because reloading cannot create support the browser lacks.
+   */
+  function applyUnsupportedSurface(message: string): void {
     if (loadBtn !== null) {
       loadBtn.disabled = true;
     }
     if (errorMessage !== null) {
       errorMessage.id = 'lobby-unsupported-message';
-      errorMessage.textContent = options.unsupportedMessage;
+      errorMessage.textContent = message;
       loadBtn?.setAttribute('aria-describedby', errorMessage.id);
     }
     if (errorPane !== null) {
@@ -438,6 +443,11 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
     if (retryBtn !== null) {
       retryBtn.hidden = true;
     }
+  }
+
+  // Unsupported browser mode handling
+  if (options.unsupportedMessage) {
+    applyUnsupportedSurface(options.unsupportedMessage);
   }
 
   // Load request promise resolver
@@ -657,7 +667,8 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
     },
 
     setReady(): void {
-      if (currentState === 'disposed') {
+      // 'error' is terminal: a ready that arrives after a failure must not take the pane away.
+      if (currentState === 'disposed' || currentState === 'error') {
         return;
       }
       if (stopProgressTrackingFn !== null) {
@@ -747,6 +758,33 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       if (retryBtn !== null) {
         retryBtn.focus();
       }
+    },
+
+    setUnsupported(message: string): void {
+      if (currentState === 'disposed') {
+        return;
+      }
+      if (stopProgressTrackingFn !== null) {
+        stopProgressTrackingFn();
+        stopProgressTrackingFn = null;
+      }
+      currentState = 'error';
+      lobby.dataset.state = currentState;
+
+      if (idlePane !== null) {
+        idlePane.hidden = true;
+      }
+      if (loadingPane !== null) {
+        loadingPane.hidden = true;
+      }
+      if (cardElement !== null) {
+        cardElement.dataset.view = 'error';
+      }
+      applyUnsupportedSurface(message);
+      // The retry is gone and Load is disabled, so the dialog itself takes focus and the alert
+      // is what a screen reader lands on.
+      lobby.tabIndex = -1;
+      lobby.focus();
     },
 
     waitUntilReadyHidden(): Promise<void> {

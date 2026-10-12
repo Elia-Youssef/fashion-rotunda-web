@@ -44,6 +44,8 @@ import { lobbyWanted, mountEntryLobby } from './ui/entry-lobby';
 import type { EntryLobby } from './ui/entry-lobby';
 import { SceneRevealCoordinator } from './ui/scene-reveal';
 import type { ReadinessPredicates } from './ui/scene-reveal';
+import { createStartupFailureRouting, showStartupNotice } from './ui/startup-failure';
+import type { StartupFailureRouting } from './ui/startup-failure';
 
 /** What the scene is made of, as the e2e suite reads it. Material names are three.js type strings. */
 interface SceneDescription {
@@ -87,6 +89,14 @@ declare global {
 const WAKE_MS = 4000;
 /** The two-second calibration run behind a provisional High tier. */
 const BENCHMARK_MS = 2000;
+
+/**
+ * The unsupported surface's one sentence, shown before the Load press when not even the APIs
+ * exist and after it when neither backend can start. No reload repairs absent support, so the
+ * Load action stays disabled and there is no retry.
+ */
+const UNSUPPORTED_BROWSER_MESSAGE =
+  'This exhibition requires WebGPU or WebGL 2. Your graphics browser does not support these features.';
 
 /** The two content sets. The half set is the phone build, written by the optimize pass. */
 const FULL_CONTENT_BASE = '/content';
@@ -238,6 +248,13 @@ function createGovernorPublisher(dataset: DOMStringMap): (diagnostics: GovernorD
   };
 }
 
+/**
+ * The startup-failure routing, assigned as main()'s first act so every throw below it already
+ * has a visible surface. Held at module scope for the catch at the bottom of this file, which
+ * also runs when main() ends before the assignment.
+ */
+let startupFailures: StartupFailureRouting | null = null;
+
 async function main(): Promise<void> {
   const showLobby = lobbyWanted(search);
   const lobbyElement = document.getElementById('entry-lobby');
@@ -247,6 +264,8 @@ async function main(): Promise<void> {
 
   let lobby: EntryLobby | null = null;
   let musicPreference: 'on' | 'off' = 'on';
+  const routing = createStartupFailureRouting({ lobby: () => lobby });
+  startupFailures = routing;
 
   if (!showLobby) {
     lobbyElement?.remove();
@@ -257,14 +276,15 @@ async function main(): Promise<void> {
     footerElement?.removeAttribute('inert');
     footerElement?.removeAttribute('aria-hidden');
   } else {
-    // Static inspection without creating a GPU context
-    const hasWebGPU = typeof navigator !== 'undefined' && 'gpu' in navigator;
-    const hasWebGL2 = typeof window !== 'undefined' && 'WebGL2RenderingContext' in window;
-    if (!hasWebGPU && !hasWebGL2) {
+    // Static presence only: no adapter request, no GPU context, no content request. When not
+    // even the APIs exist, the unsupported surface is known before the visitor's gesture. APIs
+    // that exist but cannot start are decided after the gesture, by detectSupport below.
+    const hasWebGpuApi = 'gpu' in navigator;
+    const hasWebGl2Api = 'WebGL2RenderingContext' in window;
+    if (!hasWebGpuApi && !hasWebGl2Api) {
       lobby = mountEntryLobby({
         search,
-        unsupportedMessage:
-          'This exhibition requires WebGPU or WebGL 2. Your graphics browser does not support these features.',
+        unsupportedMessage: UNSUPPORTED_BROWSER_MESSAGE,
       });
       if (import.meta.env.DEV || params.get('e2e') === '1') {
         window.archvizLobby = lobby;
@@ -289,14 +309,14 @@ async function main(): Promise<void> {
     throw new Error('the shell did not adopt the side panel as the card root');
   }
 
-  // Neither backend available means no renderer at all: show the poster and leave the canvas
-  // untouched, so the page still explains itself instead of showing a dead rectangle.
-  const support = detectSupport();
+  // Neither backend startable means no renderer at all: WebGPU counts only when an adapter
+  // answers, WebGL 2 only when a context answers. Both probes are GPU work, so they wait for
+  // the Load gesture above; on the lobby path nothing here runs before the press. The page
+  // still explains itself instead of showing a dead rectangle.
+  const support = await detectSupport();
   if (!support.webgpu && !support.webgl2) {
     if (lobby !== null) {
-      lobby.setError(
-        'This exhibition requires WebGPU or WebGL 2. Your graphics browser does not support these features.',
-      );
+      lobby.setUnsupported(UNSUPPORTED_BROWSER_MESSAGE);
     } else {
       showPoster(page, {
         imageUrl: '/poster/hero.jpg',
@@ -470,9 +490,9 @@ async function main(): Promise<void> {
     }
     if (contentOnScreen) {
       // The first frame is the first one with the scene on it: an empty warm-up frame is not what
-      // the load number means.
+      // the load number means. 'error' is terminal, so a later frame must not repaint it ready.
       markFirstFrame();
-      if (canvas.dataset.scene !== 'ready') {
+      if (canvas.dataset.scene !== 'ready' && canvas.dataset.scene !== 'error') {
         canvas.dataset.scene = 'ready';
       }
     }
@@ -928,7 +948,7 @@ async function main(): Promise<void> {
     } catch (compileError) {
       canvas.dataset.scene = 'error';
       console.error('[archviz] shader compilation failed or timed out', compileError);
-      lobby?.setError('Shader compilation timed out or failed. Please retry.');
+      routing.fail();
       return;
     }
 
@@ -1093,11 +1113,17 @@ async function main(): Promise<void> {
   } catch (error) {
     canvas.dataset.scene = 'error';
     console.error('[archviz] the showroom failed to load', error);
-    lobby?.setError('Showroom initialization failed. We were unable to load the 3D showroom assets.');
+    routing.fail();
   }
 }
 
 main().catch((error: unknown) => {
-  // Startup failures still land in the console only; the poster path above covers the known case.
   console.error('[archviz] startup failed', error);
+  // A throw before the routing exists leaves the console line above as the only context; the
+  // notice is the surface that needs the least of the page to work.
+  if (startupFailures === null) {
+    showStartupNotice(document.body, () => location.reload());
+  } else {
+    startupFailures.fail();
+  }
 });

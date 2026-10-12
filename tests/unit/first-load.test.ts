@@ -145,13 +145,13 @@ function harness(search = '?look=second&variant=dark', half = false, hasDark = t
     info: { reset: vi.fn(), memory: { geometries: 0, textures: 0 } },
   };
   const canvas = { dataset: { scene: 'loading' } as DOMStringMap };
-  const lobby = { setError: vi.fn() };
+  const routing = { fail: vi.fn() };
   const params = new URLSearchParams(search);
   const dependencies = {
     loadCatalog, contentUrl, createShowroom, composeLighting, enableShadows, params,
     FULL_CONTENT_BASE: '/content', HALF_CONTENT_BASE: '/content/half',
     settings: { assetSet: half ? 'half-on-touch' : 'full', shadowMapSize: 1024 }, isTouch: half,
-    renderer, canvas, lobby, shell: { roots: { lightPanel: {} } },
+    renderer, canvas, routing, shell: { roots: { lightPanel: {} } },
     loop: { invalidate: vi.fn() }, resize: vi.fn(),
     markFirstFrame: new Function(`let firstFrameMarked = false; const FIRST_FRAME_MARK = 'first-frame';
       ${markCode} return markFirstFrame;`)(),
@@ -174,7 +174,7 @@ function harness(search = '?look=second&variant=dark', half = false, hasDark = t
       pending.plinth.resolve(assets.plinth.gltf);
     }
   }
-  return { boot, run, started, resolve, sky, fallback, environment, assets, pending, canvas, lobby, render,
+  return { boot, run, started, resolve, sky, fallback, environment, assets, pending, canvas, routing, render,
     parse, fetchFn, renderer, base };
 }
 
@@ -270,7 +270,7 @@ describe('first-load composition', () => {
       expect(h.boot.contentOnScreen).toBe(false);
       expect(h.canvas.dataset.scene).toBe('error');
       expect(h.canvas.dataset.look).toBeUndefined();
-      expect(h.lobby.setError).toHaveBeenCalledTimes(1);
+      expect(h.routing.fail).toHaveBeenCalledTimes(1);
       expect(console.error).toHaveBeenLastCalledWith('[archviz] the showroom failed to load',
         failure === 'lighting' || failure === 'both' ? lightingError :
           failure === 'look' || failure === 'look-default-variant' ? lookError : staticError);

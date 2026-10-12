@@ -54,6 +54,10 @@ function createMockLobby(): EntryLobby {
       state = 'error';
       element.dataset.state = state;
     }),
+    setUnsupported: vi.fn(() => {
+      state = 'error';
+      element.dataset.state = state;
+    }),
     waitUntilReadyHidden: vi.fn().mockResolvedValue(undefined),
     prepareForReveal: vi.fn(),
     dispose: vi.fn(() => {

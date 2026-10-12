@@ -441,6 +441,91 @@ describe('error state and clean retry', () => {
     expect(retryBtn).not.toBeNull();
     expect(document.activeElement).toBe(retryBtn);
   });
+
+  it('keeps the error pane when a ready arrives after the failure', () => {
+    const { lobby, element } = mountLobby();
+    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+
+    lobby.setError('Connection lost during asset download');
+    lobby.setReady();
+
+    expect(lobby.state).toBe('error');
+    expect(element.dataset.state).toBe('error');
+    expect(element.querySelector<HTMLElement>('.entry-lobby__error-pane')!.hidden).toBe(false);
+    expect(element.querySelector('.entry-lobby__error-message')?.textContent)
+      .toBe('Connection lost during asset download');
+  });
+});
+
+describe('unsupported surface after the Load press', () => {
+  const message = 'This exhibition requires WebGPU or WebGL 2.';
+
+  it('ends on the 3D-unavailable pane with Load disabled and the retry gone', () => {
+    const { lobby, element } = mountLobby();
+    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+
+    lobby.setUnsupported(message);
+
+    expect(lobby.state).toBe('error');
+    expect(element.dataset.state).toBe('error');
+    const pane = element.querySelector<HTMLElement>('.entry-lobby__error-pane')!;
+    expect(pane.hidden).toBe(false);
+    expect(pane.getAttribute('role')).toBe('alert');
+    expect(pane.querySelector('.entry-lobby__error-title')?.textContent).toBe('3D unavailable');
+    expect(pane.querySelector('.entry-lobby__error-message')?.textContent).toBe(message);
+    expect(element.querySelector<HTMLElement>('.entry-lobby__loading-pane')!.hidden).toBe(true);
+    expect(element.querySelector<HTMLElement>('.entry-lobby__idle-pane')!.hidden).toBe(true);
+    expect(element.querySelector<HTMLButtonElement>('#lobby-retry-btn')!.hidden).toBe(true);
+    expect(element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.disabled).toBe(true);
+  });
+
+  it('describes the disabled Load button with the pane message', () => {
+    const { lobby, element } = mountLobby();
+    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+
+    lobby.setUnsupported(message);
+
+    const describedBy = element
+      .querySelector<HTMLButtonElement>('#lobby-load-btn')!
+      .getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    const description = document.getElementById(describedBy!);
+    expect(description?.textContent).toBe(message);
+    expect(description?.closest('[hidden], [inert], [aria-hidden="true"]')).toBeNull();
+  });
+
+  it('is terminal: a later ready does not replace the unsupported pane', () => {
+    const { lobby, element } = mountLobby();
+    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+
+    lobby.setUnsupported(message);
+    lobby.setReady();
+
+    expect(lobby.state).toBe('error');
+    expect(element.querySelector<HTMLElement>('.entry-lobby__error-pane')!.hidden).toBe(false);
+    expect(element.querySelector<HTMLButtonElement>('#lobby-retry-btn')!.hidden).toBe(true);
+    expect(element.querySelector('.entry-lobby__error-title')?.textContent).toBe('3D unavailable');
+  });
+});
+
+describe('hidden lobby buttons are not drawn', () => {
+  it('keeps a [hidden] rule in the stylesheet that outranks the button display rules', () => {
+    const css = readFileSync('src/ui/entry-lobby.css', 'utf8');
+    // The lobby's buttons carry their own display value, which silently draws a hidden button
+    // again; the stylesheet must answer with a display:none rule scoped to those buttons.
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
+      selector: match[1].trim(),
+      body: match[2],
+    }));
+    const hiding = rules.filter(
+      (rule) => rule.selector.includes('[hidden]') && /display:\s*none/.test(rule.body),
+    );
+    expect(hiding, 'a display:none rule keyed on the hidden attribute').not.toEqual([]);
+    const scopedToLobbyButtons = hiding.find(
+      (rule) => rule.selector.includes('.entry-lobby') && rule.selector.includes('button'),
+    );
+    expect(scopedToLobbyButtons, 'the hidden rule scoped to the lobby buttons').toBeDefined();
+  });
 });
 
 describe('accessibility and focus containment', () => {
