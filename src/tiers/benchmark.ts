@@ -18,6 +18,7 @@ export interface BenchmarkOptions {
  * the first three frames (warm-up: shader compilation and first-touch allocations) and resolves
  * the p95 of the remaining work times. The work time is the render call duration, not the
  * interval between frames, so a vsync-bound device does not read as slow.
+ * A thrown render rejects the benchmark and stops scheduling frames.
  */
 export function runBenchmark(options: BenchmarkOptions): Promise<number> {
   const renderFrame = options.renderFrame;
@@ -25,14 +26,19 @@ export function runBenchmark(options: BenchmarkOptions): Promise<number> {
   const now = options.now ?? ((): number => performance.now());
   const raf = options.raf ?? ((cb: (t: number) => void): number => requestAnimationFrame(cb));
 
-  return new Promise<number>((resolve) => {
+  return new Promise<number>((resolve, reject) => {
     const frames = new FrameTimes();
     let drawn = 0;
     const startedAt = now();
 
     function tick(): void {
       const frameStart = now();
-      renderFrame();
+      try {
+        renderFrame();
+      } catch (error) {
+        reject(error);
+        return;
+      }
       const frameEnd = now();
       drawn += 1;
       if (drawn > WARMUP_FRAMES) {
