@@ -23,9 +23,6 @@ export interface RendererOptions {
   /** The caller supplies this cap from the quality tier table. */
   pixelRatioCap: number;
   forceWebGL?: boolean;
-  /** Default true. Covers the default framebuffer only; the post chain sets its own MSAA
-   * on the scene pass. */
-  antialias?: boolean;
   /** Enables the backend's timestamp queries; renderer.info.render.timestamp then reads GPU ms. */
   trackTimestamp?: boolean;
   onDeviceLost?: (info: DeviceLostInfo) => void;
@@ -225,7 +222,9 @@ export async function createRenderer(options: CreateRendererOptions): Promise<Re
   // backend exactly like an omitted property would (WebGPURenderer.js line 57 checks truthiness).
   const renderer = new WebGPURenderer({
     canvas: options.canvas,
-    antialias: options.antialias ?? true,
+    // Antialias covers the default framebuffer only; the post chain sets its own MSAA on the
+    // scene pass.
+    antialias: true,
     forceWebGL: options.forceWebGL === true,
     ...(options.trackTimestamp !== undefined ? { trackTimestamp: options.trackTimestamp } : {}),
   });

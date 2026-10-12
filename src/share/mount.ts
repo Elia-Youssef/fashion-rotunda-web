@@ -204,12 +204,12 @@ export function mountShare(options: ShareMountOptions): ShareMount {
     }
   }
 
-  function scheduleUpdate(immediate = false): void {
+  function scheduleUpdate(): void {
     if (signal.aborted) return;
     const now = performance.now();
     const elapsed = now - lastReplaceTime;
 
-    if (immediate || elapsed >= THROTTLE_MS) {
+    if (elapsed >= THROTTLE_MS) {
       updateSearchNow();
     } else if (pendingTimer === null) {
       pendingTimer = window.setTimeout(updateSearchNow, THROTTLE_MS - elapsed);
@@ -278,11 +278,11 @@ export function mountShare(options: ShareMountOptions): ShareMount {
   });
 
   const pollInterval = window.setInterval(() => {
-    scheduleUpdate(false);
+    scheduleUpdate();
   }, THROTTLE_MS);
 
   const canvasObserver = new MutationObserver(() => {
-    scheduleUpdate(false);
+    scheduleUpdate();
   });
   canvasObserver.observe(options.canvas, {
     attributes: true,
@@ -293,7 +293,7 @@ export function mountShare(options: ShareMountOptions): ShareMount {
   const musicSwitchBtn = document.querySelector<HTMLElement>('.music-switch');
   if (musicSwitchBtn !== null) {
     musicObserver = new MutationObserver(() => {
-      scheduleUpdate(false);
+      scheduleUpdate();
     });
     musicObserver.observe(musicSwitchBtn, {
       attributes: true,

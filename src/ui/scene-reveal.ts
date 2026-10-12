@@ -62,7 +62,6 @@ export interface TransitionSeam {
   readonly timestamps: TransitionTimestamps;
   readonly stableFrames: number;
   readPredicates(): Record<string, boolean>;
-  freezeAt(state: RevealState): void;
   unfreeze(): void;
 }
 
@@ -224,12 +223,6 @@ export class SceneRevealCoordinator {
         return getStableFrames();
       },
       readPredicates: () => this.evaluatePredicates(),
-      freezeAt: (state: RevealState) => {
-        this.frozenState = state;
-        if (state === 'revealing' && this.currentState === 'revealing') {
-          this.veilElement.dataset.e2eFreeze = 'revealing';
-        }
-      },
       unfreeze: () => {
         this.frozenState = null;
         this.veilElement.removeAttribute('data-e2e-freeze');
