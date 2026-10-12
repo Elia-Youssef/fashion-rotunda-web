@@ -110,7 +110,9 @@ export function createCapsuleResolver(bvh: MeshBVH, capsule: Capsule): CapsuleRe
 }
 
 /**
- * One-off form of the resolver: builds a workspace, resolves once and returns a fresh vector.
+ * Test entry point for the walkthrough collision core: pipeline tests verify that generated
+ * collision geometry blocks a capsule with the same resolver used for walking.
+ * Builds a workspace, resolves once and returns a fresh vector.
  * The input is never mutated; if the resulting foot would be below the floor (y < 0), it is
  * clamped to 0. Code that resolves every step should hold one resolver from
  * createCapsuleResolver instead of building a workspace per call.

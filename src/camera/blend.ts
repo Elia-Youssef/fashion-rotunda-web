@@ -53,10 +53,3 @@ export function blendPoseInto(from: Pose, to: Pose, t: number, destination: Pose
   destination.target[2] = from.target[2] + (to.target[2] - from.target[2]) * factor;
   return destination;
 }
-
-/**
- * Allocating form of blendPoseInto for callers and tests that need an independent snapshot.
- */
-export function blendPose(from: Pose, to: Pose, t: number): Pose {
-  return blendPoseInto(from, to, t, { position: [0, 0, 0], target: [0, 0, 0] });
-}

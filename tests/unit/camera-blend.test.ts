@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { BLEND_MS, blendPose, blendPoseInto } from '../../src/camera/blend';
+import { BLEND_MS, blendPoseInto } from '../../src/camera/blend';
 import type { Pose } from '../../src/camera/blend';
 import golden from '../fixtures/camera-pose-golden.json';
 
@@ -27,27 +27,27 @@ function asPose(raw: { position: number[]; target: number[] }): Pose {
   };
 }
 
-describe('blendPose', () => {
+describe('blendPoseInto boundaries and easing', () => {
   it('defines BLEND_MS as 700', () => {
     expect(BLEND_MS).toBe(700);
   });
 
   it('returns from exactly when t <= 0', () => {
-    const poseZero = blendPose(POSE_A, POSE_B, 0);
+    const poseZero = blendPoseInto(POSE_A, POSE_B, 0, { position: [0, 0, 0], target: [0, 0, 0] });
     expect(poseZero.position).toEqual(POSE_A.position);
     expect(poseZero.target).toEqual(POSE_A.target);
 
-    const poseNegative = blendPose(POSE_A, POSE_B, -0.5);
+    const poseNegative = blendPoseInto(POSE_A, POSE_B, -0.5, { position: [0, 0, 0], target: [0, 0, 0] });
     expect(poseNegative.position).toEqual(POSE_A.position);
     expect(poseNegative.target).toEqual(POSE_A.target);
   });
 
   it('returns to exactly when t >= 1', () => {
-    const poseOne = blendPose(POSE_A, POSE_B, 1);
+    const poseOne = blendPoseInto(POSE_A, POSE_B, 1, { position: [0, 0, 0], target: [0, 0, 0] });
     expect(poseOne.position).toEqual(POSE_B.position);
     expect(poseOne.target).toEqual(POSE_B.target);
 
-    const posePast = blendPose(POSE_A, POSE_B, 1.5);
+    const posePast = blendPoseInto(POSE_A, POSE_B, 1.5, { position: [0, 0, 0], target: [0, 0, 0] });
     expect(posePast.position).toEqual(POSE_B.position);
     expect(posePast.target).toEqual(POSE_B.target);
   });
@@ -57,7 +57,7 @@ describe('blendPose', () => {
     const samples = 100;
     for (let i = 1; i <= samples; i += 1) {
       const t = i / samples;
-      const pose = blendPose(POSE_A, POSE_B, t);
+      const pose = blendPoseInto(POSE_A, POSE_B, t, { position: [0, 0, 0], target: [0, 0, 0] });
       // Progress along z axis from 4.2 to 5.5.
       const progress = (pose.position[2] - 4.2) / (5.5 - 4.2);
       expect(progress).toBeGreaterThanOrEqual(previousProgress);
@@ -67,17 +67,17 @@ describe('blendPose', () => {
 
   it('eases in and out (acceleration at start, deceleration at end)', () => {
     // In cubic ease-in-out, factor at t=0.1 is 4*(0.1^3) = 0.004 (< 0.1, slow start).
-    const poseEarly = blendPose(POSE_A, POSE_B, 0.1);
+    const poseEarly = blendPoseInto(POSE_A, POSE_B, 0.1, { position: [0, 0, 0], target: [0, 0, 0] });
     const progressEarly = (poseEarly.position[2] - 4.2) / (5.5 - 4.2);
     expect(progressEarly).toBeLessThan(0.05);
 
     // At t=0.5, factor is exactly 0.5.
-    const poseMid = blendPose(POSE_A, POSE_B, 0.5);
+    const poseMid = blendPoseInto(POSE_A, POSE_B, 0.5, { position: [0, 0, 0], target: [0, 0, 0] });
     const progressMid = (poseMid.position[2] - 4.2) / (5.5 - 4.2);
     expect(progressMid).toBeCloseTo(0.5, 5);
 
     // At t=0.9, factor is 1 - 4*(0.1^3) = 0.996 (> 0.9, slow landing).
-    const poseLate = blendPose(POSE_A, POSE_B, 0.9);
+    const poseLate = blendPoseInto(POSE_A, POSE_B, 0.9, { position: [0, 0, 0], target: [0, 0, 0] });
     const progressLate = (poseLate.position[2] - 4.2) / (5.5 - 4.2);
     expect(progressLate).toBeGreaterThan(0.95);
   });
@@ -101,8 +101,12 @@ describe('blendPoseInto', () => {
     expect(first).toBe(destination);
     const second = blendPoseInto(POSE_A, POSE_B, 0.75, destination);
     expect(second).toBe(destination);
-    expect(second.position).toEqual(blendPose(POSE_A, POSE_B, 0.75).position);
-    expect(second.target).toEqual(blendPose(POSE_A, POSE_B, 0.75).target);
+    expect(second.position).toEqual(
+      blendPoseInto(POSE_A, POSE_B, 0.75, { position: [0, 0, 0], target: [0, 0, 0] }).position,
+    );
+    expect(second.target).toEqual(
+      blendPoseInto(POSE_A, POSE_B, 0.75, { position: [0, 0, 0], target: [0, 0, 0] }).target,
+    );
   });
 
   it('writes distinct destinations independently', () => {
@@ -111,15 +115,23 @@ describe('blendPoseInto', () => {
     const first = blendPoseInto(POSE_A, POSE_B, 0.25, firstDestination);
     const second = blendPoseInto(POSE_A, POSE_B, 0.75, secondDestination);
     expect(first).not.toBe(second);
-    expect(first.position).toEqual(blendPose(POSE_A, POSE_B, 0.25).position);
-    expect(first.target).toEqual(blendPose(POSE_A, POSE_B, 0.25).target);
-    expect(second.position).toEqual(blendPose(POSE_A, POSE_B, 0.75).position);
-    expect(second.target).toEqual(blendPose(POSE_A, POSE_B, 0.75).target);
+    expect(first.position).toEqual(
+      blendPoseInto(POSE_A, POSE_B, 0.25, { position: [0, 0, 0], target: [0, 0, 0] }).position,
+    );
+    expect(first.target).toEqual(
+      blendPoseInto(POSE_A, POSE_B, 0.25, { position: [0, 0, 0], target: [0, 0, 0] }).target,
+    );
+    expect(second.position).toEqual(
+      blendPoseInto(POSE_A, POSE_B, 0.75, { position: [0, 0, 0], target: [0, 0, 0] }).position,
+    );
+    expect(second.target).toEqual(
+      blendPoseInto(POSE_A, POSE_B, 0.75, { position: [0, 0, 0], target: [0, 0, 0] }).target,
+    );
   });
 
   it('writes safely when the destination is the from pose', () => {
     const from: Pose = { position: [...POSE_A.position], target: [...POSE_A.target] };
-    const expected = blendPose(from, POSE_B, 0.3);
+    const expected = blendPoseInto(from, POSE_B, 0.3, { position: [0, 0, 0], target: [0, 0, 0] });
     const out = blendPoseInto(from, POSE_B, 0.3, from);
     expect(out).toBe(from);
     expect(out.position).toEqual(expected.position);
@@ -128,7 +140,7 @@ describe('blendPoseInto', () => {
 
   it('writes safely when the destination is the to pose', () => {
     const to: Pose = { position: [...POSE_B.position], target: [...POSE_B.target] };
-    const expected = blendPose(POSE_A, to, 0.7);
+    const expected = blendPoseInto(POSE_A, to, 0.7, { position: [0, 0, 0], target: [0, 0, 0] });
     const out = blendPoseInto(POSE_A, to, 0.7, to);
     expect(out).toBe(to);
     expect(out.position).toEqual(expected.position);
