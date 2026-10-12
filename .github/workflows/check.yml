@@ -1,6 +1,6 @@
 # The gate on every push and pull request to main. No secrets and no deploy step: deploying stays
-# with the release process. CI runs only the webgl2 project; the webgpu project needs a headed browser
-# with a real adapter and runs locally.
+# with the release process. CI runs only the webgl2 project because it has no real GPU adapter.
+# The webgpu project runs locally with the installed Google Chrome, headless by default.
 name: check
 
 on:

@@ -125,8 +125,9 @@ type DissolveThreshold = typeof DISSOLVE_THRESHOLD;
 /**
  * GLTFLoader builds classic materials (loadMaterial, GLTFLoader.js lines 3596-3736; the default
  * type is MeshStandardMaterial from createDefaultMaterial, line 2321) and the renderer turns them
- * into node materials per build by copying every own property onto the node class for the type
- * (NodeLibrary.js lines 52-70, reached from NodeBuilder.prebuild, NodeBuilder.js line 3156). The
+ * into node materials per build by copying enumerable properties, including inherited ones,
+ * onto the node class for the type (node_modules/three/src/renderers/common/nodes/NodeLibrary.js
+ * lines 52-70, reached from NodeBuilder.prebuild, NodeBuilder.js line 3156). The
  * fade writes opacityNode on the classic instance and lets that copy carry it into the shader.
  * Material's type carries neither node slot, so the one assertion below widens to this structural
  * type.
@@ -361,9 +362,12 @@ export function createShowroom(options: ShowroomOptions): Showroom {
 
   /**
    * Fetches the bytes here rather than through GLTFLoader.load, because the loader's own
-   * FileLoader shares one AbortController with its LoadingManager (FileLoader.js line 133,
-   * LoadingManager.js lines 292-320) and GLTFLoader implements no abort() of its own, so
-   * cancelling one look that way would cancel the rotunda with it. Fetching and then calling
+   * FileLoader owns an AbortController (node_modules/three/src/loaders/FileLoader.js line 66)
+   * and combines its signal with the manager's when AbortSignal.any is available (line 133).
+   * FileLoader.abort() aborts only its controller (lines 355-358); LoadingManager owns and aborts
+   * a separate controller (node_modules/three/src/loaders/LoadingManager.js lines 292-320).
+   * GLTFLoader implements no abort() of its own; aborting the manager can also cancel the rotunda
+   * and other requests using that manager's signal. Fetching and then calling
    * parseAsync keeps the signal per request; the parse that follows an abort is skipped because
    * fetch rejects first.
    */
