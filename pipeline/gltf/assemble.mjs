@@ -28,6 +28,12 @@ export const assembledDir = resolve(workDir, 'assembled');
 
 const UNREAL_EXPORT_MARKER = '/assets-src/source/unreal/';
 
+/** Tests lexical containment using the path rules that produced the relative path. */
+export function isWithinExportRoot(exportRoot, candidate, paths = { relative, isAbsolute }) {
+  const fromRoot = paths.relative(exportRoot, candidate);
+  return fromRoot.split(/[\\/]/)[0] !== '..' && !paths.isAbsolute(fromRoot);
+}
+
 /**
  * Resolves a path recorded by Unreal beneath the current export root. Historical catalogues contain
  * absolute paths to the checkout that produced them; the asset itself is still portable because the
@@ -40,8 +46,7 @@ export function resolveExportFile(exportRoot, recordedPath) {
   const candidate = marker >= 0
     ? resolve(exportRoot, normalized.slice(marker + UNREAL_EXPORT_MARKER.length))
     : resolve(exportRoot, value);
-  const fromRoot = relative(resolve(exportRoot), candidate);
-  if (value === '' || fromRoot === '..' || fromRoot.startsWith(`..\\`) || isAbsolute(fromRoot)) {
+  if (value === '' || !isWithinExportRoot(resolve(exportRoot), candidate)) {
     throw new Error(`Export file must stay below ${exportRoot}: ${JSON.stringify(recordedPath)}`);
   }
   return candidate;
