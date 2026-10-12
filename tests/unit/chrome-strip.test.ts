@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { markFirstFrame } from '../../src/proof/marks';
 import type { CatalogLook } from '../../src/catalog/catalog';
 import { mountCatalogStrip } from '../../src/ui/catalog-strip';
 import type { CatalogStripHandle, CatalogStripOptions } from '../../src/ui/catalog-strip';
@@ -38,6 +39,7 @@ let root: HTMLElement;
 let strip: CatalogStripHandle | null = null;
 
 beforeEach(() => {
+  markFirstFrame();
   root = document.createElement('nav');
   document.body.appendChild(root);
 });

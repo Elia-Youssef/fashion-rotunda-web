@@ -154,6 +154,7 @@ function harness(search = '?look=second&variant=dark', half = false, hasDark = t
     renderer, canvas, routing, shell: { roots: { lightPanel: {} } },
     loop: { invalidate: vi.fn() }, resize: vi.fn(),
     markFirstFrame: new Function(`let firstFrameMarked = false; const FIRST_FRAME_MARK = 'first-frame';
+      const firstFrameListeners = new Set();
       ${markCode} return markFirstFrame;`)(),
   };
   const boot = new Function(...Object.keys(dependencies), compiled)(...Object.values(dependencies)) as {

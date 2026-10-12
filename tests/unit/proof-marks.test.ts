@@ -19,16 +19,20 @@ async function loadMarks(): Promise<typeof import('../../src/proof/marks')> {
 /** A Resource Timing entry shape without casting: a PerformanceEntry with the extra fields. */
 interface FakeResourceEntry extends PerformanceEntry {
   readonly transferSize: number;
+  readonly encodedBodySize: number;
   readonly responseEnd: number;
 }
 
-function fakeResource(name: string, transferSize: number, responseEnd: number): FakeResourceEntry {
+function fakeResource(
+  name: string, transferSize: number, responseEnd: number, encodedBodySize = transferSize,
+): FakeResourceEntry {
   const entry: FakeResourceEntry = {
     name,
     entryType: 'resource',
     startTime: 0,
     duration: responseEnd,
     transferSize,
+    encodedBodySize,
     responseEnd,
     // Never called; PerformanceEntry declares toJSON so the fake must carry one.
     toJSON: (): FakeResourceEntry => entry,
@@ -207,6 +211,7 @@ describe('snapshot', () => {
         '[{"direction":"down","from":"full","to":"ssgi-half","p95Ms":19.4,"budgetMs":16.7,"atMs":1042.1,"reason":"p95 19.4 ms > 16.7 ms"}]',
     });
     expect(snap).toEqual({
+      sceneFiles: null,
       loadMs: 50,
       payloadBytes: 9000,
       payloadNowBytes: 15000,
@@ -279,5 +284,37 @@ describe('snapshot', () => {
     expect(snap.gpu).toEqual({ p50: null, p95: null, available: false });
     expect(snap.post).toBe('off');
     expect(snap.cacheState).toBe('cold');
+  });
+});
+
+
+describe('scene-files scope', () => {
+  it.each(['full', 'half'] as const)('reads %s encoded body bytes for the opening look on cold and warm loads', async (set) => {
+    const marks = await loadMarks();
+    const prefix = set === 'half' ? '/content/half/' : '/content/';
+    const opening = 'looks/zoot-suit.glb';
+    const bodySizes = [5_000_000, 1_000_000, 2_000_000];
+    for (const cold of [false, true]) {
+      const entries = ['rotunda.glb', 'plinth.glb', opening].map((file, index) =>
+        fakeResource(`http://localhost${prefix}${file}?v=1`, cold ? bodySizes[index] + 300 : 0,
+          20, bodySizes[index]));
+      entries.push(fakeResource(`http://localhost${prefix}looks/wallis-dress.glb`, 999, 60, 900));
+      entries.push(fakeResource('http://localhost/content/thumbs/zoot-suit.jpg', 500, 10, 200));
+      entries.push({ ...fakeResource(`http://localhost${prefix}looks/later.glb`, 999, 40, 900), startTime: 30 });
+      expect(marks.sceneFilesPayload(entries, 50)).toEqual({
+        bytes: 8_000_000,
+        budgetBytes: set === 'half' ? 6_000_000 : 10_000_000,
+      });
+      expect(marks.sceneFilesPayload(entries, null)).toBeNull();
+      expect(marks.sceneFilesPayload(entries.slice(1), 50)).toBeNull();
+    }
+  });
+
+  it('uses encoded rather than decoded body bytes when responses are compressed', async () => {
+    const marks = await loadMarks();
+    const entries = ['rotunda.glb', 'plinth.glb', 'looks/opening.glb'].map((file) => ({
+      ...fakeResource(`http://localhost/content/${file}`, 500, 20, 200), decodedBodySize: 1_000,
+    }));
+    expect(marks.sceneFilesPayload(entries, 50)).toEqual({ bytes: 600, budgetBytes: 10_000_000 });
   });
 });

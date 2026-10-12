@@ -4,6 +4,7 @@
 // handle, so the chrome module stays the one place that talks to the showroom.
 
 import './product-card.css';
+import { afterFirstFrame } from '../proof/marks';
 
 import type { CatalogLook } from '../catalog/catalog';
 
@@ -103,6 +104,7 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
   const listeners = new AbortController();
   const signal = listeners.signal;
   let swatchListeners: AbortController | null = null;
+  let thumbnailAssignment: AbortController | null = null;
 
   rotateButton.addEventListener(
     'click',
@@ -221,6 +223,9 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
 
   function renderLook(look: CatalogLook | null): void {
     retireSwatches();
+    thumbnailAssignment?.abort();
+    thumbnailAssignment = new AbortController();
+    thumb.removeAttribute('src');
     if (look === null) {
       name.textContent = '';
       description.textContent = 'No look on the plinth yet.';
@@ -231,10 +236,14 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
     name.textContent = look.name;
     description.textContent = look.description;
     const url = options.thumbnailUrl(look);
-    thumb.hidden = url === '';
-    thumbEmpty.hidden = url !== '';
+    thumb.hidden = true;
+    thumbEmpty.hidden = false;
     if (url !== '') {
-      thumb.src = url;
+      afterFirstFrame(() => {
+        thumb.src = url;
+        thumb.hidden = false;
+        thumbEmpty.hidden = true;
+      }, thumbnailAssignment.signal);
       thumb.alt = look.name;
     }
     renderSwatches(look);
@@ -288,6 +297,7 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
     },
     dispose(): void {
       listeners.abort();
+      thumbnailAssignment?.abort();
       retireSwatches();
       card.remove();
     },

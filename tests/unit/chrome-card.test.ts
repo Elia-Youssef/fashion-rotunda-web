@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { markFirstFrame } from '../../src/proof/marks';
 import type { CatalogLook } from '../../src/catalog/catalog';
 import { mountProductCard } from '../../src/ui/product-card';
 import type { ProductCardActions, ProductCardHandle } from '../../src/ui/product-card';
@@ -25,6 +26,7 @@ let root: HTMLElement;
 let card: ProductCardHandle | null = null;
 
 beforeEach(() => {
+  markFirstFrame();
   root = document.createElement('aside');
   document.body.appendChild(root);
 });

@@ -32,6 +32,8 @@ interface OrbitMeasurement {
 }
 
 const DEFAULT_INTERVAL_MS = 500;
+// The content report and loading readout use decimal megabytes.
+const BYTES_PER_MB = 1_000_000;
 
 function formatMs(value: number | null): string {
   return value === null ? 'null' : `${value.toFixed(1)} ms`;
@@ -130,7 +132,8 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
 
   const rows = new Map<string, { dt: HTMLElement; dd: HTMLElement }>();
   for (const term of [
-    'load', 'payload', 'payload now', 'draw calls', 'triangles', 'backend', 'tier',
+    'load', 'scene files', 'all requests up to first frame', 'all requests so far',
+    'draw calls', 'triangles', 'backend', 'tier',
     'pixel ratio', 'render scale', 'gpu', 'frame p50', 'frame p95', 'gpu p50', 'gpu p95',
     'data-post', 'governor', 'governor log', 'cache', 'look switch', 'orbit',
   ]) {
@@ -157,8 +160,12 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
     const snap = options.read();
 
     renderRow('load', formatMs(snap.loadMs));
-    renderRow('payload', `${snap.payloadBytes} bytes`);
-    renderRow('payload now', `${snap.payloadNowBytes} bytes`);
+    const scene = snap.sceneFiles;
+    renderRow('scene files', scene == null ? 'not available' :
+      `${(scene.bytes / BYTES_PER_MB).toFixed(2)} MB / ${(scene.budgetBytes / BYTES_PER_MB).toFixed(2)} MB ` +
+      `(${scene.bytes <= scene.budgetBytes ? 'inside' : 'over'})`);
+    renderRow('all requests up to first frame', `${snap.payloadBytes} bytes`);
+    renderRow('all requests so far', `${snap.payloadNowBytes} bytes`);
     renderRow('draw calls', `${snap.drawCalls} calls`);
     renderRow('triangles', `${snap.triangles} triangles`);
     renderRow('backend', snap.backend);

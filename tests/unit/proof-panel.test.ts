@@ -11,6 +11,7 @@ function sampleSnapshot(): ProofSnapshot {
     loadMs: 1234.5,
     payloadBytes: 3500,
     payloadNowBytes: 9100,
+    sceneFiles: { bytes: 9_471_968, budgetBytes: 10_000_000 },
     drawCalls: 42,
     triangles: 123456,
     backend: 'webgpu',
@@ -154,7 +155,7 @@ describe('mountProofPanel', () => {
     const dl = root.querySelector('dl')!;
     const mounted = Array.from(dl.children);
     const prefix = [
-      'load', '1234.5 ms', 'payload', '3500 bytes', 'payload now', '9100 bytes',
+      'load', '1234.5 ms', 'scene files', '9.47 MB / 10.00 MB (inside)', 'all requests up to first frame', '3500 bytes', 'all requests so far', '9100 bytes',
       'draw calls', '42 calls', 'triangles', '123456 triangles', 'backend', 'webgpu',
       'tier', 'high', 'pixel ratio', '2.00', 'render scale', '1', 'gpu', 'NVIDIA GeForce RTX 4090',
       'frame p50', '8.2 ms', 'frame p95', '14.5 ms',
@@ -179,8 +180,8 @@ describe('mountProofPanel', () => {
     handle.refresh();
     const changes = mutations.takeRecords();
     expect(changes).toHaveLength(1);
-    expect(changes[0].target).toBe(mounted[5]);
-    prefix[5] = '10000 bytes';
+    expect(changes[0].target).toBe(mounted[7]);
+    prefix[7] = '10000 bytes';
     assertRows(['gpu p50', '6.1 ms', 'gpu p95', '11.4 ms']);
     snap = { ...snap, gpu: { p50: null, p95: null, available: false } };
     handle.refresh();
@@ -191,7 +192,7 @@ describe('mountProofPanel', () => {
     expect(Array.from(dl.children)).toEqual(mounted);
     snap = { ...snap, payloadNowBytes: 12000, cacheState: 'warm', governorLog: 'broken' };
     handle.refresh();
-    prefix[5] = '12000 bytes';
+    prefix[7] = '12000 bytes';
     suffix[5] = 'unreadable governor log';
     suffix[7] = 'warm';
     assertRows(['gpu p50', 'null', 'gpu p95', 'null']);
@@ -362,9 +363,9 @@ describe('mountProofPanel', () => {
     const text = section?.textContent ?? '';
     expect(text).toContain('load');
     expect(text).toContain('1234.5 ms');
-    expect(text).toContain('payload');
+    expect(text).toContain('all requests up to first frame');
     expect(text).toContain('3500 bytes');
-    expect(text).toContain('payload now');
+    expect(text).toContain('all requests so far');
     expect(text).toContain('9100 bytes');
     expect(text).toContain('draw calls');
     expect(text).toContain('42 calls');
@@ -544,4 +545,23 @@ describe('mountProofPanel', () => {
 
     root.remove();
   });
+});
+
+
+it('keeps scene-file budgets separate from both browser request totals', () => {
+  const root = document.createElement('div');
+  let snap = sampleSnapshot();
+  const handle = mountProofPanel(root, { read: () => snap, measure: async () => {} });
+  const row = (term: string): string | null | undefined =>
+    [...root.querySelectorAll('dt')].find((node) => node.textContent === term)?.nextElementSibling?.textContent;
+  expect(row('scene files')).toBe('9.47 MB / 10.00 MB (inside)');
+  expect(row('all requests up to first frame')).toBe('3500 bytes');
+  expect(row('all requests so far')).toBe('9100 bytes');
+  snap = { ...snap, sceneFiles: { bytes: 6_000_001, budgetBytes: 6_000_000 } };
+  handle.refresh();
+  expect(row('scene files')).toBe('6.00 MB / 6.00 MB (over)');
+  snap = { ...snap, sceneFiles: null };
+  handle.refresh();
+  expect(row('scene files')).toBe('not available');
+  handle.dispose();
 });

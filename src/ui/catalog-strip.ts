@@ -3,6 +3,7 @@
 // clicks upward; which look loads, and what busy means, belong to the chrome module.
 
 import './catalog-strip.css';
+import { afterFirstFrame } from '../proof/marks';
 
 import type { CatalogLook } from '../catalog/catalog';
 
@@ -84,7 +85,7 @@ export function mountCatalogStrip(
     if (url !== '') {
       const image = document.createElement('img');
       image.className = 'catalog-strip__thumb';
-      image.src = url;
+      afterFirstFrame(() => { image.src = url; }, listeners.signal);
       // The hidden label below carries the name; an empty alt keeps the thumbnail decorative so
       // a screen reader does not read the look name twice.
       image.alt = '';

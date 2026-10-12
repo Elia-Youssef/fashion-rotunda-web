@@ -8,6 +8,67 @@ const FIRST_FRAME_MARK = 'first-frame';
 // markFirstFrame call must be a no-op even if several code paths race to report it.
 let firstFrameMarked = false;
 let firstFrameTime: number | null = null;
+const firstFrameListeners = new Set<() => void>();
+
+/** Runs after the first scene draw, or immediately when its mark already exists. */
+export function afterFirstFrame(callback: () => void, signal: AbortSignal): void {
+  if (signal.aborted) return;
+  if (firstFrameMs() !== null) {
+    callback();
+    return;
+  }
+  const cancel = (): void => { firstFrameListeners.delete(ready); };
+  const ready = (): void => {
+    firstFrameListeners.delete(ready);
+    signal.removeEventListener('abort', cancel);
+    if (!signal.aborted) callback();
+  };
+  firstFrameListeners.add(ready);
+  signal.addEventListener('abort', cancel, { once: true });
+}
+
+// Content budgets use decimal MB and cover only rotunda, plinth and the opening look.
+const SCENE_BUDGET_BYTES = { full: 10_000_000, half: 6_000_000 };
+export interface SceneFilesPayload {
+  bytes: number;
+  budgetBytes: number;
+}
+
+/**
+ * Identify the loaded set and opening look from responses completed by the scene mark.
+ * encodedBodySize excludes headers and remains the body size on cold and warm loads. It equals
+ * file bytes for the current uncompressed GLB responses; if a server compresses them, this row
+ * shows compressed body bytes instead of the uncompressed file size.
+ */
+export function sceneFilesPayload(
+  entries: PerformanceEntry[], limit: number | null,
+): SceneFilesPayload | null {
+  if (limit === null) return null;
+  const completed = entries.filter((entry) => {
+    const resource: { entryType: string; responseEnd?: number } = entry;
+    return resource.entryType === 'resource' && typeof resource.responseEnd === 'number' &&
+      resource.responseEnd <= limit;
+  }).sort((a, b) => a.startTime - b.startTime).map((entry) => {
+    let path = '';
+    try { path = new URL(entry.name, 'http://localhost').pathname; } catch { /* Ignore invalid URLs. */ }
+    const resource: { entryType: string; encodedBodySize?: number } = entry;
+    return { path, bytes: resource.encodedBodySize };
+  });
+  for (const set of ['full', 'half'] as const) {
+    const prefix = set === 'half' ? '/content/half/' : '/content/';
+    const rotunda = completed.find((entry) => entry.path === `${prefix}rotunda.glb`);
+    const plinth = completed.find((entry) => entry.path === `${prefix}plinth.glb`);
+    const look = completed.find((entry) => entry.path.startsWith(`${prefix}looks/`) &&
+      entry.path.endsWith('.glb'));
+    if (typeof rotunda?.bytes !== 'number' || typeof plinth?.bytes !== 'number' ||
+      typeof look?.bytes !== 'number') continue;
+    return {
+      bytes: rotunda.bytes + plinth.bytes + look.bytes,
+      budgetBytes: SCENE_BUDGET_BYTES[set],
+    };
+  }
+  return null;
+}
 
 /**
  * Records the User Timing mark 'first-frame' once. Later calls are ignored. The optional clock
@@ -23,6 +84,7 @@ export function markFirstFrame(now?: () => number): void {
   } else {
     performance.mark(FIRST_FRAME_MARK, { startTime: now() });
   }
+  for (const ready of [...firstFrameListeners]) ready();
 }
 
 /**
@@ -122,6 +184,7 @@ export interface ProofSnapshot {
    * sees what the load cost and what the whole session cost once the looks have been fetched.
    */
   payloadNowBytes: number;
+  sceneFiles?: SceneFilesPayload | null;
   drawCalls: number;
   triangles: number;
   backend: string;
@@ -187,6 +250,7 @@ export function snapshot(input: SnapshotInput): ProofSnapshot {
     loadMs,
     payloadBytes: loadMs === null ? 0 : sumPayload(resources, loadMs),
     payloadNowBytes: sumPayload(resources, null),
+    sceneFiles: sceneFilesPayload(resources, loadMs),
     drawCalls: input.info.render.drawCalls,
     triangles: input.info.render.triangles,
     backend: input.backend,
