@@ -13,6 +13,8 @@ import type { Page } from '@playwright/test';
 
 const SCENE_READY_TIMEOUT = 60_000;
 const POLL_TIMEOUT = 15_000;
+/** Flooring the backing dimensions leaves less than one pixel of uncertainty per axis. */
+const BACKING_ROUNDING_PX = 1;
 /** The high tier's frame budget and the comfortable threshold derived from it. */
 const BUDGET_MS = 16.7;
 const THRESHOLD_MS = BUDGET_MS * 0.8;
@@ -62,6 +64,58 @@ function watchPageErrors(page: Page, errors: string[]): void {
 
 async function diagnostics(page: Page): Promise<GovernorDiagnosticsJson | null> {
   return await page.evaluate(() => window.archvizE2E?.governor.diagnostics() ?? null);
+}
+
+/** Resize acknowledgement must precede a drawn frame, even when the level stays unchanged. */
+async function resizeAndReadDiagnostics(
+  page: Page,
+  viewport: { width: number; height: number },
+): Promise<GovernorDiagnosticsJson | null> {
+  const canvas = page.locator('canvas#scene');
+  const readSize = () => canvas.evaluate((element) => {
+    const surface = element as HTMLCanvasElement;
+    return {
+      boxWidth: surface.clientWidth,
+      boxHeight: surface.clientHeight,
+      width: surface.width,
+      height: surface.height,
+      frames: Number(surface.dataset.frames),
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    };
+  });
+  const before = await readSize();
+  expect(Number.isFinite(before.frames), 'a drawn-frame baseline exists before resizing').toBe(true);
+  await page.setViewportSize(viewport);
+  let resized = before;
+  await expect.poll(async () => {
+    resized = await readSize();
+    // Three floors both backing dimensions after applying the same effective pixel ratio.
+    // The two possible ratio intervals must overlap; this also permits scaler adaptation.
+    const ratioMin = Math.max(resized.width / resized.boxWidth, resized.height / resized.boxHeight);
+    const ratioMax = Math.min(
+      (resized.width + BACKING_ROUNDING_PX) / resized.boxWidth,
+      (resized.height + BACKING_ROUNDING_PX) / resized.boxHeight,
+    );
+    return resized.viewportWidth === viewport.width && resized.viewportHeight === viewport.height &&
+      resized.boxWidth > 0 && resized.boxHeight > 0 &&
+      resized.boxWidth !== before.boxWidth && resized.boxHeight !== before.boxHeight &&
+      resized.width > 0 && resized.height > 0 &&
+      resized.width !== before.width && resized.height !== before.height && ratioMin < ratioMax;
+  }, {
+    timeout: POLL_TIMEOUT,
+    message: 'the resized canvas box has a matching new drawing buffer',
+  }).toBe(true);
+
+  // A pre-resize frame can advance the original counter while resize delivery is pending.
+  // Require a frame beyond the size acknowledgement too, and wake the render-on-demand loop.
+  const acknowledgedFrames = Math.max(before.frames, resized.frames);
+  await page.mouse.move(viewport.width / 2, viewport.height / 2);
+  await expect.poll(async () => (await readSize()).frames, {
+    timeout: POLL_TIMEOUT,
+    message: 'a frame is drawn after the resized drawing buffer is acknowledged',
+  }).toBeGreaterThan(acknowledgedFrames);
+  return diagnostics(page);
 }
 
 /**
@@ -219,10 +273,14 @@ test('the governor degrades, holds its cooldown, and recovers on headed webgpu',
   // 8a. A CSS-box resize during qualification: the level, the cooldown-free status and the
   // accumulated qualification all survive the post-chain rebuild.
   const elapsedBeforeResize = shortGood?.recoveryElapsedMs ?? 0;
-  await page.setViewportSize({ width: 1000, height: 700 });
-  await expect
-    .poll(async () => (await canvas.getAttribute('data-governor')) ?? '', { timeout: POLL_TIMEOUT })
-    .toContain('level=no-ssr');
+  const qualificationAfterResize = await resizeAndReadDiagnostics(page, { width: 1000, height: 700 });
+  expect(qualificationAfterResize, 'the rebuilt graph has governor diagnostics').not.toBeNull();
+  expect(qualificationAfterResize?.level, 'the rebuilt graph preserves the qualifying level').toBe('no-ssr');
+  expect(qualificationAfterResize?.recoveryElapsedMs, 'the rebuilt graph preserves qualification')
+    .toBe(shortGood?.recoveryElapsedMs);
+  expect(qualificationAfterResize?.cooldownRemainingMs, 'the rebuilt graph preserves cooldown')
+    .toBe(shortGood?.cooldownRemainingMs);
+  expect(qualificationAfterResize?.events, 'the rebuild keeps the decision history').toEqual(shortGood?.events);
   const afterResize = await drive(1, 8, 100, true);
   expect(afterResize?.level, 'resize does not change the level').toBe('no-ssr');
   expect(
@@ -276,13 +334,16 @@ test('the governor degrades, holds its cooldown, and recovers on headed webgpu',
   // 8b. A resize during the recovery's cooldown keeps the remaining cooldown.
   const cooldownBefore = await diagnostics(page);
   expect(cooldownBefore?.cooldownRemainingMs).toBeGreaterThan(0);
-  await page.setViewportSize({ width: 1280, height: 800 });
-  const cooldownAfter = await diagnostics(page);
+  const cooldownAfter = await resizeAndReadDiagnostics(page, { width: 1280, height: 800 });
+  expect(cooldownAfter, 'the rebuilt graph has governor diagnostics during cooldown').not.toBeNull();
   expect(cooldownAfter?.level, 'resize during cooldown keeps the level').toBe('full');
   expect(
     cooldownAfter?.cooldownRemainingMs ?? 0,
     'resize during cooldown preserves the remaining cooldown',
-  ).toBeGreaterThan(0);
+  ).toBe(cooldownBefore?.cooldownRemainingMs);
+  expect(cooldownAfter?.recoveryElapsedMs, 'the cooldown rebuild preserves qualification')
+    .toBe(cooldownBefore?.recoveryElapsedMs);
+  expect(cooldownAfter?.events, 'the cooldown rebuild keeps the decision history').toEqual(cooldownBefore?.events);
   const recoveredReading = await canvas.getAttribute('data-governor');
 
   // 10. Build a fresh qualifying run, then dispatch the real page lifecycle events rather than
