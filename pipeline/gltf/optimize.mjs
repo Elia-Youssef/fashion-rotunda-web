@@ -20,14 +20,14 @@
 import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { pathToFileURL } from 'node:url';
 
-import { Logger, Material, NodeIO, PropertyType, Texture } from '@gltf-transform/core';
+import { Logger, NodeIO, PropertyType } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import {
   cloneDocument,
   dedup,
   instance,
-  listTextureSlots,
   meshopt,
   prune,
   simplifyPrimitive,
@@ -44,13 +44,14 @@ import { assemble, assembledDir } from './assemble.mjs';
 import { writeCollision } from './collision.mjs';
 import { budgetRows, formatBudgetTable, formatMb } from './lib/budget.mjs';
 import { buildManifest, fileEntry, shippedJson, textureEntry } from './lib/manifest.mjs';
-import { colorSpaceOfSlots, encodingOfSlots, isMannequinMaterial, ktx2Format } from './lib/naming.mjs';
+import { ktx2Format } from './lib/naming.mjs';
 import { validateOutputContract } from './lib/output-contract.mjs';
 import { planFactorResets, planRepairs } from './lib/repairs.mjs';
 import { shouldPreserveSpecular } from './lib/specular.mjs';
 import { canonicalizeSourceTextures, getOrCreateSourceTexture } from './lib/texture-authority.mjs';
 
-import { FLOOR_MESH_NAME, needsResize, targetSize, textureCapForUsage } from './lib/sizing.mjs';
+import { needsResize } from './lib/sizing.mjs';
+import { planTextures } from './lib/texture-plan.mjs';
 
 /** instance() needs this many nodes on one mesh before it makes a batch. The rotunda's repeated
  *  beams and columns sit at eight each; the walls at two and four stay as they are. */
@@ -261,10 +262,9 @@ async function finish(io, document, item, set, out, errors) {
     document.disposeExtension('KHR_materials_clearcoat');
     decimateGarments(document, item, set);
   }
-  const floorTextures = floorTextureSet(document);
-  const mannequinTextures = mannequinTextureSet(document);
-  await resizeTextures(document, set, floorTextures, mannequinTextures, item);
-  const textures = await encodeTextures(document, set, item, floorTextures, errors);
+  const texturePlan = planTextures(document, set, item);
+  await resizeTextures(texturePlan, set, item);
+  const textures = await encodeTextures(document, texturePlan, set, item, errors);
   await document.transform(meshopt({ encoder: MeshoptEncoder, level: 'high' }));
   // keepSolidTextures: every image is KTX2 by now and the solid-colour check decodes pixels. The
   // same check already ran on the PNGs in prepare().
@@ -382,18 +382,9 @@ function decimateGarments(document, item, set) {
 }
 
 /** Resizes each texture to its cap for this set. sharp is the only image resizer in the pipeline. */
-async function resizeTextures(document, set, floorTextures, mannequinTextures, item) {
-  for (const texture of document.getRoot().listTextures()) {
-    const size = texture.getSize();
+async function resizeTextures(texturePlan, set, item) {
+  for (const { texture, size, target } of texturePlan) {
     if (!size) continue;
-    const slots = listTextureSlots(texture);
-    const cap = textureCapForUsage(set, slots, {
-      file: item.file,
-      look: item.look,
-      floor: floorTextures.has(texture),
-      mannequin: mannequinTextures.has(texture),
-    });
-    const target = targetSize(size, cap);
     if (!needsResize(size, target)) continue;
     const image = texture.getImage();
     const resized = await sharp(Buffer.from(image.buffer, image.byteOffset, image.byteLength))
@@ -415,15 +406,14 @@ async function resizeTextures(document, set, floorTextures, mannequinTextures, i
  * jobs is 1 on purpose: @gltf-transform/cli only passes `--threads` when jobs > 1, and the cap it
  * computes (3 * cores / textureCount) would hand a single texture three threads out of twenty-four.
  */
-async function encodeTextures(document, set, item, floorTextures, errors) {
-  uniqueTextureNames(document);
+async function encodeTextures(document, texturePlan, set, item, errors) {
+  // Apply all planned names together, after resize and before the first exact-name encoder call.
+  for (const { texture, name } of texturePlan) {
+    if (name !== texture.getName()) texture.setName(name);
+  }
   const entries = [];
-  for (const texture of document.getRoot().listTextures()) {
-    const slots = listTextureSlots(texture);
-    const encoding = encodingOfSlots(slots);
-    const colorSpace = colorSpaceOfSlots(slots);
+  for (const { texture, name, pattern, encoding, colorSpace, floor } of texturePlan) {
     const size = texture.getSize() ?? [0, 0];
-    const name = texture.getName();
     const before = texture.getImage()?.byteLength ?? 0;
     const started = performance.now();
     let message = null;
@@ -432,7 +422,7 @@ async function encodeTextures(document, set, item, floorTextures, errors) {
         toktx({
           mode: encoding === 'uastc' ? Mode.UASTC : Mode.ETC1S,
           encoder: sharp,
-          pattern: exactName(name),
+          pattern,
           jobs: 1,
         }),
       );
@@ -453,7 +443,7 @@ async function encodeTextures(document, set, item, floorTextures, errors) {
           format: texture.getMimeType() === 'image/jpeg' ? 'jpeg' : 'png',
           colorSpace,
           bytes: texture.getImage()?.byteLength ?? 0,
-          floor: floorTextures.has(texture),
+          floor,
         }),
       );
       continue;
@@ -472,85 +462,11 @@ async function encodeTextures(document, set, item, floorTextures, errors) {
         format: ktx2Format(encoding),
         colorSpace,
         bytes: after,
-        floor: floorTextures.has(texture),
+        floor,
       }),
     );
   }
   return entries;
-}
-
-/** toktx matches a texture by name, so two textures may not share one and none may be nameless. */
-function uniqueTextureNames(document) {
-  const seen = new Set();
-  let index = 0;
-  for (const texture of document.getRoot().listTextures()) {
-    let name = texture.getName() || `texture-${index}`;
-    if (seen.has(name)) {
-      let suffix = 2;
-      while (seen.has(`${name}-${suffix}`)) suffix += 1;
-      name = `${name}-${suffix}`;
-    }
-    if (name !== texture.getName()) texture.setName(name);
-    seen.add(name);
-    index += 1;
-  }
-}
-
-function exactName(name) {
-  return new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
-}
-
-/** The textures of the one mesh allowed the wider cap. */
-function floorTextureSet(document) {
-  const floorMaterials = new Set();
-  for (const mesh of document.getRoot().listMeshes()) {
-    if (mesh.getName() !== FLOOR_MESH_NAME) continue;
-    for (const primitive of mesh.listPrimitives()) {
-      const material = primitive.getMaterial();
-      if (material) floorMaterials.add(material);
-    }
-  }
-  return texturesWhere(document, (material) => floorMaterials.has(material));
-}
-
-function mannequinTextureSet(document) {
-  return texturesWhere(document, (material) => isMannequinMaterial(material.getName()));
-}
-
-/** Every texture reachable from a material the predicate accepts, extension slots included. */
-function texturesWhere(document, predicate) {
-  const result = new Set();
-  for (const texture of document.getRoot().listTextures()) {
-    for (const material of materialsOfTexture(texture)) {
-      if (predicate(material)) {
-        result.add(texture);
-        break;
-      }
-    }
-  }
-  return result;
-}
-
-/** Walks up from a texture to the materials that use it, through extension properties such as
- *  Clearcoat, whose textures are not direct children of the material. */
-function materialsOfTexture(texture) {
-  const materials = new Set();
-  const seen = new Set();
-  const stack = [texture];
-  while (stack.length > 0) {
-    const node = stack.pop();
-    for (const parent of node.listParents()) {
-      if (parent instanceof Material) {
-        materials.add(parent);
-        continue;
-      }
-      if (parent.propertyType === PropertyType.ROOT || parent instanceof Texture) continue;
-      if (seen.has(parent)) continue;
-      seen.add(parent);
-      stack.push(parent);
-    }
-  }
-  return materials;
 }
 
 function garmentPrimitives(document) {
@@ -645,4 +561,6 @@ function copyBasisTranscoder(out) {
   console.log('basis: transcoder copied from three/examples/jsm/libs/basis');
 }
 
-await main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}
