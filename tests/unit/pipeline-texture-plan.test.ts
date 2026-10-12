@@ -167,6 +167,8 @@ describe('texture plan', () => {
   });
 });
 
+// Importing the whole optimizer and its dependencies exceeded the default 5 s under load.
+const OPTIMIZER_IMPORT_TIMEOUT_MS = 30_000;
 it('imports the optimizer without starting its CLI work or altering PATH', async () => {
   const pipelineEnv = vi.fn(() => { throw new Error('CLI work started during import'); });
   vi.doMock('../../pipeline/config.mjs', async (original) => ({
@@ -182,4 +184,4 @@ it('imports the optimizer without starting its CLI work or altering PATH', async
   } finally {
     vi.doUnmock('../../pipeline/config.mjs');
   }
-});
+}, OPTIMIZER_IMPORT_TIMEOUT_MS);
