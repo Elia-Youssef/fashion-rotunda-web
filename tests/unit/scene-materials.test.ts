@@ -3,7 +3,8 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Mesh, MeshPhysicalMaterial, MeshStandardMaterial } from 'three/webgpu';
-import { describe, expect, it } from 'vitest';
+import type { Material } from 'three/webgpu';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   DOME_GLASS_MATERIAL,
@@ -13,6 +14,10 @@ import {
   tuningFor,
 } from '../../src/scene/materials';
 import type { MaterialTuning } from '../../src/scene/materials';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 /**
  * Extracts material names from a glb file by reading its JSON chunk header.
@@ -266,5 +271,66 @@ describe('applyTuning', () => {
       throw new Error('later variant material did not upgrade');
     }
     expect(root.material.sheen).toBe(1);
+  });
+
+  it('registers both sides of every physical upgrade before replacement', () => {
+    const physical = new MeshPhysicalMaterial({ roughness: 0.4 });
+    physical.name = 'MI_Marble_Nero_Base';
+    const inPlace = new Mesh(undefined, physical);
+    const acquiredInPlace: Material[] = [];
+    applyTuning(inPlace, requireTuning('MI_Marble_Nero_Base'), (material) =>
+      acquiredInPlace.push(material),
+    );
+    // Tuning a material that is already physical displaces nothing and creates nothing.
+    expect(acquiredInPlace).toEqual([]);
+
+    const standard = new MeshStandardMaterial({ roughness: 0.5 });
+    standard.name = 'MI_Marble_Nero_Base';
+    const mesh = new Mesh(undefined, standard);
+    const acquired: Material[] = [];
+    const insideCopy: { assigned: unknown; acquired: Material[] }[] = [];
+    const realCopy = MeshStandardMaterial.prototype.copy;
+    vi.spyOn(MeshStandardMaterial.prototype, 'copy').mockImplementation(function (
+      this: MeshStandardMaterial,
+      source: Material,
+    ) {
+      insideCopy.push({ assigned: mesh.material, acquired: [...acquired] });
+      return realCopy.call(this, source);
+    });
+
+    const applied = applyTuning(mesh, requireTuning('MI_Marble_Nero_Base'), (material) =>
+      acquired.push(material),
+    );
+
+    expect(mesh.material).toBe(applied);
+    // The displaced material first, then the new instance, and nothing else.
+    expect(acquired).toEqual([standard, applied]);
+    // Inside the copy the handoff has already happened and the mesh still wears the material
+    // being displaced: both facts are what a throwing copy would rely on.
+    expect(insideCopy).toEqual([{ assigned: standard, acquired: [standard, applied] }]);
+  });
+
+  it('owns the new instance when copy throws', () => {
+    const standard = new MeshStandardMaterial();
+    standard.name = 'MI_Marble_Nero_Base';
+    const mesh = new Mesh(undefined, standard);
+    const acquired: Material[] = [];
+    const failure = new Error('material copy failed');
+    vi.spyOn(MeshStandardMaterial.prototype, 'copy').mockImplementation(() => {
+      throw failure;
+    });
+
+    expect(() =>
+      applyTuning(mesh, requireTuning('MI_Marble_Nero_Base'), (material) =>
+        acquired.push(material),
+      ),
+    ).toThrow(failure);
+
+    // The failed upgrade leaves the mesh untouched, and both sides of the handoff are owned:
+    // the displacement never happened, and the replacement never reached a mesh.
+    expect(mesh.material).toBe(standard);
+    expect(acquired[0]).toBe(standard);
+    expect(acquired).toHaveLength(2);
+    expect(acquired[1]).toBeInstanceOf(MeshPhysicalMaterial);
   });
 });

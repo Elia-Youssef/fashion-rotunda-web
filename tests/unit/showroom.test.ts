@@ -78,7 +78,10 @@ function lookFixture(name: string) {
   return { gltf, root, geometry, mannequin, garment, materials, parser, disposal };
 }
 
-function harness(beforeMount?: ShowroomOptions['beforeMount']) {
+function harness(
+  beforeMount?: ShowroomOptions['beforeMount'],
+  firstDefaultVariant?: string,
+) {
   const catalog: Catalog = {
     version: 1,
     environment: { file: 'sky.hdr' },
@@ -86,7 +89,9 @@ function harness(beforeMount?: ShowroomOptions['beforeMount']) {
     plinth: { file: 'plinth.glb' },
     looks: ['first', 'second'].map((id) => ({
       id, name: id, description: id, thumbnail: null, file: `looks/${id}.glb`,
-      variants: VARIANTS, defaultVariant: 'base', mannequinNode: 'mannequin',
+      variants: VARIANTS,
+      defaultVariant: id === 'first' ? (firstDefaultVariant ?? 'base') : 'base',
+      mannequinNode: 'mannequin',
     })),
     views: { proof: { position: [0, 2, 5], target: [0, 1, 0], fov: 45 } },
   };
@@ -237,6 +242,60 @@ describe('createShowroom', () => {
     for (const dispose of second.disposal.materials) expect(dispose).not.toHaveBeenCalled();
     expect(second.disposal.original).not.toHaveBeenCalled();
     expect(second.disposal.texture).not.toHaveBeenCalled();
+  });
+
+  it('retires initial displaced materials with the look', async () => {
+    const { showroom, first } = harness();
+    const physicalDispose = vi.spyOn(MeshPhysicalMaterial.prototype, 'dispose');
+    // The mannequin arrives from the parser in a tuned standard material, and the load tunes
+    // it before anything collects the meshes, so the displaced original is owned only through
+    // the handoff the tuning itself makes.
+    (first.mannequin.material as MeshStandardMaterial).name = 'MI_Metal_Brass_02';
+    await showroom.showLook('first');
+    // The default swatch swap parked the upgrade and put the base variant on the mesh.
+    expect(first.mannequin.material).toBe(first.materials[0]);
+    expect(first.mannequin.userData['originalMaterial']).toBeInstanceOf(MeshPhysicalMaterial);
+
+    await showroom.showLook('second');
+    await finishFade(showroom);
+
+    // The displaced parse original goes with the look it was displaced from, the parked
+    // upgrade with it, and the shared texture exactly once.
+    expect(first.disposal.original).toHaveBeenCalledTimes(1);
+    expect(physicalDispose).toHaveBeenCalledTimes(1);
+    expect(first.disposal.materials[0]).toHaveBeenCalledTimes(1);
+    expect(first.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(first.disposal.texture).toHaveBeenCalledTimes(1);
+  });
+
+  it('disposes a shared displaced material and its shared texture exactly once', async () => {
+    const { showroom, first } = harness();
+    // One material instance behind two meshes, the way one glTF material index shared by two
+    // primitives parses: each mesh is handed its own upgrade, the shared original twice.
+    const texture = new Texture();
+    const textureDispose = vi.spyOn(texture, 'dispose');
+    const shared = new MeshStandardMaterial({
+      name: 'MI_Metal_Brass_02',
+      map: texture,
+      normalMap: texture,
+    });
+    const sharedDispose = vi.spyOn(shared, 'dispose');
+    const one = new Mesh(new BoxGeometry(), shared);
+    const two = new Mesh(new BoxGeometry(), shared);
+    first.root.add(one, two);
+
+    await showroom.showLook('first');
+    expect(one.material).toBeInstanceOf(MeshPhysicalMaterial);
+    expect(two.material).toBeInstanceOf(MeshPhysicalMaterial);
+    expect(one.material).not.toBe(two.material);
+
+    await showroom.showLook('second');
+    await finishFade(showroom);
+
+    expect(sharedDispose).toHaveBeenCalledTimes(1);
+    // The texture rides the displaced original and both upgrades; it is one resource.
+    expect(textureDispose).toHaveBeenCalledTimes(1);
+    expect(first.disposal.texture).toHaveBeenCalledTimes(1);
   });
 
   it('applies a variant to the current incoming look while leaving the outgoing look alone', async () => {
@@ -511,6 +570,95 @@ describe('createShowroom', () => {
     expect(showroom.turntableState.plinthAttached).toBe(false);
   });
 
+  it('retires upgraded statics after a later tuning failure', async () => {
+    const { showroom, rotunda, plinth } = harness();
+    // The rotunda's tuned mesh upgrades cleanly; the plinth's tuned material is upgraded by a
+    // copy that throws, so its replacement is constructed and owned but never reaches its
+    // mesh. The failure is one tuning step after the rotunda's upgrades already exist.
+    const rotundaOriginal = rotunda.mannequin.material as MeshStandardMaterial;
+    const plinthOriginal = plinth.mannequin.material as MeshStandardMaterial;
+    rotundaOriginal.name = 'MI_Metal_Brass_02';
+    plinthOriginal.name = 'MI_Metal_Brass_02';
+    const failure = new Error('material copy failed');
+    const upgradeDisposals: number[] = [];
+    const realCopy = MeshStandardMaterial.prototype.copy;
+    vi.spyOn(MeshStandardMaterial.prototype, 'copy').mockImplementation(function (
+      this: MeshStandardMaterial,
+      source: Material,
+    ) {
+      // The constructed replacement exists only here, before it is copied or assigned, so
+      // its own disposal is counted from the same moment ownership of it begins.
+      const index = upgradeDisposals.length;
+      upgradeDisposals.push(0);
+      const realDispose = this.dispose.bind(this);
+      this.dispose = (): void => {
+        upgradeDisposals[index] += 1;
+        realDispose();
+      };
+      if (source === plinthOriginal) {
+        throw failure;
+      }
+      return realCopy.call(this, source);
+    });
+
+    await expect(showroom.loadStatics()).rejects.toThrow(failure);
+    await flush();
+
+    // The rotunda's on-mesh upgrade is released once with its parse, and the plinth's
+    // constructed-but-never-assigned replacement with it, not orphaned by the throw.
+    expect(upgradeDisposals).toEqual([1, 1]);
+    expect(rotunda.disposal.original).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.original).toHaveBeenCalledTimes(1);
+    expect(rotunda.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(rotunda.disposal.texture).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.texture).toHaveBeenCalledTimes(1);
+    expect(showroom.turntableState.plinthAttached).toBe(false);
+  });
+
+  it('retires a static replacement whose own copy throws before assignment', async () => {
+    const { showroom, rotunda, plinth } = harness();
+    // The rotunda's tuned material is upgraded by a copy that throws, so its replacement is
+    // constructed and owned but never reaches its mesh: the failure path's recollection can
+    // only see what a mesh wears, so the rotunda's handoff is the replacement's one owner.
+    const rotundaOriginal = rotunda.mannequin.material as MeshStandardMaterial;
+    rotundaOriginal.name = 'MI_Metal_Brass_02';
+    const failure = new Error('material copy failed');
+    const upgradeDisposals: number[] = [];
+    const realCopy = MeshStandardMaterial.prototype.copy;
+    vi.spyOn(MeshStandardMaterial.prototype, 'copy').mockImplementation(function (
+      this: MeshStandardMaterial,
+      source: Material,
+    ) {
+      const index = upgradeDisposals.length;
+      upgradeDisposals.push(0);
+      const realDispose = this.dispose.bind(this);
+      this.dispose = (): void => {
+        upgradeDisposals[index] += 1;
+        realDispose();
+      };
+      if (source === rotundaOriginal) {
+        throw failure;
+      }
+      return realCopy.call(this, source);
+    });
+
+    await expect(showroom.loadStatics()).rejects.toThrow(failure);
+    await flush();
+
+    // The constructed replacement retires once with the failed pair, and the plinth that
+    // parsed, untuned, is released with it rather than left on the heap.
+    expect(upgradeDisposals).toEqual([1]);
+    expect(rotunda.disposal.original).toHaveBeenCalledTimes(1);
+    expect(rotunda.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(rotunda.disposal.texture).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.materials[0]).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.original).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.texture).toHaveBeenCalledTimes(1);
+    expect(showroom.turntableState.plinthAttached).toBe(false);
+  });
+
   it('frees the parsed static when its sibling load fails', async () => {
     const { showroom, rotunda, plinth, fetchMock } = harness();
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }));
@@ -577,6 +725,42 @@ describe('createShowroom', () => {
     expect(first.disposal.texture).toHaveBeenCalledTimes(1);
   });
 
+  it('retires the initial variant retune replacement when its copy throws on load', async () => {
+    // The look's default swatch is the variant whose dependency carries a tuned name, so the
+    // retune after the initial swap, not the pre-swap tuning, is what upgrades it: its copy
+    // throws, leaving the replacement constructed and owned but never assigned.
+    const { showroom, first, onChange } = harness(undefined, 'light');
+    first.materials[1].name = 'MI_Marble_Nero_Base';
+    const failure = new Error('material copy failed');
+    const upgradeDisposals: number[] = [];
+    vi.spyOn(MeshStandardMaterial.prototype, 'copy').mockImplementation(function (
+      this: MeshStandardMaterial,
+    ) {
+      const index = upgradeDisposals.length;
+      upgradeDisposals.push(0);
+      const realDispose = this.dispose.bind(this);
+      this.dispose = (): void => {
+        upgradeDisposals[index] += 1;
+        realDispose();
+      };
+      throw failure;
+    });
+
+    await expect(showroom.showLook('first')).rejects.toThrow(failure);
+
+    // The constructed replacement never reached a mesh, so no recollection can recover it:
+    // only the retune's handoff owns it, and the rejected load retires it once, with every
+    // material the swap resolved and everything the parse created.
+    expect(upgradeDisposals).toEqual([1]);
+    expect(first.disposal.materials[1]).toHaveBeenCalledTimes(1);
+    expect(first.disposal.materials[0]).toHaveBeenCalledTimes(1);
+    expect(first.disposal.original).toHaveBeenCalledTimes(1);
+    expect(first.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(first.disposal.texture).toHaveBeenCalledTimes(1);
+    expect(showroom.currentLook).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('keeps a partially applied variant owned so its materials are freed with the look', async () => {
     const { showroom, first } = harness();
     // A second mapped mesh makes one swatch span two parser resolutions.
@@ -609,6 +793,54 @@ describe('createShowroom', () => {
     expect(first.disposal.materials[0]).toHaveBeenCalledTimes(1);
     expect(first.disposal.original).toHaveBeenCalledTimes(1);
     expect(first.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(first.disposal.texture).toHaveBeenCalledTimes(1);
+  });
+
+  it('retires replacements after a partially failing live tune', async () => {
+    const { showroom, first } = harness();
+    await showroom.showLook('first');
+    // A live swatch puts one tuned material on two meshes; the first mesh's upgrade lands,
+    // the second mesh's copy throws, so the traversal fails after a replacement exists.
+    first.materials[1].name = 'MI_Marble_Nero_Base';
+    const extra = new Mesh(first.geometry, first.materials[0]);
+    extra.userData['gltfExtensions'] = {
+      KHR_materials_variants: { mappings: [{ material: 1, variants: [1] }] },
+    };
+    first.root.add(extra);
+    const failure = new Error('material copy failed');
+    const upgradeDisposals: number[] = [];
+    const realCopy = MeshStandardMaterial.prototype.copy;
+    vi.spyOn(MeshStandardMaterial.prototype, 'copy').mockImplementation(function (
+      this: MeshStandardMaterial,
+      source: Material,
+    ) {
+      const index = upgradeDisposals.length;
+      upgradeDisposals.push(0);
+      const realDispose = this.dispose.bind(this);
+      this.dispose = (): void => {
+        upgradeDisposals[index] += 1;
+        realDispose();
+      };
+      if (index === 1) {
+        throw failure;
+      }
+      return realCopy.call(this, source);
+    });
+
+    await expect(showroom.setVariant('light')).rejects.toThrow(failure);
+    // The traversal stopped after the first replacement: the mannequin wears it, the second
+    // mesh keeps the resolved variant material, and no variant state moved.
+    expect(first.mannequin.material).toBeInstanceOf(MeshPhysicalMaterial);
+    expect(extra.material).toBe(first.materials[1]);
+    expect(showroom.currentVariant).toBe('base');
+
+    await showroom.showLook('second');
+    await finishFade(showroom);
+
+    // Both replacements, the one on the mesh and the one the throwing copy orphaned, are
+    // retired with the look, once each.
+    expect(upgradeDisposals).toEqual([1, 1]);
+    expect(first.disposal.materials[1]).toHaveBeenCalledTimes(1);
     expect(first.disposal.texture).toHaveBeenCalledTimes(1);
   });
 

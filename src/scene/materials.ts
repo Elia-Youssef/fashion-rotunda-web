@@ -93,13 +93,23 @@ export function tunedMaterialNames(): readonly string[] {
 }
 
 /**
+ * Receives every material a tuning upgrade displaces or creates, in the same synchronous step
+ * as the upgrade itself. Handing both sides over before the upgrade can throw is what keeps a
+ * failed or interrupted traversal from losing either of them; what ownership means is the
+ * caller's to define, and the tuning layer guarantees only the timing.
+ */
+export type TuningAcquire = (material: Material) => void;
+
+/**
  * Applies name-based tuning to every single-material mesh in a loaded hierarchy.
  *
  * GLTFLoader's variants helper replaces `mesh.material` after a look has parsed. Call this after
  * every variant selection as well as after the initial load, so a future tuned variant material is
- * upgraded before it is decorated, faded, or collected for disposal.
+ * upgraded before it is decorated, faded, or collected for disposal. Every material an upgrade
+ * displaces or creates is handed to `acquire` before that upgrade can throw, so a caller that
+ * owns the hierarchy's resources keeps every handoff, however the traversal ends.
  */
-export function applyTunings(root: Object3D): void {
+export function applyTunings(root: Object3D, acquire?: TuningAcquire): void {
   root.traverse((object: Object3D) => {
     if (!(object instanceof Mesh)) return;
     const assigned = object.material;
@@ -107,7 +117,7 @@ export function applyTunings(root: Object3D): void {
     for (const material of materials) {
       const tuning = tuningFor(material.name);
       if (tuning !== null) {
-        applyTuning(object, tuning);
+        applyTuning(object, tuning, acquire);
       }
     }
   });
@@ -142,9 +152,11 @@ function isPhysicalMaterial(material: MeshStandardMaterial): material is MeshPhy
  * variants extension caches instances by name. When a MeshStandardNodeMaterial needs a physical
  * property, the caller passes the mesh so the applier can swap the instance BEFORE the fade and the
  * variants see it (statics: in loadStatics before decorate; looks: in the loader's onLoad before the
- * switcher hands the object over). Returns the material now on the mesh.
+ * switcher hands the object over). `acquire` receives the displaced material and the new instance
+ * of a physical upgrade before the copy and the assignment can throw, so a failed upgrade leaves
+ * neither side unowned. Returns the material now on the mesh.
  */
-export function applyTuning(mesh: Mesh, tuning: MaterialTuning): Material {
+export function applyTuning(mesh: Mesh, tuning: MaterialTuning, acquire?: TuningAcquire): Material {
   if (Array.isArray(mesh.material)) {
     throw new TypeError(
       `material tuning needs one material per mesh, but "${mesh.name}" has ${mesh.material.length}`,
@@ -164,6 +176,13 @@ export function applyTuning(mesh: Mesh, tuning: MaterialTuning): Material {
 
   if (needsPhysicalMaterial(tuning) && physical === null) {
     const upgraded = new MeshPhysicalMaterial();
+    // Both sides of the handoff are owned before any step can throw: the displaced material,
+    // which no mesh-collecting pass can reach once the assignment below has run, and the new
+    // instance, which a throwing copy would otherwise orphan between construction and
+    // assignment. Handover is not release: another mesh or the parser may still share the
+    // displaced material, so its one release stays with the owner's retirement.
+    acquire?.(material);
+    acquire?.(upgraded);
     MeshStandardMaterial.prototype.copy.call(upgraded, material);
     mesh.material = upgraded;
     material = upgraded;

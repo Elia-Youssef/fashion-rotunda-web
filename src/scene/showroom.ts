@@ -30,6 +30,7 @@ import { createGltfLoader } from './loaders';
 import { createLookOwner } from './look-owner';
 import type { LookOwner } from './look-owner';
 import { applyTunings } from './materials';
+import type { TuningAcquire } from './materials';
 import { listVariants, selectVariant } from './variants';
 import type { VariantTarget } from './variants';
 
@@ -211,8 +212,8 @@ function logMaterialClasses(fileName: string, root: Object3D): void {
   console.log(`[archviz] material classes for ${fileName}:`, rows);
 }
 
-function tuneHierarchy(root: Object3D, fileName?: string): void {
-  applyTunings(root);
+function tuneHierarchy(root: Object3D, acquire: TuningAcquire, fileName?: string): void {
+  applyTunings(root, acquire);
   if (import.meta.env.DEV && fileName !== undefined) {
     logMaterialClasses(fileName, root);
   }
@@ -402,14 +403,17 @@ export function createShowroom(options: ShowroomOptions): Showroom {
       opacity: uniform(1),
     };
     try {
-      tuneHierarchy(gltf.scene, look.file);
+      // Every upgrade the tuning makes from here on is the look's from the moment its
+      // materials change hands, including a displaced original no later collect can reach.
+      const acquire = (material: Material): void => owner.register(material);
+      tuneHierarchy(gltf.scene, acquire, look.file);
       const wanted = variantFor(look, loaded.variants);
       if (wanted !== null) {
         // Applied before the look reaches the scene, so a switch never shows one frame of the
         // previous swatch. A look still loading is not on screen for anything to replace, so
         // only its own release can stop the swap.
         await selectVariant(variantTarget(loaded, () => loaded.owner.retired), wanted);
-        applyTunings(loaded.root);
+        applyTunings(loaded.root, acquire);
         loaded.applied = wanted;
       }
       owner.collect(loaded.root);
@@ -495,8 +499,16 @@ export function createShowroom(options: ShowroomOptions): Showroom {
       try {
         const [rotunda, plinth] = await Promise.all(loads);
         await options.beforeMount?.('statics');
-        tuneHierarchy(rotunda.gltf.scene, catalog.rotunda.file);
-        tuneHierarchy(plinth.gltf.scene, catalog.plinth.file);
+        tuneHierarchy(
+          rotunda.gltf.scene,
+          (material: Material) => rotunda.owner.register(material),
+          catalog.rotunda.file,
+        );
+        tuneHierarchy(
+          plinth.gltf.scene,
+          (material: Material) => plinth.owner.register(material),
+          catalog.plinth.file,
+        );
         // The level origin is the room centre at floor height and the plinth stands on it, so
         // both keep the transform they were exported with.
         decorate(rotunda.gltf.scene);
@@ -558,7 +570,9 @@ export function createShowroom(options: ShowroomOptions): Showroom {
         // here may be written.
         return;
       }
-      applyTunings(look.root);
+      // The retune after the swap displaces the material the parser resolved onto the mesh;
+      // both sides of each upgrade stay with the look that asked for the variant.
+      applyTunings(look.root, (material: Material) => look.owner.register(material));
       look.applied = name;
       currentVariant = name;
       wantedVariant = name;
