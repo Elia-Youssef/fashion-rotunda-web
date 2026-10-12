@@ -167,7 +167,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
 
   let holding = false;
   let appliedYaw = showroom.lookYaw;
-  let publishedYaw: string | undefined;
+  let publishedYaw = '';
   let publishedYawValue = Number.NaN;
   let currentMode: CameraMode = 'orbit';
   canvas.dataset.camera = 'orbit';
@@ -181,7 +181,6 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     const roundingMargin = YAW_ROUNDING_ERROR_SCALE * Number.EPSILON *
       Math.max(1, Math.abs(yaw), Math.abs(publishedYawValue));
     if (
-      publishedYaw !== undefined &&
       (yaw < 0) === publishedYaw.startsWith('-') &&
       Math.abs(yaw - publishedYawValue) < YAW_HALF_STEP - roundingMargin
     ) {
