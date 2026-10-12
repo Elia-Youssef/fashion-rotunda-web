@@ -1,16 +1,16 @@
 import { expect, test, type ConsoleMessage } from '@playwright/test';
 
 import { holdFirstRequest } from './support/held-request';
+import { backendPath } from './support/backend';
 
 // Opaque entry lobby on a real load.
-// WebGL2 project runs headless, ensuring deterministic test execution.
+// Both backend projects run headless by default and activate the lobby through synthetic input.
 
 // The held first rotunda request keeps the boot in loading until the test releases it, so the
 // loading phase is observed while held; 30 s covers a slow boot start under four software workers.
 const LOADING_HOLD_TIMEOUT_MS = 30_000;
 
 test('gates the experience until the visitor activates Load Experience', async ({ page }) => {
-  test.skip(test.info().project.name !== 'webgl2', 'runs headless, where no pointer can enter the gate');
   const messages: ConsoleMessage[] = [];
   page.on('console', (message) => messages.push(message));
   // The default sky is generated in memory: the page must never fetch the diagnostic HDR, and the
@@ -24,7 +24,7 @@ test('gates the experience until the visitor activates Load Experience', async (
   // fixed one-second delay racing the assertions that follow the click.
   const rotunda = await holdFirstRequest(page, '**/content/rotunda.glb', LOADING_HOLD_TIMEOUT_MS);
 
-  await page.goto('/?webgl=1');
+  await page.goto(backendPath('/'));
   const lobby = page.locator('#entry-lobby');
   const canvas = page.locator('canvas#scene');
 
@@ -83,13 +83,12 @@ test('gates the experience until the visitor activates Load Experience', async (
 // ?sky=hdr: the School Field HDR diagnostic is fetched exactly once and counted in the byte total,
 // so the bar still reaches the end.
 test('counts and fetches the HDR once under the ?sky=hdr diagnostic', async ({ page }) => {
-  test.skip(test.info().project.name !== 'webgl2', 'runs headless, where no pointer can enter the gate');
   const hdrRequests: string[] = [];
   page.on('request', (request) => {
     if (new URL(request.url()).pathname.endsWith('.hdr')) hdrRequests.push(request.url());
   });
 
-  await page.goto('/?webgl=1&sky=hdr');
+  await page.goto(backendPath('/?sky=hdr'));
   const lobby = page.locator('#entry-lobby');
   await lobby.locator('#lobby-load-btn').click();
   await expect
@@ -105,13 +104,12 @@ test('counts and fetches the HDR once under the ?sky=hdr diagnostic', async ({ p
 
 // Keyboard Enter activation on the focused Load button
 test('activates Load Experience on Enter from the keyboard', async ({ page }) => {
-  test.skip(test.info().project.name !== 'webgl2', 'runs headless, where no pointer can enter the gate');
 
   // Hold the rotunda so the loading state after the Enter press is observed while held, instead of
   // raced against the content that ends it.
   const rotunda = await holdFirstRequest(page, '**/content/rotunda.glb', LOADING_HOLD_TIMEOUT_MS);
 
-  await page.goto('/?webgl=1');
+  await page.goto(backendPath('/'));
   const lobby = page.locator('#entry-lobby');
   const loadButton = lobby.locator('#lobby-load-btn');
 
@@ -128,11 +126,9 @@ test('activates Load Experience on Enter from the keyboard', async ({ page }) =>
 });
 
 // Explicit bypass URLs: gate=off and e2e=1 (without gate=on)
-for (const search of ['?webgl=1&gate=off', '?webgl=1&e2e=1']) {
+for (const search of ['?gate=off', '?e2e=1']) {
   test(`bypasses the lobby on ${search}`, async ({ page }) => {
-    test.skip(test.info().project.name !== 'webgl2', 'the headed project would play through the speakers');
-
-    await page.goto(`/${search}`);
+    await page.goto(backendPath(`/${search}`));
     await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', /loading|ready|error/, {
       timeout: 30_000,
     });

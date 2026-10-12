@@ -5,9 +5,8 @@ import { CROSSFADE_MS, MAX_FADE_STEP_MS } from '../../src/scene/crossfade';
 import { parseCatalog } from '../../src/catalog/catalog';
 import { holdFirstRequest } from './support/held-request';
 
-// The cross-fade between looks. The suite runs on the webgl2 project only: the fade
-// is the same state machine on both backends, and the webgpu project opens a headed Chrome window
-// the memory suite already avoids holding open.
+// The cross-fade between looks. The shared fade and resource-lifecycle checks run once on the
+// webgl2 project, using its forced fallback fixture.
 
 const SCENE_READY_TIMEOUT = 60_000;
 /**
@@ -29,7 +28,10 @@ const RAPID_RUN_TIMEOUT = 180_000;
 const TURNTABLE_YAW = Math.PI / 3;
 
 function skipUnlessWebgl2(): void {
-  test.skip(test.info().project.name !== 'webgl2', 'the fade is backend independent');
+  test.skip(
+    test.info().project.name !== 'webgl2',
+    'the shared fade and resource-lifecycle checks run once on webgl2',
+  );
 }
 
 function expectTurntableYaw(

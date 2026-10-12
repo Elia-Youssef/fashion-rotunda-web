@@ -305,8 +305,9 @@ test.describe('Scene Reveal Transition', () => {
     await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
     await expectParkedBehindBlack(page);
 
-    // Playwright cannot background a headed local window reliably. This temporarily overrides the
-    // read-only document value in the isolated test page and dispatches the browser lifecycle
+    // An explicit visibility event gives both headless projects a deterministic hidden-tab restore.
+    // This temporarily overrides the read-only document value in the isolated test page and
+    // dispatches the browser lifecycle
     // event, exercising the production listener without adding a product test seam.
     await page.evaluate(() => {
       Object.defineProperty(document, 'hidden', { configurable: true, value: true });

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { backendPath, projectBackend } from './support/backend';
 import { waitForSceneInitialization } from './support/ready';
 
 const SCENE_READY_TIMEOUT = 60_000;
@@ -7,14 +8,12 @@ const INPUT_FRAME_TIMEOUT = 5_000;
 
 // The page draws nothing while idle. The scene draws for a wake window after the load and after
 // any input, then the loop stops scheduling frames. canvas#scene[data-frames] counts rendered frames,
-// so two equal readings a second apart mean no frame was drawn in between. Headless only: a pointer
-// moving over a headed window is an input and would wake the loop.
+// so two equal readings a second apart mean no frame was drawn in between. Both projects default
+// to headless, so only the synthetic input below wakes the page after it settles.
 test('stops drawing when idle and wakes on input', async ({ page }) => {
-  test.skip(test.info().project.name !== 'webgl2', 'runs headless, where no pointer can wake the page');
-
-  await page.goto('/?webgl=1&gate=off&e2e=1');
+  await page.goto(backendPath('/?gate=off&e2e=1'));
   const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-backend', 'webgl2', { timeout: 30_000 });
+  await expect(canvas).toHaveAttribute('data-backend', projectBackend(), { timeout: 30_000 });
 
   // Wait for content and final initialization before observing the idle frame counter.
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });

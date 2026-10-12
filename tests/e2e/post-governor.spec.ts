@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-// The bidirectional frame-time governor on actual, headed WebGPU. The deterministic
+// The bidirectional frame-time governor on native WebGPU. The deterministic
 // harness behind `?e2e=1` (window.archvizE2E.governor) is the only thing this spec drives: it
 // blocks real-frame samples and injects observations with explicit workMs/nowMs/eligibility, so
 // the 80% threshold, the ten-second qualification and the ten-second cooldown are proven on the
@@ -156,12 +156,12 @@ async function captureProofPanel(page: Page, path: string): Promise<void> {
   });
 }
 
-test('the governor degrades, holds its cooldown, and recovers on headed webgpu', async ({
+test('the governor degrades, holds its cooldown, and recovers on webgpu', async ({
   page,
 }) => {
   test.skip(
     test.info().project.name !== 'webgpu',
-    'the governor is WebGPU enhanced-tier behaviour; this test runs on the headed webgpu project only',
+    'the High WebGPU chain has SSR and rest-only depth of field; the WebGL 2 chain does not',
   );
   test.setTimeout(180_000);
   const errors: string[] = [];
@@ -455,7 +455,7 @@ test('the governor degrades, holds its cooldown, and recovers on headed webgpu',
 test('no governor exists on the webgl2 backend or forced post slices', async ({ page }) => {
   test.skip(
     test.info().project.name !== 'webgl2',
-    'the webgl2 project is the CI-owned project this absence check runs on',
+    'this absence check asserts the WebGL 2 chain has no enhanced-tier governor',
   );
   const errors: string[] = [];
   watchPageErrors(page, errors);

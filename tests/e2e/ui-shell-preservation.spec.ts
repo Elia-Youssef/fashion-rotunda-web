@@ -13,7 +13,10 @@ const IDLE_TIMEOUT_ATTEMPTS = 12;
 type RendererState = Omit<Awaited<ReturnType<typeof nextProofReading>>, 'drawCalls'>;
 
 function skipUnlessWebgl2(): void {
-  test.skip(test.info().project.name !== 'webgl2', 'runs headless against the WebGL 2 fallback');
+  test.skip(
+    test.info().project.name !== 'webgl2',
+    'the shared shell-preservation contract runs once on the WebGL 2 fallback',
+  );
 }
 
 async function readRendererState(page: Page): Promise<RendererState> {

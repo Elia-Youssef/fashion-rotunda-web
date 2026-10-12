@@ -129,7 +129,7 @@ const MIN_CHANGED_RATIO = 0.05;
 function skipUnlessWebgl2(): void {
   test.skip(
     test.info().project.name !== 'webgl2',
-    'the chain runs on both backends; headless webgl2 is the project CI owns',
+    'these slices assert the WebGL 2 mid chain without compute-only effects',
   );
 }
 
@@ -313,7 +313,7 @@ test('max slice on webgl2 retains ao and traa without ssgi or ssr', async ({ pag
 /**
  * Raw SSGI is kept as an explicit diagnostic slice. Its normal High preset is disabled because
  * its undenoised GI texture produced visible grain on the wall and garments at client resolution.
- * The project is headed and local only, so this test runs on the developer's machine.
+ * The WebGPU project defaults to headless and runs locally with the installed Chrome.
  */
 test('normal WebGPU High stays free of raw SSGI', async ({ page }) => {
   test.skip(test.info().project.name !== 'webgpu', 'High WebGPU preset only');

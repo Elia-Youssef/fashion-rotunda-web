@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { waitForSceneInitialization } from './support/ready';
 
 // Entry lobby E2E verification.
-// WebGL2 project runs headless and verifies the deferred boot contract,
+// Shared lobby checks run once on the WebGL2 project and verify the deferred boot contract,
 // zero network activity before user gesture, responsive viewports,
 // focus containment, hit-test blocking, and music preferences.
 
@@ -19,7 +19,7 @@ const VIEWPORTS = [
 const INITIALIZED_TIMEOUT = 60_000;
 
 function skipUnlessWebgl2(): void {
-  test.skip(test.info().project.name !== 'webgl2', 'runs on headless webgl2');
+  test.skip(test.info().project.name !== 'webgl2', 'the shared lobby DOM and boot checks run once on webgl2');
 }
 
 function watchRequests(page: Page): {

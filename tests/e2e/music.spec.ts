@@ -1,14 +1,9 @@
 import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
+import { backendPath } from './support/backend';
 
-// The music switch in the header. The webgl2 project only: it runs headless, and Playwright
-// launches its Chromium with --mute-audio (playwright-core 1.63.0, lib/coreBundle.js line 43342,
-// inside the `if (options.headless)` branch of _innerDefaultArgs), so nothing reaches the
-// speakers. The headed WebGPU project has no such flag. A Playwright click is a trusted gesture,
-// which is what unlocks the AudioContext.
-
-function skipUnlessWebgl2(): void {
-  test.skip(test.info().project.name !== 'webgl2', 'the headed project would play through the speakers');
-}
+// The music switch in the header on both backends. Both projects default to headless and muted
+// output; the WebGPU project also explicitly supplies --mute-audio. A Playwright click is a trusted
+// gesture, which unlocks the AudioContext even while browser output is muted.
 
 const PLAYING_TIMEOUT = 15_000;
 // The content set is about 35 MB before the scene is ready, the same wait the smoke suite uses.
@@ -68,12 +63,11 @@ function watchMusicRequests(page: Page): { seen: () => string[]; clear: () => vo
 }
 
 test('starts on the switch, stops on it, and remembers the stop', async ({ page }) => {
-  skipUnlessWebgl2();
   // Two scene loads in one test, the second one warm: the file's own budget, not the config's.
   test.setTimeout(90_000);
   const expectClean = watchConsole(page);
   const musicRequests = watchMusicRequests(page);
-  await openWithScene(page, '/?webgl=1&e2e=1&music=off');
+  await openWithScene(page, backendPath('/?e2e=1&music=off'));
   const button = switchButton(page);
 
   await expect(button).toHaveAttribute('data-music', 'off');
@@ -100,7 +94,7 @@ test('starts on the switch, stops on it, and remembers the stop', async ({ page 
   // Back without the music parameter, so the stored value is the only source left: the reload has
   // to come back off, and an off page is one that fetched no music.
   musicRequests.clear();
-  await openWithScene(page, '/?webgl=1&e2e=1');
+  await openWithScene(page, backendPath('/?e2e=1'));
   await expect(button).toHaveAttribute('data-music', 'off');
   await expect(button).toHaveAttribute('aria-pressed', 'false');
   expect(musicRequests.seen(), 'the remembered stop fetches nothing either').toEqual([]);
@@ -109,10 +103,13 @@ test('starts on the switch, stops on it, and remembers the stop', async ({ page 
 });
 
 test('arms until the first gesture anywhere on the page', async ({ page }) => {
-  skipUnlessWebgl2();
+  test.skip(
+    test.info().project.name !== 'webgl2',
+    'bundled Chromium blocks autoplay without a gesture; installed Chrome may allow it',
+  );
   const expectClean = watchConsole(page);
   const musicRequests = watchMusicRequests(page);
-  await page.goto('/?webgl=1&e2e=1');
+  await page.goto(backendPath('/?e2e=1'));
   const button = switchButton(page);
   await expect(button).toHaveAttribute('data-music', 'armed');
   await expect(button).toHaveAttribute('aria-pressed', 'true');
@@ -136,9 +133,8 @@ test('arms until the first gesture anywhere on the page', async ({ page }) => {
 });
 
 test('keeps the position across a pause and a resume', async ({ page }) => {
-  skipUnlessWebgl2();
   const expectClean = watchConsole(page);
-  await openWithScene(page, '/?webgl=1&e2e=1&music=off');
+  await openWithScene(page, backendPath('/?e2e=1&music=off'));
   const button = switchButton(page);
   await button.click();
   await expect(button).toHaveAttribute('data-music', 'playing', { timeout: PLAYING_TIMEOUT });

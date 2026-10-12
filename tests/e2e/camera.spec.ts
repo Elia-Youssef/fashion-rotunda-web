@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { backendPath } from './support/backend';
 
 const SCENE_READY_TIMEOUT = 60_000;
 // The turntable publishes its yaw from rendered frames (mount.ts writeYaw inside update), so every
@@ -43,14 +44,16 @@ const ATTRACT_INPUT_TIMEOUT_MS = 5_000;
 // Camera and turntable through the real page: a drag orbits the inspection camera, the turntable turns the
 // look while it runs, and the loop goes back to sleep once both are still. Reads and the toggle go
 // through window.archvizCamera, which ?e2e=1 mounts; the frame-settling wait mirrors idle.spec.ts.
-// Headless only, like idle.spec.ts: a pointer moving over a headed window is an input nobody
-// asked for.
+// Both projects run headless by default, so synthetic input controls when the camera and loop wake.
 
 test('a drag across the canvas orbits the camera', async ({ page }) => {
-  test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
-  await page.goto('/?webgl=1&e2e=1');
+  await page.goto(backendPath('/?e2e=1'));
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+  // Scene-ready can publish during the native High benchmark; wait for the camera mount itself.
+  await page.waitForFunction(() => window.archvizCamera !== undefined, null, {
+    timeout: SCENE_READY_TIMEOUT,
+  });
 
   const before = await page.evaluate((): number[] => window.archvizCamera?.orbit.position ?? []);
   expect(before.length).toBe(3);
@@ -76,10 +79,13 @@ test('a drag across the canvas orbits the camera', async ({ page }) => {
 });
 
 test('the turntable turns the look and the loop settles once it stops', async ({ page }) => {
-  test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
-  await page.goto('/?webgl=1&e2e=1');
+  await page.goto(backendPath('/?e2e=1'));
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+  // The first ready frame does not guarantee the turntable handle has mounted yet.
+  await page.waitForFunction(() => window.archvizCamera !== undefined, null, {
+    timeout: SCENE_READY_TIMEOUT,
+  });
 
   const readYaw = async (): Promise<number> => Number((await canvas.getAttribute('data-yaw')) ?? '0');
 
@@ -145,14 +151,13 @@ test('the turntable turns the look and the loop settles once it stops', async ({
 });
 
 test('walk mode stops at walls and stays above floor', async ({ page }) => {
-  test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
   const errors: string[] = [];
   page.on('console', (msg) => {
     if (msg.type() === 'error') {
       errors.push(msg.text());
     }
   });
-  await page.goto('/?webgl=1&e2e=1');
+  await page.goto(backendPath('/?e2e=1'));
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
@@ -223,8 +228,7 @@ test('walk mode stops at walls and stays above floor', async ({ page }) => {
 });
 
 test('the real collision GLB blocks normal and sprint routes around the plinth and every wall', async ({ page }) => {
-  test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
-  await page.goto('/?webgl=1&e2e=1&attract=0');
+  await page.goto(backendPath('/?e2e=1&attract=0'));
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
   await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
@@ -293,7 +297,6 @@ test.describe('touch walkthrough controls', () => {
   // synthetic PointerEvents below still exercise its `pointerType: 'touch'` production path.
 
   test('keeps joystick movement and right-side look separate', async ({ page }) => {
-    test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
     await page.addInitScript(() => {
       const nativeMatchMedia = window.matchMedia.bind(window);
       window.matchMedia = ((query: string) => {
@@ -304,7 +307,7 @@ test.describe('touch walkthrough controls', () => {
         return result;
       }) as typeof window.matchMedia;
     });
-    await page.goto('/?webgl=1&e2e=1&attract=0');
+    await page.goto(backendPath('/?e2e=1&attract=0'));
     const canvas = page.locator('canvas#scene');
     await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
     await page.setViewportSize({ width: 767, height: 430 });
@@ -376,14 +379,13 @@ test.describe('touch walkthrough controls', () => {
 });
 
 test('two round trips orbit-walk-orbit end at starting orbit position within 1 mm', async ({ page }) => {
-  test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
   const errors: string[] = [];
   page.on('console', (msg) => {
     if (msg.type() === 'error') {
       errors.push(msg.text());
     }
   });
-  await page.goto('/?webgl=1&e2e=1');
+  await page.goto(backendPath('/?e2e=1'));
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
@@ -422,14 +424,13 @@ test('two round trips orbit-walk-orbit end at starting orbit position within 1 m
 });
 
 test('attract loop tours presets when idle and cancels on input', async ({ page }) => {
-  test.skip(test.info().project.name !== 'webgl2', 'runs headless with synthetic input, like idle.spec.ts');
   const errors: string[] = [];
   page.on('console', (msg) => {
     if (msg.type() === 'error') {
       errors.push(msg.text());
     }
   });
-  await page.goto('/?webgl=1&e2e=1&attract=1&attractIdle=500');
+  await page.goto(backendPath('/?e2e=1&attract=1&attractIdle=500'));
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
