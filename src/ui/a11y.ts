@@ -133,7 +133,7 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
   });
   asideObserver.observe(aside, { attributes: true, subtree: true, attributeFilter: ['aria-pressed'] });
 
-  const headerEl = root.querySelector('header');
+  const headerEl = musicButton?.closest('header') ?? null;
   const headerObserver = new MutationObserver(() => {
     const btn = root.querySelector<HTMLButtonElement>('header button.music-switch');
     if (btn !== null) {

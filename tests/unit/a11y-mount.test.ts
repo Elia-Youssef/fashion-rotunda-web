@@ -134,4 +134,44 @@ describe('mountA11y', () => {
     vi.advanceTimersByTime(500);
     expect(liveRegion?.textContent).toBe('Music on');
   });
+
+  it.each([
+    { retainedLobby: false, enabled: true },
+    { retainedLobby: false, enabled: false },
+    { retainedLobby: true, enabled: true },
+    { retainedLobby: true, enabled: false },
+  ])(
+    'announces music enabled=$enabled with retained lobby=$retainedLobby',
+    async ({ retainedLobby, enabled }) => {
+      if (retainedLobby) {
+        const lobby = document.createElement('div');
+        lobby.hidden = true;
+        const lobbyHeader = document.createElement('header');
+        const lobbyMusicBtn = document.createElement('button');
+        lobbyMusicBtn.className = 'entry-lobby__music-switch';
+        lobbyMusicBtn.dataset.music = 'armed';
+        lobbyMusicBtn.setAttribute('aria-pressed', 'true');
+        lobbyHeader.appendChild(lobbyMusicBtn);
+        lobby.appendChild(lobbyHeader);
+        root.prepend(lobby);
+      }
+
+      const musicBtn = header.querySelector<HTMLButtonElement>('button.music-switch');
+      expect(musicBtn).not.toBeNull();
+      musicBtn?.setAttribute('aria-pressed', String(!enabled));
+      if (musicBtn !== null) musicBtn.dataset.music = enabled ? 'off' : 'on';
+
+      a11y = mountA11y({ root, aside, canvas, search: '?e2e=1' });
+      const liveRegion = root.querySelector('.a11y-live-region');
+      expect(liveRegion).not.toBeNull();
+
+      musicBtn?.setAttribute('aria-pressed', String(enabled));
+      if (musicBtn !== null) musicBtn.dataset.music = enabled ? 'on' : 'off';
+
+      await Promise.resolve();
+      vi.runOnlyPendingTimers();
+
+      expect(liveRegion?.textContent).toBe(enabled ? 'Music on' : 'Music off');
+    },
+  );
 });
