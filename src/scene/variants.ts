@@ -28,6 +28,19 @@ export interface VariantTarget {
   root: Object3D;
   parser: GLTFParser;
   variants: string[];
+  /**
+   * Registers a material the parser just resolved, or the finalized instance a mesh ended up
+   * carrying when the parser replaced the assigned one, with the look that asked for it, before
+   * it can escape the swap. Registration is what keeps a swap that never finishes (a rejection,
+   * or the look being replaced mid-swap) from losing the material and its textures.
+   */
+  acquire?: (material: Material) => void;
+  /**
+   * True once the look that asked for this variant no longer counts as its recipient: replaced
+   * on screen, or released outright, whichever the caller counts. The swap checks it after
+   * every parser resolution and stops before it commits anything further onto the look.
+   */
+  superseded?: () => boolean;
 }
 
 interface VariantMapping {
@@ -113,6 +126,11 @@ function readMappings(userData: Record<string, unknown>): VariantMapping[] {
  * Object3D.traverse takes a synchronous callback and the material lookup is a promise, so the
  * meshes are collected first and swapped afterwards. parser.getDependency caches, so a second
  * pass over the same variant costs no download and no new GPU resource.
+ *
+ * Each resolved material is handed to `acquire` before it reaches a mesh, the finalized
+ * instance a mesh ends up carrying is registered the same way, and the swap stops at the first
+ * `superseded` report, so a look that is replaced mid-swap keeps every resource owned and has
+ * nothing further committed onto it.
  */
 export async function selectVariant(target: VariantTarget, name: string): Promise<void> {
   const variantIndex = target.variants.indexOf(name);
@@ -155,9 +173,26 @@ export async function selectVariant(target: VariantTarget, name: string): Promis
     if (!(dependency instanceof Material)) {
       throw new Error(`variant "${name}" maps material ${mapping.material}, which did not resolve`);
     }
+    target.acquire?.(dependency);
+    if (target.superseded?.()) {
+      // The look that asked is superseded; the registration above is what keeps the material
+      // owned (its owner releases it), and the meshes of a superseded look must stay untouched.
+      return;
+    }
     mesh.material = dependency;
     // The parser owns the last step: vertex colours, flat shading and the rest are decided per
     // mesh, and skipping it is how a variant ends up rendering with the wrong shader.
-    target.parser.assignFinalMaterial(mesh);
+    try {
+      target.parser.assignFinalMaterial(mesh);
+    } finally {
+      // Finalization can replace the assigned instance with a clone the parser caches, and can
+      // mutate the mesh and then throw. Either way, what the mesh actually carries is a
+      // resource of this look now; registering it here is what keeps a swap that fails or stops
+      // on a later mesh from losing it.
+      const finalized: unknown = mesh.material;
+      if (finalized instanceof Material && finalized !== dependency) {
+        target.acquire?.(finalized);
+      }
+    }
   }
 }

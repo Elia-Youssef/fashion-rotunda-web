@@ -17,9 +17,8 @@ import {
   PerspectiveCamera,
   Quaternion,
   Scene,
-  Texture,
 } from 'three/webgpu';
-import type { BufferGeometry, Object3D, WebGPURenderer } from 'three/webgpu';
+import type { Object3D, WebGPURenderer } from 'three/webgpu';
 import type { GLTF, GLTFLoader, GLTFParser } from 'three/addons/loaders/GLTFLoader.js';
 import { hash, screenCoordinate, uniform } from 'three/tsl';
 
@@ -28,8 +27,11 @@ import type { Catalog, CatalogLook } from '../catalog/catalog';
 import { createSwitcher } from '../catalog/switcher';
 import { CROSSFADE_MS, createFadeMachine } from './crossfade';
 import { createGltfLoader } from './loaders';
+import { createLookOwner } from './look-owner';
+import type { LookOwner } from './look-owner';
 import { applyTunings } from './materials';
 import { listVariants, selectVariant } from './variants';
+import type { VariantTarget } from './variants';
 
 /** The clear colour behind the room, dark enough that an unlit frame reads as empty, not broken. */
 export const SCENE_BACKGROUND = 0x15181c;
@@ -143,7 +145,7 @@ interface Caster {
   assigned: boolean;
 }
 
-/** One look on the heap: what is on screen, and everything that has to be freed to replace it. */
+/** One look on the heap: what is on screen, and the owner that frees it when it is replaced. */
 interface LoadedLook {
   id: string;
   root: Object3D;
@@ -151,46 +153,24 @@ interface LoadedLook {
   variants: string[];
   /** The variant actually applied, null when the file carries none. */
   applied: string | null;
-  geometries: Set<BufferGeometry>;
-  materials: Set<Material>;
+  /** Everything the look owns and its retirement state; see look-owner.ts. */
+  owner: LookOwner;
   /** Every mesh of the look, with the caster flag the decorator assigned it. */
   casters: Caster[];
   /** The look's own opacity uniform; while it fades, its value is written once per frame. */
   opacity: FadeUniform;
 }
 
+/** One parsed GLTF paired with the owner that releases it if it never reaches the scene. */
+interface OwnedGltf {
+  gltf: GLTF;
+  owner: LookOwner;
+}
+
 /** The directory a file was fetched from, which is what GLTFLoader.parse resolves relative URIs against. */
 function directoryOf(url: string): string {
   const cut = url.lastIndexOf('/');
   return cut === -1 ? '' : url.slice(0, cut + 1);
-}
-
-/**
- * Adds every geometry and material reachable from the look to its disposal sets. Called again
- * after a variant change, because a variant swap puts materials on the meshes that were not there
- * when the file was parsed, and the set is what dispose() walks.
- */
-function collectResources(loaded: LoadedLook): void {
-  loaded.root.traverse((object: Object3D) => {
-    if (!(object instanceof Mesh)) {
-      return;
-    }
-    loaded.geometries.add(object.geometry);
-    const assigned = object.material;
-    if (Array.isArray(assigned)) {
-      for (const material of assigned) {
-        loaded.materials.add(material);
-      }
-    } else {
-      loaded.materials.add(assigned);
-    }
-    // The variant helper parks the primitive's first material here; it is still a GPU resource
-    // even while a variant material is the one on screen.
-    const original: unknown = object.userData['originalMaterial'];
-    if (original instanceof Material) {
-      loaded.materials.add(original);
-    }
-  });
 }
 
 /**
@@ -205,20 +185,6 @@ function captureCasters(loaded: LoadedLook): void {
       loaded.casters.push({ mesh: object, assigned: object.castShadow });
     }
   });
-}
-
-/**
- * Textures are reached through the material's own properties. Naming the map fields one by one
- * (map, normalMap, roughnessMap, clearcoatNormalMap and the dozen others) is how a texture gets
- * missed when a material class gains a slot, so every own property is inspected instead.
- */
-function collectTextures(material: Material, into: Set<Texture>): void {
-  const values: unknown[] = Object.values(material);
-  for (const value of values) {
-    if (value instanceof Texture) {
-      into.add(value);
-    }
-  }
 }
 
 const loggedFiles = new Set<string>();
@@ -313,7 +279,7 @@ export function createShowroom(options: ShowroomOptions): Showroom {
   function setDissolve(look: LoadedLook, on: boolean): void {
     const opacityNode = on ? look.opacity : null;
     const alphaTestNode = on ? DISSOLVE_THRESHOLD : null;
-    for (const material of look.materials) {
+    for (const material of look.owner.materials) {
       const fadeMaterial = material as FadeMaterial;
       if ((fadeMaterial.opacityNode ?? null) === opacityNode) {
         // Already carrying this look's uniform. A second stamp would move the material's version
@@ -424,77 +390,70 @@ export function createShowroom(options: ShowroomOptions): Showroom {
   async function loadLook(id: string, signal: AbortSignal): Promise<LoadedLook> {
     const look = lookById(id);
     const gltf = await loadGltf(contentUrl(contentBase, look.file), signal);
-    tuneHierarchy(gltf.scene, look.file);
-    const variants = listVariants(gltf);
+    const owner = createLookOwner();
     const loaded: LoadedLook = {
       id,
       root: gltf.scene,
       parser: gltf.parser,
-      variants,
+      variants: listVariants(gltf),
       applied: null,
-      geometries: new Set<BufferGeometry>(),
-      materials: new Set<Material>(),
+      owner,
       casters: [],
       opacity: uniform(1),
     };
-    const wanted = variantFor(look, variants);
-    if (wanted !== null) {
-      // Applied before the look reaches the scene, so a switch never shows one frame of the
-      // previous swatch.
-      await selectVariant({ root: loaded.root, parser: loaded.parser, variants }, wanted);
-      applyTunings(loaded.root);
-      loaded.applied = wanted;
+    try {
+      tuneHierarchy(gltf.scene, look.file);
+      const wanted = variantFor(look, loaded.variants);
+      if (wanted !== null) {
+        // Applied before the look reaches the scene, so a switch never shows one frame of the
+        // previous swatch. A look still loading is not on screen for anything to replace, so
+        // only its own release can stop the swap.
+        await selectVariant(variantTarget(loaded, () => loaded.owner.retired), wanted);
+        applyTunings(loaded.root);
+        loaded.applied = wanted;
+      }
+      owner.collect(loaded.root);
+      await options.beforeMount?.('look');
+    } catch (error) {
+      // The load is transactional: whatever was acquired along the way (parsed meshes, parked
+      // originals, parser-resolved variant materials) is released rather than left ownerless.
+      owner.collect(loaded.root);
+      owner.retire();
+      throw error;
     }
-    collectResources(loaded);
-    await waitToMount('look', [loaded.root]);
     return loaded;
+  }
+
+  /**
+   * The variant helper's inputs, wired to the look's owner so every acquired material lands in
+   * it. The stop signal is the caller's to define: a look stops receiving a swap once it no
+   * longer counts, which for a swatch is the moment another look takes the screen.
+   */
+  function variantTarget(loaded: LoadedLook, superseded: () => boolean): VariantTarget {
+    return {
+      root: loaded.root,
+      parser: loaded.parser,
+      variants: loaded.variants,
+      acquire: (material: Material): void => loaded.owner.register(material),
+      superseded,
+    };
+  }
+
+  /**
+   * A parsed static and the owner of its resources. Statics are page-lifetime once mounted, but
+   * the owner is what frees a parse that never gets there: its own load failing is nothing to
+   * clean up, while the other static of the pair failing after this one parsed is.
+   */
+  async function loadOwned(url: string, signal: AbortSignal): Promise<OwnedGltf> {
+    const gltf = await loadGltf(url, signal);
+    const owner = createLookOwner();
+    owner.collect(gltf.scene);
+    return { gltf, owner };
   }
 
   function disposeLook(loaded: LoadedLook): void {
     loaded.root.removeFromParent();
-    for (const geometry of loaded.geometries) {
-      geometry.dispose();
-    }
-    const textures = new Set<Texture>();
-    for (const material of loaded.materials) {
-      collectTextures(material, textures);
-      material.dispose();
-    }
-    for (const texture of textures) {
-      texture.dispose();
-    }
-    loaded.geometries.clear();
-    loaded.materials.clear();
-  }
-
-  async function waitToMount(kind: 'statics' | 'look', roots: Object3D[]): Promise<void> {
-    try {
-      await options.beforeMount?.(kind);
-    } catch (error) {
-      // A failed prerequisite leaves parsed content unattached. Release its resources just as
-      // for a replaced look, rather than retaining work that can never reach the scene.
-      const geometries = new Set<BufferGeometry>();
-      const materials = new Set<Material>();
-      const textures = new Set<Texture>();
-      for (const root of roots) {
-        root.traverse((object) => {
-          if (!(object instanceof Mesh)) return;
-          geometries.add(object.geometry);
-          for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
-            materials.add(material);
-          }
-          const original: unknown = object.userData['originalMaterial'];
-          if (original instanceof Material) materials.add(original);
-        });
-      }
-      for (const geometry of geometries) geometry.dispose();
-      for (const material of materials) {
-        collectTextures(material, textures);
-        material.dispose();
-      }
-      for (const texture of textures) texture.dispose();
-      throw error;
-    }
+    loaded.owner.retire();
   }
 
   const switcher = createSwitcher<LoadedLook>({
@@ -529,26 +488,41 @@ export function createShowroom(options: ShowroomOptions): Showroom {
       // Neither static is ever replaced, so neither needs an abort route; the controller exists
       // only because loadGltf takes a signal.
       const forever = new AbortController().signal;
-      const [rotunda, plinth] = await Promise.all([
-        loadGltf(contentUrl(contentBase, catalog.rotunda.file), forever),
-        loadGltf(contentUrl(contentBase, catalog.plinth.file), forever),
-      ]);
-      await waitToMount('statics', [rotunda.scene, plinth.scene]);
-      tuneHierarchy(rotunda.scene, catalog.rotunda.file);
-      tuneHierarchy(plinth.scene, catalog.plinth.file);
-      // The level origin is the room centre at floor height and the plinth stands on it, so both
-      // keep the transform they were exported with.
-      decorate(rotunda.scene);
-      decorate(plinth.scene);
-      scene.add(rotunda.scene);
-      turntable.add(plinth.scene);
-      plinthRoot = plinth.scene;
-      plinthTopY = new Box3().setFromObject(plinth.scene).max.y;
-      if (onScreen !== null) {
-        // A look that arrived before the plinth was measured is standing at floor height.
-        onScreen.root.position.y = plinthTopY;
+      const loads = [
+        loadOwned(contentUrl(contentBase, catalog.rotunda.file), forever),
+        loadOwned(contentUrl(contentBase, catalog.plinth.file), forever),
+      ];
+      try {
+        const [rotunda, plinth] = await Promise.all(loads);
+        await options.beforeMount?.('statics');
+        tuneHierarchy(rotunda.gltf.scene, catalog.rotunda.file);
+        tuneHierarchy(plinth.gltf.scene, catalog.plinth.file);
+        // The level origin is the room centre at floor height and the plinth stands on it, so
+        // both keep the transform they were exported with.
+        decorate(rotunda.gltf.scene);
+        decorate(plinth.gltf.scene);
+        scene.add(rotunda.gltf.scene);
+        turntable.add(plinth.gltf.scene);
+        plinthRoot = plinth.gltf.scene;
+        plinthTopY = new Box3().setFromObject(plinth.gltf.scene).max.y;
+        if (onScreen !== null) {
+          // A look that arrived before the plinth was measured is standing at floor height.
+          onScreen.root.position.y = plinthTopY;
+        }
+        onChange();
+      } catch (error) {
+        // Whatever failed, nothing parsed stays on the heap: each load releases its own parse,
+        // including a sibling that settles only after the pair has already failed. Tuning may
+        // have replaced parsed materials with upgraded instances by then, so each root is
+        // collected as it is now, keeping the upgrade owned with the parse it came from.
+        for (const load of loads) {
+          void load.then((owned: OwnedGltf) => {
+            owned.owner.collect(owned.gltf.scene);
+            owned.owner.retire();
+          }, (): undefined => undefined);
+        }
+        throw error;
       }
-      onChange();
     },
 
     async showLook(id: string): Promise<void> {
@@ -571,14 +545,26 @@ export function createShowroom(options: ShowroomOptions): Showroom {
       if (!look.variants.includes(name)) {
         throw new Error(`the look "${look.id}" has no variant "${name}"`);
       }
-      await selectVariant({ root: look.root, parser: look.parser, variants: look.variants }, name);
+      // A swatch belongs to the look that is on screen. onReady is the moment a switch takes
+      // effect, so a look another one replaced is superseded for the whole outgoing fade, not
+      // only once the fade releases it: no commit onto its meshes, no write to the variant
+      // state the incoming look now owns.
+      const superseded = (): boolean => look.owner.retired || look !== onScreen;
+      await selectVariant(variantTarget(look, superseded), name);
+      if (superseded()) {
+        // The look stopped counting while the parser was resolving. What the swap acquired is
+        // registered with the look's owner, which releases it when the look is released, and
+        // the variant state on screen belongs to the look that replaced this one, so nothing
+        // here may be written.
+        return;
+      }
       applyTunings(look.root);
       look.applied = name;
       currentVariant = name;
       wantedVariant = name;
       // A variant swap brings materials, and with them textures, that were not on the meshes when
       // the file was parsed. Without this the look would leak them when it is replaced.
-      collectResources(look);
+      look.owner.collect(look.root);
       // No dissolve to re-stamp: only the outgoing look carries one, and the look a swatch lands
       // on is the incoming one, which is opaque for the whole fade. setDissolve skips a material
       // already carrying the look's uniform, so a re-stamp would cost nothing either way.

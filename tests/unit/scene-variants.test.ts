@@ -196,4 +196,77 @@ describe('selectVariant', () => {
       selectVariant({ root, parser, variants: ['base', 'light', 'dark'] }, 'dark'),
     ).rejects.toThrow('material array');
   });
+
+  it('registers each resolved material with acquire before it reaches the mesh', async () => {
+    const materials = swatches();
+    const { parser } = fakeParser(materials);
+    // What the mesh carried at acquire time: 'prior' proves the registration happens before the
+    // commit, not only before the end of the swap.
+    const observed: string[] = [];
+    const mesh = mannequin(materials[0], [{ material: 2, variants: [2] }]);
+    const root = new Group();
+    root.add(mesh);
+
+    await selectVariant({
+      root,
+      parser,
+      variants: ['base', 'light', 'dark'],
+      acquire: (material: Material): void => {
+        observed.push(mesh.material === material ? 'committed' : 'prior');
+      },
+    }, 'dark');
+
+    expect(observed).toEqual(['prior']);
+    expect(mesh.material).toBe(materials[2]);
+  });
+
+  it('stops before the next commit when the owning look retires mid-swap', async () => {
+    const materials = swatches();
+    const first = mannequin(materials[0], [{ material: 1, variants: [2] }]);
+    const second = mannequin(materials[0], [{ material: 2, variants: [2] }]);
+    const root = new Group();
+    root.add(first, second);
+    const acquired: Material[] = [];
+    const finalised: Mesh[] = [];
+    let retired = false;
+    let resolutions = 0;
+    let releaseHeld!: (material: Material) => void;
+    const held = new Promise<Material>((resolve) => {
+      releaseHeld = resolve;
+    });
+    // The first resolution commits normally; the second stays pending so the test can retire
+    // the look while the swap is mid-flight.
+    const parser: GLTFParser = Object.create(null);
+    parser.getDependency = (_type: string, index: number): Promise<Material> => {
+      resolutions += 1;
+      return resolutions === 1 ? Promise.resolve(materials[index]) : held;
+    };
+    parser.assignFinalMaterial = (mesh: Mesh): void => {
+      finalised.push(mesh);
+    };
+
+    const swap = selectVariant({
+      root,
+      parser,
+      variants: ['base', 'light', 'dark'],
+      acquire: (material: Material): void => {
+        acquired.push(material);
+      },
+      superseded: (): boolean => retired,
+    }, 'dark');
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    expect(first.material).toBe(materials[1]);
+
+    retired = true;
+    releaseHeld(materials[2]);
+    await swap;
+
+    // The material resolved after retirement is registered (its owner releases it), but no
+    // mesh beyond the retirement is touched.
+    expect(acquired).toEqual([materials[1], materials[2]]);
+    expect(second.material).toBe(materials[0]);
+    expect(finalised).toEqual([first]);
+  });
 });

@@ -1,11 +1,11 @@
-import { BoxGeometry, Group, Mesh, MeshStandardMaterial, Texture } from 'three/webgpu';
-import type { WebGPURenderer } from 'three/webgpu';
+import { BoxGeometry, Group, Mesh, MeshPhysicalMaterial, MeshStandardMaterial, Texture } from 'three/webgpu';
+import type { Material, WebGPURenderer } from 'three/webgpu';
 import type { GLTF, GLTFLoader, GLTFParser } from 'three/addons/loaders/GLTFLoader.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Catalog } from '../../src/catalog/catalog';
 import { CROSSFADE_MS, MAX_FADE_STEP_MS } from '../../src/scene/crossfade';
 import { createShowroom } from '../../src/scene/showroom';
-import type { Showroom } from '../../src/scene/showroom';
+import type { Showroom, ShowroomOptions } from '../../src/scene/showroom';
 
 const { createGltfLoader, parseAsync } = vi.hoisted(() => ({
   createGltfLoader: vi.fn<() => Promise<GLTFLoader>>(),
@@ -27,6 +27,16 @@ function deferred<T>() {
     reject = no;
   });
   return { promise, resolve, reject };
+}
+
+/**
+ * One macrotask boundary: every microtask chain the tests start (parser resolutions, ownership
+ * handoffs) has drained by the time it resolves, without depending on how many hops each has.
+ */
+function flush(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
 }
 
 function lookFixture(name: string) {
@@ -68,7 +78,7 @@ function lookFixture(name: string) {
   return { gltf, root, geometry, mannequin, garment, materials, parser, disposal };
 }
 
-function harness() {
+function harness(beforeMount?: ShowroomOptions['beforeMount']) {
   const catalog: Catalog = {
     version: 1,
     environment: { file: 'sky.hdr' },
@@ -105,7 +115,14 @@ function harness() {
   const renderer: WebGPURenderer = Object.create(null);
   const onChange = vi.fn();
   const decorate = vi.fn();
-  const showroom = createShowroom({ renderer, catalog, contentBase: CONTENT_BASE, onChange, decorate });
+  const showroom = createShowroom({
+    renderer,
+    catalog,
+    contentBase: CONTENT_BASE,
+    onChange,
+    decorate,
+    ...(beforeMount === undefined ? {} : { beforeMount }),
+  });
 
   function pauseFirstParse() {
     const entered = deferred<void>();
@@ -325,5 +342,289 @@ describe('createShowroom', () => {
     expect(second.root.parent).not.toBeNull();
     expect(second.disposal.geometry).not.toHaveBeenCalled();
     expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases a variant that resolves after its look retired, without touching the incoming look', async () => {
+    const { showroom, first, second } = harness();
+    await showroom.showLook('first');
+    // Hold the swatch lookup in the parser, past the switch and the whole outgoing fade.
+    const late = deferred<Material>();
+    vi.mocked(first.parser.getDependency).mockImplementationOnce(() => late.promise);
+    const swatch = showroom.setVariant('light');
+    await showroom.showLook('second');
+    await finishFade(showroom);
+    expect(first.disposal.texture).toHaveBeenCalledTimes(1);
+
+    late.resolve(first.materials[1]);
+    await swatch;
+
+    expect(showroom.currentLook).toBe('second');
+    // The incoming look's variant state is not the retired look's to overwrite.
+    expect(showroom.currentVariant).toBe('base');
+    // Nothing was committed onto the detached root.
+    expect(first.mannequin.material).toBe(first.materials[0]);
+    expect(first.parser.assignFinalMaterial).toHaveBeenCalledTimes(1);
+    // The material the late swap resolved, and its texture, are freed exactly once.
+    expect(first.disposal.materials[1]).toHaveBeenCalledTimes(1);
+    expect(first.disposal.texture).toHaveBeenCalledTimes(1);
+    expect(second.disposal.geometry).not.toHaveBeenCalled();
+  });
+
+  it('ignores a swatch that resolves for the outgoing look mid-fade, and frees its material at fade end', async () => {
+    const { showroom, first } = harness();
+    await showroom.showLook('first');
+    const late = deferred<Material>();
+    vi.mocked(first.parser.getDependency).mockImplementationOnce(() => late.promise);
+    const swatch = showroom.setVariant('light');
+    await showroom.showLook('second');
+    // Inside the cross-fade window: the switch already took effect (onReady ran), the fade runs.
+    expect(showroom.fading).toBe(true);
+
+    late.resolve(first.materials[1]);
+    await swatch;
+
+    // The variant state the showroom reports is the incoming look's, not the leaving look's.
+    expect(showroom.currentVariant).toBe('base');
+    // The outgoing look's meshes keep the material they had; nothing new is committed onto them.
+    expect(first.mannequin.material).toBe(first.materials[0]);
+    expect(first.parser.assignFinalMaterial).toHaveBeenCalledTimes(1);
+    // The fade has not released the outgoing look yet, so the late material is owned but alive.
+    expect(first.disposal.materials[1]).not.toHaveBeenCalled();
+
+    await finishFade(showroom);
+
+    // Released with the outgoing look at fade end, exactly once.
+    expect(first.disposal.materials[1]).toHaveBeenCalledTimes(1);
+    expect(first.disposal.texture).toHaveBeenCalledTimes(1);
+    expect(showroom.currentVariant).toBe('base');
+  });
+
+  it('owns the finalized clone when a later mesh rejects, disposing it with the look', async () => {
+    const { showroom, first } = harness();
+    await showroom.showLook('first');
+    // The parser's finalizer replaces the assigned material with a clone it caches; the second
+    // mapped mesh makes the swatch span two parser resolutions.
+    const clone = new MeshStandardMaterial({ name: 'finalized-clone' });
+    const cloneDispose = vi.spyOn(clone, 'dispose');
+    const extra = new Mesh(first.geometry, first.materials[0]);
+    extra.userData['gltfExtensions'] = {
+      KHR_materials_variants: { mappings: [{ material: 2, variants: [2] }] },
+    };
+    first.root.add(extra);
+    first.parser.assignFinalMaterial = vi.fn((mesh: Mesh): void => {
+      if (mesh === first.mannequin) {
+        mesh.material = clone;
+      }
+    });
+    const failure = new Error('second resolution failed');
+    const fixtureDependency = first.parser.getDependency;
+    let resolutions = 0;
+    first.parser.getDependency = vi.fn((type: string, index: number): Promise<Material> => {
+      resolutions += 1;
+      if (resolutions === 2) {
+        return Promise.reject(failure);
+      }
+      return fixtureDependency(type, index);
+    });
+
+    await expect(showroom.setVariant('dark')).rejects.toBe(failure);
+    expect(first.mannequin.material).toBe(clone);
+
+    await showroom.showLook('second');
+    await finishFade(showroom);
+
+    expect(cloneDispose).toHaveBeenCalledTimes(1);
+    expect(first.disposal.materials[2]).toHaveBeenCalledTimes(1);
+    expect(first.disposal.texture).toHaveBeenCalledTimes(1);
+  });
+
+  it('owns the finalized clone when the look is superseded mid-swap, dissolving and freeing it', async () => {
+    const { showroom, first } = harness();
+    await showroom.showLook('first');
+    const clone = new MeshStandardMaterial({ name: 'finalized-clone' });
+    const cloneDispose = vi.spyOn(clone, 'dispose');
+    const extra = new Mesh(first.geometry, first.materials[0]);
+    extra.userData['gltfExtensions'] = {
+      KHR_materials_variants: { mappings: [{ material: 2, variants: [2] }] },
+    };
+    first.root.add(extra);
+    first.parser.assignFinalMaterial = vi.fn((mesh: Mesh): void => {
+      if (mesh === first.mannequin) {
+        mesh.material = clone;
+      }
+    });
+    const held = deferred<Material>();
+    const fixtureDependency = first.parser.getDependency;
+    let resolutions = 0;
+    first.parser.getDependency = vi.fn((type: string, index: number): Promise<Material> => {
+      resolutions += 1;
+      return resolutions === 2 ? held.promise : fixtureDependency(type, index);
+    });
+
+    const swatch = showroom.setVariant('dark');
+    await showroom.showLook('second');
+    // The clone joined the look's material set before the fade started, so the dissolve stamped
+    // it: no opaque mesh while the rest of the look fades out.
+    const stamp = (material: Material): { opacity: unknown; alphaTest: unknown } => {
+      const fade = material as Material & { opacityNode?: unknown; alphaTestNode?: unknown };
+      return { opacity: fade.opacityNode, alphaTest: fade.alphaTestNode };
+    };
+    // The same live uniform as the rest of the outgoing look, not merely some value.
+    expect(stamp(clone).opacity ?? null).not.toBeNull();
+    expect(stamp(clone)).toEqual(stamp(first.materials[0]));
+    expect(stamp(clone).opacity).toBe(stamp(first.materials[0]).opacity);
+
+    held.resolve(first.materials[2]);
+    await swatch;
+
+    expect(first.mannequin.material).toBe(clone);
+    expect(extra.material).toBe(first.materials[0]);
+    await finishFade(showroom);
+
+    expect(cloneDispose).toHaveBeenCalledTimes(1);
+    expect(first.disposal.materials[2]).toHaveBeenCalledTimes(1);
+    expect(first.disposal.texture).toHaveBeenCalledTimes(1);
+  });
+
+  it('frees a static upgrade when the other static\'s tuning throws', async () => {
+    const { showroom, rotunda, plinth } = harness();
+    const physicalDispose = vi.spyOn(MeshPhysicalMaterial.prototype, 'dispose');
+    // The rotunda's single-material mesh carries a tuned name, so tuning upgrades it in place;
+    // the plinth's material-array mesh carries one too, so its tuning step throws.
+    const rotundaOriginal = rotunda.mannequin.material as MeshStandardMaterial;
+    rotundaOriginal.name = 'MI_Metal_Brass_02';
+    plinth.materials[0].name = 'MI_Metal_Brass_02';
+    await expect(showroom.loadStatics()).rejects.toThrow('material tuning needs one material per mesh');
+    await flush();
+
+    // The upgraded physical instance is owned and released with the failed pair, not just the
+    // parse-time snapshot both roots were collected at.
+    expect(physicalDispose).toHaveBeenCalledTimes(1);
+    expect(rotunda.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(rotunda.disposal.original).toHaveBeenCalledTimes(1);
+    expect(rotunda.disposal.materials[0]).toHaveBeenCalledTimes(1);
+    expect(rotunda.disposal.texture).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.materials[0]).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.original).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.texture).toHaveBeenCalledTimes(1);
+    expect(showroom.turntableState.plinthAttached).toBe(false);
+  });
+
+  it('frees the parsed static when its sibling load fails', async () => {
+    const { showroom, rotunda, plinth, fetchMock } = harness();
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }));
+    await expect(showroom.loadStatics()).rejects.toThrow('content: /content/rotunda.glb answered 503');
+    await flush();
+
+    // The plinth parsed while the rotunda failed; its resources are released, not retained.
+    expect(plinth.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.materials[0]).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.original).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.texture).toHaveBeenCalledTimes(1);
+    // The rotunda never parsed, so there is nothing of its own to free.
+    expect(rotunda.disposal.geometry).not.toHaveBeenCalled();
+    expect(showroom.turntableState.plinthAttached).toBe(false);
+  });
+
+  it('frees a static that finishes parsing after the pair already failed', async () => {
+    const { showroom, plinth, pauseFirstParse } = harness();
+    const failure = new Error('rotunda parse failed');
+    parseAsync.mockRejectedValueOnce(failure);
+    // The rotunda's parse rejects; the plinth's is the first call held open here. The rejection
+    // expectation is attached at once: the failure lands during the flush below.
+    const held = pauseFirstParse();
+    const failing = expect(showroom.loadStatics()).rejects.toBe(failure);
+    await flush();
+    expect(showroom.turntableState.plinthAttached).toBe(false);
+
+    held.resolve(plinth.gltf);
+    await failing;
+    await flush();
+
+    expect(plinth.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.materials[0]).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.original).toHaveBeenCalledTimes(1);
+    expect(plinth.disposal.texture).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases every acquired resource when a look\'s initial variant rejects', async () => {
+    const { showroom, first, onChange } = harness();
+    const failure = new Error('variant dependency failed');
+    vi.mocked(first.parser.getDependency).mockImplementationOnce(() => Promise.reject(failure));
+    await expect(showroom.showLook('first')).rejects.toBe(failure);
+
+    expect(showroom.currentLook).toBeNull();
+    expect(first.root.parent).toBeNull();
+    expect(first.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(first.disposal.original).toHaveBeenCalledTimes(1);
+    expect(first.disposal.materials[0]).toHaveBeenCalledTimes(1);
+    expect(first.disposal.texture).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('releases the parsed look when tuning throws', async () => {
+    const { showroom, first } = harness();
+    // A tuned table name on the garment's material makes applyTuning reject the material array.
+    first.materials[0].name = 'MI_Metal_Brass_02';
+    await expect(showroom.showLook('first')).rejects.toThrow(
+      'material tuning needs one material per mesh',
+    );
+
+    expect(first.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(first.disposal.original).toHaveBeenCalledTimes(1);
+    expect(first.disposal.materials[0]).toHaveBeenCalledTimes(1);
+    expect(first.disposal.texture).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a partially applied variant owned so its materials are freed with the look', async () => {
+    const { showroom, first } = harness();
+    // A second mapped mesh makes one swatch span two parser resolutions.
+    const extra = new Mesh(first.geometry, first.materials[0]);
+    extra.userData['gltfExtensions'] = {
+      KHR_materials_variants: { mappings: [{ material: 2, variants: [2] }] },
+    };
+    first.root.add(extra);
+    await showroom.showLook('first');
+    const failure = new Error('second resolution failed');
+    const fixtureDependency = first.parser.getDependency;
+    let resolutions = 0;
+    first.parser.getDependency = vi.fn((type: string, index: number): Promise<Material> => {
+      resolutions += 1;
+      if (resolutions === 2) {
+        return Promise.reject(failure);
+      }
+      return fixtureDependency(type, index);
+    });
+
+    await expect(showroom.setVariant('dark')).rejects.toBe(failure);
+    // The failed swap leaves the state it reached; the point is that nothing escapes ownership.
+    expect(showroom.currentVariant).toBe('base');
+    expect(first.mannequin.material).toBe(first.materials[2]);
+
+    await showroom.showLook('second');
+    await finishFade(showroom);
+
+    expect(first.disposal.materials[2]).toHaveBeenCalledTimes(1);
+    expect(first.disposal.materials[0]).toHaveBeenCalledTimes(1);
+    expect(first.disposal.original).toHaveBeenCalledTimes(1);
+    expect(first.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(first.disposal.texture).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases a look whose mount prerequisite fails', async () => {
+    const beforeMount: ShowroomOptions['beforeMount'] = async (kind) => {
+      if (kind === 'look') {
+        throw new Error('prerequisite failed');
+      }
+    };
+    const { showroom, first } = harness(beforeMount);
+    await expect(showroom.showLook('first')).rejects.toThrow('prerequisite failed');
+
+    expect(first.disposal.geometry).toHaveBeenCalledTimes(1);
+    expect(first.disposal.original).toHaveBeenCalledTimes(1);
+    expect(first.disposal.materials[0]).toHaveBeenCalledTimes(1);
+    expect(first.disposal.texture).toHaveBeenCalledTimes(1);
+    expect(first.root.parent).toBeNull();
   });
 });
