@@ -8,7 +8,7 @@ function lookJson(overrides: Record<string, unknown> = {}): Record<string, unkno
   return {
     id: 'wallis-dress',
     name: 'Wallis Dress',
-    description: 'In 1937, Wallis Simpson married Prince Edward of Great Britain.',
+    description: 'Wallis Simpson wore a wedding ensemble by Mainbocher in 1937.',
     thumbnail: 'thumbs/wallis-dress.png',
     file: 'looks/wallis-dress.glb',
     variants: ['base', 'light', 'dark'],
@@ -31,6 +31,22 @@ function catalogJson(overrides: Record<string, unknown> = {}): Record<string, un
 }
 
 describe('parseCatalog', () => {
+  it('accepts an optional HTTPS source URL and preserves its exact value', () => {
+    const sourceUrl = 'https://example.com/source?id=42';
+    const catalog = parseCatalog(catalogJson({ looks: [lookJson({ sourceUrl })] }));
+    expect(catalog.looks[0].sourceUrl).toBe(sourceUrl);
+    expect(Object.hasOwn(parseCatalog(catalogJson()).looks[0], 'sourceUrl')).toBe(false);
+  });
+
+  it.each([
+    'http://example.com/', 'javascript:alert(1)', '/source', '//example.com', 'https://', '', null, 42,
+  ])(
+    'rejects a non-HTTPS or malformed source URL %j', (sourceUrl) => {
+      const json = catalogJson({ looks: [lookJson({ sourceUrl })] });
+      expect(() => parseCatalog(json)).toThrow('looks[0].sourceUrl');
+    },
+  );
+
   it('reads the shape the optimize pass writes', () => {
     const catalog = parseCatalog(catalogJson());
     expect(catalog.version).toBe(CATALOG_VERSION);

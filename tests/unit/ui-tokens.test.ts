@@ -33,7 +33,8 @@ const FROZEN_PREDECESSOR_SHEET_HASHES: Readonly<Record<string, string>> = {
   // the scroll edge; below 1200px the last item now carries the ring's extent as end padding and
   // each thumbnail a matching scroll margin.
   'catalog-strip.css': '61cb0e0985cc9b54e333d4671cd389981ac4e05eada7c03aa1934d1e813fe02e',
-  'product-card.css': '71df61da1cd47a490021cd36d193be30cb5e2a191f9b48dbabdef5f48cb2b9cd',
+  // 2026-10-12: the Source link uses the existing muted text and focus tokens.
+  'product-card.css': '4586de02d5b823d001d9e0aa4d10e02056b992bc90e797bba52657d293613659',
   'share.css': 'dc7722407941d032ebab9b78b426eae29ccb5e083fc215046956042c7a104cca',
 };
 

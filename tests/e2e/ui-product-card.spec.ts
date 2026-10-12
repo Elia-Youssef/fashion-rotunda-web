@@ -141,8 +141,12 @@ test.describe('Product-Card Parity and Narration Cleanup', () => {
     const materialBtn = page.locator('.product-card__action[data-action="material"]');
     const swatches = page.locator('.product-card__swatches');
 
-    // Focus Rotate
-    await rotateBtn.focus();
+    const source = page.locator('.product-card__source');
+    await source.focus();
+    await expect(source).toBeFocused();
+
+    // The source is the tab stop immediately before Rotate.
+    await page.keyboard.press('Tab');
     await expect(rotateBtn).toBeFocused();
 
     // Tab to Reset

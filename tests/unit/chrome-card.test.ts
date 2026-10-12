@@ -84,6 +84,41 @@ function swatchNames(): string[] {
 }
 
 describe('mountProductCard', () => {
+  it('renders a native, focusable Source link under the description with safe new-tab attributes', () => {
+    const sourceUrl = 'https://example.com/source?id=42';
+    mount({ look: { ...LOOK, sourceUrl } });
+    const source = root.querySelector<HTMLAnchorElement>('.product-card__source');
+    expect(source).toBeInstanceOf(HTMLAnchorElement);
+    expect(source?.hidden).toBe(false);
+    expect(source?.getAttribute('href')).toBe(sourceUrl);
+    expect(source?.textContent).toBe('Source');
+    expect(source?.getAttribute('aria-label')).toBe('Source (opens in a new tab)');
+    expect(source?.target).toBe('_blank');
+    expect(source?.rel).toBe('noopener noreferrer');
+    expect(source?.previousElementSibling?.className).toBe('product-card__description');
+    expect(source?.tabIndex).toBe(0);
+    source?.focus();
+    expect(document.activeElement).toBe(source);
+  });
+
+  it('updates the Source URL on replacement and hides and clears it without a source or look', () => {
+    const handle = mount();
+    const source = root.querySelector<HTMLAnchorElement>('.product-card__source');
+    expect(source?.hidden).toBe(true);
+    expect(source?.hasAttribute('href')).toBe(false);
+    for (const look of [LOOK, OTHER]) {
+      const sourceUrl = `https://example.com/${look.id}`;
+      handle.setLook({ ...look, sourceUrl }, 'base');
+      expect(source?.hidden).toBe(false);
+      expect(source?.getAttribute('href')).toBe(sourceUrl);
+    }
+    for (const look of [LOOK, null]) {
+      handle.setLook(look, null);
+      expect(source?.hidden).toBe(true);
+      expect(source?.hasAttribute('href')).toBe(false);
+    }
+  });
+
   it('renders the name, the description and the thumbnail', () => {
     mount();
     const heading = root.querySelector('.product-card h2');

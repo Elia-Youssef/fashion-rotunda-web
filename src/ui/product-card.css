@@ -97,6 +97,20 @@
   width: 100%;
 }
 
+.product-card__source {
+  color: var(--text-muted);
+  font-size: var(--type-sm);
+}
+
+.product-card__source[hidden] {
+  display: none;
+}
+
+.product-card__source:focus-visible {
+  outline: var(--focus-ring) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
 .product-card__action {
   min-height: var(--control-height);
   min-width: 44px;

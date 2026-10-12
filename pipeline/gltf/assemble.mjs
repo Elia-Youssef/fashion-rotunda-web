@@ -21,7 +21,7 @@ import { ALL_EXTENSIONS, KHRMaterialsVariants } from '@gltf-transform/extensions
 import { mergeDocuments, prune, unpartition } from '@gltf-transform/functions';
 
 import { sourceDir, workDir } from '../config.mjs';
-import { correctDescription } from './lib/catalog-corrections.mjs';
+import { applyLookText, validateLookText } from './lib/catalog-text.mjs';
 
 /** Where stage one writes when the caller says nothing. Stage two reads from here. */
 export const assembledDir = resolve(workDir, 'assembled');
@@ -157,7 +157,6 @@ async function assembleLook(io, look, out, exportRoot) {
   return {
     id: look.slug,
     name: look.name,
-    description: correctDescription(look.slug, plainText(look.description)),
     thumbnail,
     file,
     variants: variantNames,
@@ -178,6 +177,7 @@ export async function assemble({ out = assembledDir, log = console.log } = {}) {
   const src = resolve(sourceDir, 'unreal');
   const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
   const source = JSON.parse(readFileSync(resolve(src, 'catalog-source.json'), 'utf8'));
+  validateLookText(source.looks.map((look) => ({ id: look.slug })));
 
   mkdirSync(resolve(out, 'looks'), { recursive: true });
   mkdirSync(resolve(out, 'thumbs'), { recursive: true });
@@ -198,7 +198,7 @@ export async function assemble({ out = assembledDir, log = console.log } = {}) {
     version: 1,
     rotunda: { file: 'rotunda.glb' },
     plinth: { file: 'plinth.glb' },
-    looks,
+    looks: applyLookText(looks),
     views: {
       // The showroom camera presets. Metres, Y up. All kept strictly inside the orbit limits.
       proof: { position: [0, 1.7, 4.2], target: [0, 1.0, 0], fov: 40 },

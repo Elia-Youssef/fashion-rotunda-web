@@ -59,7 +59,13 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
   name.className = 'product-card__name';
   const description = document.createElement('p');
   description.className = 'product-card__description';
-  heading.append(name, description);
+  const source = document.createElement('a');
+  source.className = 'product-card__source';
+  source.textContent = 'Source';
+  source.setAttribute('aria-label', 'Source (opens in a new tab)');
+  source.target = '_blank';
+  source.rel = 'noopener noreferrer';
+  heading.append(name, description, source);
 
   head.append(thumb, thumbEmpty, heading);
   card.appendChild(head);
@@ -226,6 +232,9 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
     thumbnailAssignment?.abort();
     thumbnailAssignment = new AbortController();
     thumb.removeAttribute('src');
+    source.hidden = look?.sourceUrl === undefined;
+    if (look?.sourceUrl !== undefined) source.href = look.sourceUrl;
+    else source.removeAttribute('href');
     if (look === null) {
       name.textContent = '';
       description.textContent = 'No look on the plinth yet.';

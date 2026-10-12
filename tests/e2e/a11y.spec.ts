@@ -112,7 +112,11 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
   await tabUntil(page, 'canvas#scene');
   expect(await focusMatches(page, 'canvas#scene'), 'activeElement is canvas').toBe(true);
 
-  // Tab from canvas to action button
+  // Tab from canvas to the look's Source link, then to an action button
+  await page.keyboard.press('Tab');
+  expect(await focusMatches(page, '.product-card__source'), 'activeElement is the Source link').toBe(
+    true,
+  );
   await page.keyboard.press('Tab');
   expect(await focusMatches(page, '.product-card__action'), 'activeElement is an action button').toBe(
     true,

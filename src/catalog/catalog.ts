@@ -8,6 +8,7 @@ export interface CatalogLook {
   id: string;
   name: string;
   description: string;
+  sourceUrl?: string;
   thumbnail: string | null;
   file: string;
   variants: string[];
@@ -109,12 +110,25 @@ function readLook(value: unknown, path: string): CatalogLook {
     id: readString(look.get('id'), `${path}.id`),
     name: readString(look.get('name'), `${path}.name`),
     description: readString(look.get('description'), `${path}.description`),
+    ...(look.has('sourceUrl') ? { sourceUrl: readSourceUrl(look.get('sourceUrl'), `${path}.sourceUrl`) } : {}),
     thumbnail: readNullableString(look.get('thumbnail'), `${path}.thumbnail`),
     file: readString(look.get('file'), `${path}.file`),
     variants,
     defaultVariant,
     mannequinNode: readString(look.get('mannequinNode'), `${path}.mannequinNode`),
   };
+}
+
+function readSourceUrl(value: unknown, path: string): string {
+  const text = readString(value, path);
+  let url: URL;
+  try {
+    url = new URL(text);
+  } catch {
+    fail(path, 'is not an HTTPS URL');
+  }
+  if (!text.startsWith('https://') || url.protocol !== 'https:') fail(path, 'is not an HTTPS URL');
+  return text;
 }
 
 function readView(value: unknown, path: string): CatalogView {
