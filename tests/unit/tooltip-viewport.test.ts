@@ -5,11 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installTooltips, VIEWPORT_PADDING_PX } from '../../src/ui/tooltip';
 import type { TooltipHandle } from '../../src/ui/tooltip';
 
-// The tooltip's viewport contract (S18, the Y16 review's R8): the box wraps inside a
-// viewport-bounded width instead of forcing one line, and updatePosition keeps the measured box
-// inside that same inset rectangle on both axes, so the whole tooltip stays visible at a 320 px
-// viewport and at 200 percent text. jsdom has no layout engine, so each scenario supplies the
-// box the browser would measure for the wrapped text and asserts the clamped position.
+// The tooltip's viewport contract: the box wraps inside a viewport-bounded width instead of
+// forcing one line, and updatePosition keeps the measured box inside that same inset rectangle
+// on both axes, so the whole tooltip stays visible at a 320 px viewport and at 200 percent text.
+// jsdom has no layout engine, so each scenario supplies the box the browser would measure for the
+// wrapped text and asserts the clamped position.
 
 const VIEWPORT = { width: 320, height: 568 };
 

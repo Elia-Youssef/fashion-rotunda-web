@@ -6,8 +6,8 @@ import { contrast, over } from '../support/contrast';
 // Muted text over the glass chrome: the roles that sit directly on translucent surfaces with no
 // opaque panel behind them carry --text-muted-glass, which must reach WCAG AA (4.5:1) against
 // the brightest composited glass the scene paints behind them. The 2026-10-12 browser audit
-// (S18, the Y16 review's R7) sampled the composited backdrop-filter result inside each role's
-// box over the brightest rig and camera poses; the worst backdrop per role is pinned below.
+// sampled the composited backdrop-filter result inside each role's box over the brightest rig
+// and camera poses; the worst backdrop per role is pinned below.
 // --text-muted stays on the opaque panels, where it passes, and the panel opacities are
 // unchanged by this contract.
 

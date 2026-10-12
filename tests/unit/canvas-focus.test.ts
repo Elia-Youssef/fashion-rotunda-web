@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-// The canvas focus indicator (S18, the Y16 review's R9). The canvas is a tab stop, but it spans
+// The canvas focus indicator. The canvas is a tab stop, but it spans
 // the whole viewport, so its indicator must live in the shared focus policy in styles.css and
 // carry its own treatment: inset into the canvas box so the viewport cannot clip it, two-tone
 // so it reads over the bright marble floor and the dark walls alike, and declared with an

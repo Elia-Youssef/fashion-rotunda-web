@@ -77,9 +77,9 @@ describe('mountBadge', () => {
     expect(root.querySelector('.badge__tier')).toBe(tierLabel);
   });
 
-  // The GPU name is only in the tooltip, so a keyboard visitor needs the badge on the tab order
-  // (S18, the Y16 review's R8): it is a tab stop and the page tooltip opens on focus-visible
-  // focus, like on every other tooltip anchor.
+  // The GPU name is only in the tooltip, so a keyboard visitor needs the badge on the tab order:
+  // it is a tab stop and the page tooltip opens on focus-visible focus, like on every other
+  // tooltip anchor.
   it('is reachable by Tab and its GPU tooltip opens from the keyboard', () => {
     const root = document.createElement('div');
     document.body.appendChild(root);
