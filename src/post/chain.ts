@@ -67,7 +67,7 @@ import type BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import type DepthOfFieldNode from 'three/addons/tsl/display/DepthOfFieldNode.js';
 import type { SSRNodeOptions } from 'three/addons/tsl/display/SSRNode.js';
 import type { PerspectiveCamera, Scene } from 'three';
-import type { Node, PassNode, UniformNode, WebGPURenderer } from 'three/webgpu';
+import type { Node, PassNode, Texture, UniformNode, WebGPURenderer } from 'three/webgpu';
 import type RTTNode from 'three/src/nodes/utils/RTTNode.js';
 
 import { postSettingsFor, settingsForLevel } from './settings';
@@ -311,6 +311,18 @@ interface DepthOfFieldNodeFull extends DepthOfFieldNode {
 }
 
 /**
+ * TRAANode in three.js 0.186.0 samples a 1x1 depth placeholder until its first resolved frame
+ * rebinds that sampler to the history depth (TRAANode.js lines 237 and 426-428). The placeholder is
+ * a standalone depth texture: it belongs to no render target, so target disposal cannot free it,
+ * and TRAANode.dispose at TRAANode.js line 613 frees the history and resolve targets and the
+ * resolve material but not the placeholder. TRAANode.d.ts omits the field.
+ */
+interface TRAANodePlaceholderDepth extends TRAANode {
+  /** Private in three.js; optional so a version without it leaves nothing to free instead of throwing. */
+  readonly _previousDepthNode?: { value: Texture | null };
+}
+
+/**
  * Builds the 3D texture containing the showroom's warm grade LUT.
  * UnsignedByteType with LinearFilter ensures hardware filtering across both WebGPU and WebGL2.
  */
@@ -371,6 +383,8 @@ interface ChainGraph {
   prePass: PassNode | null;
   gtao: GTAONode | null;
   traaNode: TRAANode | null;
+  /** The 1x1 depth TRAANode samples before its first resolved frame; see TRAANodePlaceholderDepth. */
+  traaPreviousDepth: Texture | null;
   ssgiNode: SSGINodeWithSize | null;
   ssrNode: SSRNode | null;
   bloomNode: BloomNodeWithTextureNode | null;
@@ -475,6 +489,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
     let ssrNode: SSRNode | null = null;
     let bloomNode: BloomNodeWithTextureNode | null = null;
     let dofNode: DepthOfFieldNodeFull | null = null;
+    let traaPreviousDepth: Texture | null = null;
     let dofActiveUniform: UniformNode<'float', number> | null = null;
     let focusDistanceUniform: UniformNode<'float', number> | null = null;
     let bokehScaleUniform: UniformNode<'float', number> | null = null;
@@ -589,6 +604,9 @@ export function createPostChain(options: PostChainOptions): PostChain {
         scenePass.getTextureNode('velocity'),
         camera,
       );
+      // The node's own disposal misses this placeholder, so the graph that owns the node retires
+      // it; read it now, before the first resolved frame rebinds the sampler.
+      traaPreviousDepth = (traaNode as TRAANodePlaceholderDepth)._previousDepthNode?.value ?? null;
     }
 
     const beautyInput = traaNode ?? compositeColor ?? scenePass.getTextureNode();
@@ -648,6 +666,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
       prePass,
       gtao,
       traaNode,
+      traaPreviousDepth,
       ssgiNode,
       ssrNode,
       bloomNode,
@@ -671,6 +690,8 @@ export function createPostChain(options: PostChainOptions): PostChain {
     target.prePass?.dispose();
     target.gtao?.dispose();
     target.traaNode?.dispose();
+    // Standalone texture: no target disposal can reach it, and TRAANode.dispose omits it.
+    target.traaPreviousDepth?.dispose();
     target.ssgiNode?.dispose();
     target.ssrNode?.dispose();
     target.bloomNode?.dispose();

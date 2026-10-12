@@ -3,7 +3,7 @@
 // copyFramebufferToTexture), so the size bookkeeping is covered without drawing anything.
 
 import { RenderTarget, ViewportTextureNode } from 'three/webgpu';
-import type { NodeFrame } from 'three/webgpu';
+import type { NodeFrame, Texture } from 'three/webgpu';
 import { describe, expect, it, vi } from 'vitest';
 
 import { separateViewportTextureSizes } from '../../src/renderer/viewport-texture';
@@ -82,5 +82,72 @@ describe('ViewportTextureNode with two render targets of the same size', () => {
     expect(node.getTextureForReference(target)).toBe(first);
     expect(first.source).toBe(source);
     expect(node.getTextureForReference(null)).not.toBe(first);
+  });
+});
+
+// A retired post graph disposes its render targets, and each target's copy must go with it: one
+// uploaded framebuffer texture per target otherwise stays cached forever (the renderer's texture
+// count grows by that many on every rebuild).
+describe('viewport copy retirement', () => {
+  function drawnCopy(node: ViewportTextureNode, target: RenderTarget): Texture {
+    node.updateBefore(frameFor(target));
+    return node.getTextureForReference(target);
+  }
+
+  function disposalCounter(texture: Texture): () => number {
+    let count = 0;
+    texture.addEventListener('dispose', () => {
+      count += 1;
+    });
+    return () => count;
+  }
+
+  it('disposes the copy and drops it from the cache when its reference is finally disposed', () => {
+    separateViewportTextureSizes();
+    const node = new ViewportTextureNode();
+    const target = new RenderTarget(640, 480);
+    const copy = drawnCopy(node, target);
+    const disposed = disposalCounter(copy);
+
+    target.dispose();
+    target.dispose();
+
+    expect(disposed()).toBe(1);
+    expect(node.getTextureForReference(target)).not.toBe(copy);
+  });
+
+  it('keeps the copy of a target that only reallocates, and retires it at the final disposal', () => {
+    separateViewportTextureSizes();
+    const node = new ViewportTextureNode();
+    const target = new RenderTarget(640, 480);
+    const copy = drawnCopy(node, target);
+    const disposed = disposalCounter(copy);
+
+    // setSize dispatches the same 'dispose' event, but at the new size the copy has not drawn yet.
+    target.setSize(320, 240);
+    expect(disposed()).toBe(0);
+    expect(node.getTextureForReference(target)).toBe(copy);
+
+    // The next draw resizes the copy; a later disposal at that size is the final retirement.
+    node.updateBefore(frameFor(target));
+    expect(copy.image).toMatchObject({ width: 320, height: 240 });
+    target.dispose();
+    expect(disposed()).toBe(1);
+    expect(node.getTextureForReference(target)).not.toBe(copy);
+  });
+
+  it('keeps a live reference copy while another reference retires', () => {
+    separateViewportTextureSizes();
+    const node = new ViewportTextureNode();
+    const kept = new RenderTarget(640, 480);
+    const retiring = new RenderTarget(640, 480);
+    const keptCopy = drawnCopy(node, kept);
+    drawnCopy(node, retiring);
+    const keptDisposed = disposalCounter(keptCopy);
+
+    retiring.dispose();
+
+    expect(keptDisposed()).toBe(0);
+    expect(node.getTextureForReference(kept)).toBe(keptCopy);
   });
 });

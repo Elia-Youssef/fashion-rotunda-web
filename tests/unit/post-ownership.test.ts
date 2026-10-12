@@ -89,10 +89,14 @@ function observeGraph(pipeline: RenderPipeline) {
     if (Array.isArray(value)) {
       value.forEach(collect);
     } else if (value && typeof value === 'object') {
-      if ('isRenderTarget' in value || 'isMaterial' in value || 'isData3DTexture' in value) {
+      if ('isRenderTarget' in value || 'isMaterial' in value || 'isTexture' in value) {
         resources.add(value as Resource);
       } else if ('isQuadMesh' in value && 'material' in value) {
         collect(value.material);
+      } else if ('isTextureNode' in value && 'value' in value) {
+        // A texture node carries its texture in .value; TRAA's initial depth placeholder is
+        // reachable only that way.
+        collect((value as { value: unknown }).value);
       }
     }
   }
@@ -106,7 +110,20 @@ function observeGraph(pipeline: RenderPipeline) {
       Object.values(node).forEach(collect);
     }
   }
-  const counts = [...resources].map((resource) => ({ resource, count: disposalCount(resource) }));
+  // A render target frees its own attachments and its depth texture when it is disposed; those
+  // textures never see a dispose event of their own in this renderer-less fixture. Everything
+  // else is a standalone texture the graph itself must dispose exactly once.
+  const withTarget = new Set<unknown>();
+  for (const resource of resources) {
+    if ('isRenderTarget' in resource) {
+      const target = resource as RenderTarget;
+      target.textures.forEach((texture) => withTarget.add(texture));
+      if (target.depthTexture !== null) withTarget.add(target.depthTexture);
+    }
+  }
+  const counts = [...resources]
+    .filter((resource) => !withTarget.has(resource))
+    .map((resource) => ({ resource, count: disposalCount(resource) }));
   expect(counts.some(({ resource }) => 'isRenderTarget' in resource)).toBe(true);
   expect(counts.some(({ resource }) => 'isMaterial' in resource)).toBe(true);
   const inputs = nodes.filter((node) => node.isPassTextureNode);
@@ -115,6 +132,9 @@ function observeGraph(pipeline: RenderPipeline) {
   return {
     nodes,
     rtts,
+    standaloneTextures: counts
+      .filter(({ resource }) => 'isTexture' in resource)
+      .map(({ resource }) => resource as Texture),
     assertDisposed(times: number): void {
       for (const { resource, count } of counts) {
         expect(count(), `${resource.constructor.name} disposal events`).toBe(times);
@@ -230,6 +250,32 @@ describe('post graph resource ownership', () => {
       chain.dispose();
       fallback.assertDisposed(1);
       failed.assertDisposed(1);
+      sample.assertBorrowed();
+    });
+
+  it.each(profiles)('$tier/$backend leaves no old-graph texture undisposed across a rebuild',
+    ({ backend, tier }) => {
+      const sample = fixture(backend, tier);
+      const retired = createPostChain(sample.options);
+      const retiredGraph = latestGraph();
+      expect(retiredGraph.standaloneTextures.length).toBeGreaterThan(0);
+      if (retiredGraph.nodes.some((node) => node.constructor.name === 'TRAANode')) {
+        // The 1x1 depth TRAA samples before its first resolved frame; TRAANode.dispose omits it.
+        expect(retiredGraph.standaloneTextures.some((texture) => 'isDepthTexture' in texture))
+          .toBe(true);
+      }
+      // The rebuild the composition root performs on a canvas-box change: build the replacement
+      // first, then dispose the retired chain.
+      const active = createPostChain(sample.options);
+      const activeGraph = latestGraph();
+      retiredGraph.assertDisposed(0);
+      retired.dispose();
+      retiredGraph.assertDisposed(1);
+      activeGraph.assertDisposed(0);
+      active.dispose();
+      activeGraph.assertDisposed(1);
+      retired.dispose();
+      retiredGraph.assertDisposed(1);
       sample.assertBorrowed();
     });
 
