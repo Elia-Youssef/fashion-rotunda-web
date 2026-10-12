@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+import { contrast, over } from '../support/contrast';
+
 // Muted text over the glass chrome: the roles that sit directly on translucent surfaces with no
 // opaque panel behind them carry --text-muted-glass, which must reach WCAG AA (4.5:1) against
 // the brightest composited glass the scene paints behind them. The 2026-10-12 browser audit
@@ -40,22 +42,12 @@ function tokenColor(name: string): [number, number, number] {
   return [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)) as [number, number, number];
 }
 
-// WCAG 2.x relative luminance and contrast ratio for two opaque sRGB colours.
-function luminance([red, green, blue]: [number, number, number]): number {
-  const channels = [red, green, blue].map((value) => {
-    const channel = value / 255;
-    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-  });
-  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
-}
-
-function contrast(foreground: [number, number, number], background: [number, number, number]): number {
-  const lighter = Math.max(luminance(foreground), luminance(background));
-  const darker = Math.min(luminance(foreground), luminance(background));
-  return (lighter + 0.05) / (darker + 0.05);
-}
-
 describe('muted-on-glass text contrast', () => {
+  it('composites translucent text before computing contrast', () => {
+    expect(over([255, 255, 255, 0.5], [0, 0, 0, 1])).toEqual([127.5, 127.5, 127.5, 1]);
+    expect(contrast([255, 255, 255, 0], [0, 0, 0, 1])).toBe(1);
+  });
+
   const glassText = tokenColor(GLASS_TOKEN);
 
   // One row per audited role: the stylesheet that owns it, its selector, and the worst
@@ -85,7 +77,7 @@ describe('muted-on-glass text contrast', () => {
   it.each(roles)(
     '$selector keeps AA on its worst audited backdrop',
     ({ selector, backdrop }) => {
-      const ratio = contrast(glassText, [...backdrop] as [number, number, number]);
+      const ratio = contrast([...glassText, 1], [...backdrop, 1]);
       expect(ratio, `${selector} on rgb(${backdrop.join(',')})`).toBeGreaterThanOrEqual(
         MINIMUM_TEXT_CONTRAST,
       );

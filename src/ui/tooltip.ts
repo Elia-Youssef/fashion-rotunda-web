@@ -11,8 +11,8 @@ export interface TooltipHandle {
 const TOOLTIP_ID = 'a11y-tooltip';
 /**
  * The tooltip's margin to every viewport edge, on both axes. Must equal
- * --tooltip-viewport-inset in styles.css: the stylesheet caps the box at 100vw minus two of
- * these and the clamp below keeps it inside the same rectangle.
+ * --tooltip-viewport-inset in styles.css: the stylesheet caps the width at 100vw minus two of
+ * these, and the height bound and clamp below keep it inside the same rectangle.
  */
 export const VIEWPORT_PADDING_PX = 8;
 const ANCHOR_GAP_PX = 6;
@@ -122,9 +122,13 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
     // stylesheet allows, taken from a full-width line. Measuring at the previous position could
     // return a narrower, taller box than the clamped position will ever show.
     tooltip.style.setProperty('--tooltip-x', `${VIEWPORT_PADDING_PX}px`);
+    // Bound the border box before measuring, including padding and borders. The same inset
+    // rectangle owns both dimensions; excess text remains available in the scroll container.
+    tooltip.style.maxHeight = `${Math.max(0, window.innerHeight - 2 * VIEWPORT_PADDING_PX)}px`;
     const rect = anchor.getBoundingClientRect();
     const tipWidth = tooltip.offsetWidth;
     const tipHeight = tooltip.offsetHeight;
+    tooltip.toggleAttribute('data-scrollable', tooltip.scrollHeight > tooltip.clientHeight);
 
     let x = rect.left + rect.width / 2 - tipWidth / 2;
     const maxX = window.innerWidth - tipWidth - VIEWPORT_PADDING_PX;
@@ -135,7 +139,7 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
       y = rect.bottom + ANCHOR_GAP_PX;
     }
     // Either side of the anchor can sit too close to the viewport edge for the wrapped box, so
-    // both axes clamp last; the worst case covers its own anchor but keeps every glyph on
+    // both axes clamp last; the worst case covers its own anchor but keeps the scroll box on
     // screen. The clamp can only move the box right of the parked inset, where the stylesheet
     // gives the box at least the measured width, so it never re-wraps after the measurement.
     const maxY = window.innerHeight - tipHeight - VIEWPORT_PADDING_PX;
@@ -171,6 +175,7 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
     }
 
     tooltip.textContent = text;
+    tooltip.scrollTop = 0;
     tooltip.hidden = false;
     updatePosition(anchor);
     document.addEventListener('pointermove', onPointerMove);
@@ -276,7 +281,28 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
       if (event.key === 'Escape' && activeAnchor !== null) {
         dismissedAnchor = activeAnchor;
         hide();
+      } else if (activeAnchor !== null && activeAnchor === focusedAnchor
+        && event.target instanceof Node && activeAnchor.contains(event.target)
+        && tooltip.hasAttribute('data-scrollable')
+        && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+        && (event.key === 'PageDown' || event.key === 'PageUp')) {
+        // Keep focus on the describing control and preserve its arrow-key behavior. A page
+        // advances by one visible box; the final page is clamped to the end of the text.
+        event.preventDefault();
+        const direction = event.key === 'PageDown' ? 1 : -1;
+        tooltip.scrollTop = Math.max(0, Math.min(
+          tooltip.scrollTop + direction * tooltip.clientHeight,
+          tooltip.scrollHeight - tooltip.clientHeight,
+        ));
       }
+    },
+    { signal },
+  );
+
+  window.addEventListener(
+    'resize',
+    () => {
+      if (activeAnchor !== null) updatePosition(activeAnchor);
     },
     { signal },
   );

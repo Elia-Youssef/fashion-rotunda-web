@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
+import { contrast, over } from '../support/contrast';
+import type { Color } from '../support/contrast';
+
 const tokensCss = readFileSync('src/styles.css', 'utf8');
 const lobbyCss = readFileSync('src/ui/entry-lobby.css', 'utf8');
 const tokens = new Map([...tokensCss.matchAll(/^\s*(--[\w-]+):\s*([^;]+);/gm)]
   .map((match) => [match[1], match[2].trim()]));
-type Color = [number, number, number, number];
 
 function declaration(selector: string, property: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -31,27 +33,12 @@ function color(value: string): Color {
   return [...channels.slice(0, 3), channels[3] ?? 1] as Color;
 }
 
-// Compose in sRGB without intermediate rounding, then linearize for WCAG relative luminance.
-function over(foreground: Color, background: Color): Color {
-  return foreground.slice(0, 3).map((channel, index) =>
-    channel * foreground[3] + background[index] * (1 - foreground[3])).concat(1) as Color;
-}
-
-function luminance(rgb: Color): number {
-  const channels = rgb.slice(0, 3).map((value) => {
-    const channel = value / 255;
-    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-  });
-  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
-}
-
-function contrast(foreground: Color, background: Color): number {
-  const text = luminance(over(foreground, background));
-  const surface = luminance(background);
-  return (Math.max(text, surface) + 0.05) / (Math.min(text, surface) + 0.05);
-}
-
 describe('lobby contrast accessibility contract', () => {
+  it('composites translucent surfaces without rounding channels', () => {
+    expect(over([255, 255, 255, 0.5], [0, 0, 0, 1])).toEqual([127.5, 127.5, 127.5, 1]);
+    expect(contrast([255, 255, 255, 0], [0, 0, 0, 1])).toBe(1);
+  });
+
   const minimumTextContrast = 4.5;
   for (const [endpoint, poster] of [
     ['black', [0, 0, 0, 1]], ['white', [255, 255, 255, 1]],

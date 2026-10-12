@@ -1,11 +1,12 @@
 /* Lightweight tooltip and accessibility utilities.
    Positioned fixed relative to the viewport to prevent clipping by scrolling ancestors. The box
    wraps inside a viewport-bounded width, and the position clamp in tooltip.ts keeps the measured
-   box inside the same inset rectangle, so no text leaves the screen at narrow widths or zoom.
+   box inside the same inset rectangle. Excess height scrolls inside the bounded border box.
    The gate layer is the highest the page paints, and the tooltip mounts after the gate, so a
    tooltip never hides behind the entry scrim. */
 
 .a11y-tooltip {
+  box-sizing: border-box;
   position: fixed;
   left: var(--tooltip-x, 0);
   top: var(--tooltip-y, 0);
@@ -22,9 +23,15 @@
   white-space: normal;
   overflow-wrap: anywhere;
   max-width: calc(100vw - 2 * var(--tooltip-viewport-inset));
+  overflow-y: auto;
   box-shadow: var(--shadow-raised);
   opacity: 1;
   transition: opacity var(--dur-fast) ease;
+}
+
+/* Only an overflowing box accepts pointer input for its scrollbar and wheel scrolling. */
+.a11y-tooltip[data-scrollable] {
+  pointer-events: auto;
 }
 
 .a11y-tooltip[hidden] {

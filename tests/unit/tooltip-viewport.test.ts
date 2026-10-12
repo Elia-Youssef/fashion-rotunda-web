@@ -54,6 +54,18 @@ function measureBox(width: number, height: number): void {
   Object.defineProperty(tooltip, 'offsetHeight', { configurable: true, get: () => height });
 }
 
+/** jsdom cannot lay out text. Model a border box honoring the authored max-height. */
+function measureOverflowingBox(contentHeight: number): void {
+  measureBox(VIEWPORT.width - 2 * VIEWPORT_PADDING_PX, contentHeight);
+  const boundedHeight = (): number => Math.min(
+    contentHeight,
+    Number.parseFloat(tooltip.style.maxHeight) || contentHeight,
+  );
+  Object.defineProperty(tooltip, 'offsetHeight', { configurable: true, get: boundedHeight });
+  Object.defineProperty(tooltip, 'clientHeight', { configurable: true, get: boundedHeight });
+  Object.defineProperty(tooltip, 'scrollHeight', { configurable: true, get: () => contentHeight });
+}
+
 function anchorBox(left: number, top: number, right: number, bottom: number): void {
   vi.spyOn(anchor, 'getBoundingClientRect').mockReturnValue({
     left,
@@ -141,6 +153,7 @@ describe('tooltip wrap and viewport clamp', () => {
     show();
     expectInside();
     expect(position()).toEqual({ x: 8, y: 66 });
+    expect(tooltip.hasAttribute('data-scrollable')).toBe(false);
   });
 
   it('keeps long prose inside 320x568 for a bottom-corner trigger', () => {
@@ -184,5 +197,62 @@ describe('tooltip wrap and viewport clamp', () => {
     window.dispatchEvent(new Event('scroll'));
     expectInside();
     expect(position().x).toBe(VIEWPORT_PADDING_PX);
+  });
+
+  it.each([
+    { textScale: 1, contentHeight: 800 },
+    { textScale: 2, contentHeight: 1600 },
+  ])('bounds and scrolls taller-than-viewport content at $textScale times text size', ({ contentHeight }) => {
+    const css = readFileSync('src/ui/tooltip.css', 'utf8');
+    const rule = css.match(/^\.a11y-tooltip\s*\{([^}]*)\}/m)?.[1] ?? '';
+    expect(rule).toContain('box-sizing: border-box;');
+    expect(rule).toContain('overflow-y: auto;');
+    expect(rule).toContain('pointer-events: none;');
+    expect(css.match(/\.a11y-tooltip\[data-scrollable\]\s*\{([^}]*)\}/)?.[1]).toContain(
+      'pointer-events: auto;',
+    );
+
+    anchor.dataset.tooltip = 'Long tooltip content. '.repeat(200);
+    anchorBox(120, 540, 160, 566);
+    measureOverflowingBox(contentHeight);
+    show();
+    expect(tooltip.textContent).toBe(anchor.dataset.tooltip);
+    expect(tooltip.style.maxHeight).toBe('552px');
+    expect(tooltip.offsetHeight).toBe(552);
+    expectInside();
+    expect(tooltip.hasAttribute('data-scrollable')).toBe(true);
+
+    // The existing focus-visible contract holds focus on the control, including arrow keys.
+    vi.spyOn(anchor, 'matches').mockReturnValue(true);
+    anchor.focus();
+    const page = (key: string): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      anchor.dispatchEvent(event);
+      return event;
+    };
+    expect(page('ArrowDown').defaultPrevented).toBe(false);
+    expect(tooltip.scrollTop).toBe(0);
+    const end = contentHeight - tooltip.clientHeight;
+    for (let remaining = contentHeight; remaining > 0; remaining -= tooltip.clientHeight) {
+      expect(page('PageDown').defaultPrevented).toBe(true);
+    }
+    expect(tooltip.scrollTop).toBe(end);
+    expect(tooltip.hidden).toBe(false);
+    expect(document.activeElement).toBe(anchor);
+    for (let remaining = contentHeight; remaining > 0; remaining -= tooltip.clientHeight) {
+      expect(page('PageUp').defaultPrevented).toBe(true);
+    }
+    expect(tooltip.scrollTop).toBe(0);
+
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 });
+    window.dispatchEvent(new Event('resize'));
+    expect(tooltip.style.maxHeight).toBe('384px');
+    expect(position().y + tooltip.offsetHeight).toBe(400 - VIEWPORT_PADDING_PX);
+
+    page('PageDown');
+    expect(tooltip.scrollTop).toBeGreaterThan(0);
+    page('Escape');
+    show();
+    expect(tooltip.scrollTop).toBe(0);
   });
 });
