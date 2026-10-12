@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mountProofPanel, overlayWanted } from '../../src/proof/panel';
 import type { ProofSnapshot } from '../../src/proof/marks';
+import type { Page } from '@playwright/test';
+import { nextProofReading } from '../e2e/support/preservation';
 import { PROOF_POSITION, PROOF_TARGET, runProofOrbit } from '../../src/proof/orbit-run';
 
 function sampleSnapshot(): ProofSnapshot {
@@ -49,6 +51,215 @@ describe('overlayWanted', () => {
 });
 
 describe('mountProofPanel', () => {
+  it('captures canvas and rows on the completion signal, even when the rows are unchanged', async () => {
+    const root = document.createElement('div');
+    const canvas = document.createElement('canvas');
+    canvas.id = 'scene';
+    root.appendChild(canvas);
+    document.body.appendChild(root);
+    vi.stubGlobal('archvizCamera', { mode: 'orbit', orbit: { position: [1, 2, 3], target: [0, 0, 0] } });
+    vi.stubGlobal('archvizE2E', { describeScene: () => ({ meshes: 5, materials: { marble: 2 } }) });
+    let snap = sampleSnapshot();
+    const handle = mountProofPanel(root, { read: () => snap, measure: async () => {}, intervalMs: 10_000 });
+    // Execute the actual browser callback against jsdom; no browser or transport is started.
+    const page = {
+      evaluate: async (callback: (args: unknown) => unknown, args: unknown) => await callback(args),
+    } as unknown as Page;
+    try {
+      let settled = false;
+      const pending = nextProofReading(page).then(
+        (reading) => { settled = true; return { reading, error: null }; },
+        (error: unknown) => { settled = true; return { reading: null, error }; },
+      );
+      // A row mutation alone must not be mistaken for refresh completion.
+      root.querySelector('dd')!.textContent = 'pending';
+      canvas.width = 600;
+      canvas.height = 400;
+      canvas.dataset.frames = '10';
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      snap = { ...snap, drawCalls: 99, pixelRatio: 1, renderScale: 0.5 };
+      handle.refresh();
+      // Also lets a deliberately broken observer reach its rejection without a real wait.
+      await vi.advanceTimersByTimeAsync(5_000);
+      const result = await pending;
+      expect(result.error).toBeNull();
+      expect(result.reading).toMatchObject({
+        canvas: { backing: { width: 600, height: 400 }, pixelRatio: 1, renderScale: 0.5, tier: 'high' },
+        drawCalls: 99, frames: 10,
+        camera: { mode: 'orbit', position: [1, 2, 3], target: [0, 0, 0] },
+        scene: { meshes: 5, materials: { marble: 2 } },
+      });
+      const unchanged = nextProofReading(page).then(
+        (reading) => ({ reading, error: null }),
+        (error: unknown) => ({ reading: null, error }),
+      );
+      handle.refresh();
+      await vi.advanceTimersByTimeAsync(5_000);
+      const second = await unchanged;
+      expect(second.error).toBeNull();
+      expect(second.reading).toEqual(result.reading);
+    } finally {
+      handle.dispose();
+      root.remove();
+    }
+  });
+
+  it('publishes completion after every refresh, including unchanged rows, and stops on disposal', async () => {
+    const root = document.createElement('div');
+    let snap = sampleSnapshot();
+    const handle = mountProofPanel(root, { read: () => snap, measure: async () => {}, intervalMs: 200 });
+    const list = root.querySelector<HTMLElement>('.proof-panel__list')!;
+    const nodes = Array.from(list.children);
+    const initialText = list.textContent;
+    const description = (name: string): string | null | undefined =>
+      Array.from(list.querySelectorAll('dt')).find((term) => term.textContent === name)
+        ?.nextElementSibling?.textContent;
+    const completions: Array<{ count: string | undefined; calls: string | null | undefined }> = [];
+    const observer = new MutationObserver(() => {
+      completions.push({ count: list.dataset.refresh, calls: description('draw calls') });
+    });
+    observer.observe(list, { attributes: true, attributeFilter: ['data-refresh'] });
+    expect(list.dataset.refresh).toBe('1');
+    handle.refresh();
+    await Promise.resolve();
+    expect(list.dataset.refresh).toBe('2');
+    expect(list.textContent).toBe(initialText);
+    expect(Array.from(list.children)).toEqual(nodes);
+    snap = { ...snap, drawCalls: 99 };
+    handle.refresh();
+    await Promise.resolve();
+    vi.advanceTimersByTime(200);
+    await Promise.resolve();
+    expect(completions).toEqual([
+      { count: '2', calls: '42 calls' },
+      { count: '3', calls: '99 calls' },
+      { count: '4', calls: '99 calls' },
+    ]);
+    handle.dispose();
+    handle.refresh();
+    vi.advanceTimersByTime(200);
+    await Promise.resolve();
+    expect(list.dataset.refresh).toBe('4');
+    expect(completions).toHaveLength(3);
+    observer.disconnect();
+  });
+
+  it('preserves complete row text and row identity across a fixed input sequence', async () => {
+    const root = document.createElement('div');
+    let snap = sampleSnapshot();
+    snap.governor = 'off';
+    snap.governorLog = '';
+    const handle = mountProofPanel(root, { read: () => snap, measure: async () => {} });
+    const dl = root.querySelector('dl')!;
+    const mounted = Array.from(dl.children);
+    const prefix = [
+      'load', '1234.5 ms', 'payload', '3500 bytes', 'payload now', '9100 bytes',
+      'draw calls', '42 calls', 'triangles', '123456 triangles', 'backend', 'webgpu',
+      'tier', 'high', 'pixel ratio', '2.00', 'render scale', '1', 'gpu', 'NVIDIA GeForce RTX 4090',
+      'frame p50', '8.2 ms', 'frame p95', '14.5 ms',
+    ];
+    const suffix = [
+      'data-post', 'ao,traa', 'governor', 'off', 'governor log', 'no changes yet',
+      'cache', 'cold', 'look switch', '250.0 ms', 'orbit', 'not measured',
+    ];
+    const assertRows = (gpuRows: string[], tail = suffix): void => {
+      const expected = [...prefix, ...gpuRows, ...tail];
+      expect(Array.from(dl.children, (node) => node.textContent)).toEqual(expected);
+      expect(root.textContent).toBe(expected.join('') + 'Measure');
+      for (const node of dl.children) expect(mounted.includes(node)).toBe(true);
+    };
+    assertRows(['gpu p50', '6.1 ms', 'gpu p95', '11.4 ms']);
+    const mutations = new MutationObserver(() => {});
+    mutations.observe(dl, { subtree: true, childList: true, characterData: true });
+    handle.refresh();
+    expect(mutations.takeRecords()).toEqual([]);
+    expect(Array.from(dl.children)).toEqual(mounted);
+    snap = { ...snap, payloadNowBytes: 10000 };
+    handle.refresh();
+    const changes = mutations.takeRecords();
+    expect(changes).toHaveLength(1);
+    expect(changes[0].target).toBe(mounted[5]);
+    prefix[5] = '10000 bytes';
+    assertRows(['gpu p50', '6.1 ms', 'gpu p95', '11.4 ms']);
+    snap = { ...snap, gpu: { p50: null, p95: null, available: false } };
+    handle.refresh();
+    assertRows(['GPU', 'not exposed by this backend']);
+    snap = { ...snap, gpu: { p50: null, p95: null, available: true } };
+    handle.refresh();
+    assertRows(['gpu p50', 'null', 'gpu p95', 'null']);
+    expect(Array.from(dl.children)).toEqual(mounted);
+    snap = { ...snap, payloadNowBytes: 12000, cacheState: 'warm', governorLog: 'broken' };
+    handle.refresh();
+    prefix[5] = '12000 bytes';
+    suffix[5] = 'unreadable governor log';
+    suffix[7] = 'warm';
+    assertRows(['gpu p50', 'null', 'gpu p95', 'null']);
+    root.querySelector<HTMLButtonElement>('button')!.click();
+    await Promise.resolve();
+    const measured = [...suffix];
+    measured[11] = 'CPU p50: 8.2 ms, p95: 14.5 ms | GPU: no reading during the orbit | ' +
+      'budget: 16.7 ms (inside)';
+    assertRows(['gpu p50', 'null', 'gpu p95', 'null'], measured);
+    mutations.disconnect();
+    handle.dispose();
+  });
+
+  it('parses governor history only when its raw input changes, including invalid input', () => {
+    const root = document.createElement('div');
+    let snap = sampleSnapshot();
+    const parse = vi.spyOn(JSON, 'parse');
+    const handle = mountProofPanel(root, { read: () => snap, measure: async () => {} });
+    const count = (raw: string): number => parse.mock.calls.filter(([value]) => value === raw).length;
+    handle.refresh();
+    expect(count(snap.governorLog!)).toBe(1);
+    snap = { ...snap, governorLog: 'broken' };
+    handle.refresh();
+    handle.refresh();
+    expect(count('broken')).toBe(1);
+    expect(root.textContent).toContain('unreadable governor log');
+    snap = { ...snap, governorLog: '[{}]' };
+    handle.refresh();
+    handle.refresh();
+    expect(count('[{}]')).toBe(1);
+    expect(root.textContent).toContain('unreadable governor log');
+    snap = { ...snap, governorLog: '[]' };
+    handle.refresh();
+    expect(root.textContent).toContain('no changes yet');
+    snap = { ...snap, governorLog: sampleSnapshot().governorLog! };
+    handle.refresh();
+    expect(count(snap.governorLog!)).toBe(2);
+    expect(root.textContent).toContain('down full \u2192 ssgi-half');
+    handle.dispose();
+  });
+
+  it('formats a held orbit only when measurement values change', async () => {
+    const root = document.createElement('div');
+    let snap = { ...sampleSnapshot(), frameP50Ms: 77.7 };
+    const fixed = vi.spyOn(Number.prototype, 'toFixed');
+    const handle = mountProofPanel(root, { read: () => snap, measure: async () => {} });
+    const button = root.querySelector<HTMLButtonElement>('button')!;
+    button.click();
+    await Promise.resolve();
+    snap = sampleSnapshot();
+    fixed.mockClear();
+    handle.refresh();
+    handle.refresh();
+    expect(root.textContent).toContain('CPU p50: 77.7 ms');
+    expect(fixed.mock.contexts.map(Number)).not.toContain(77.7);
+    snap = { ...snap, frameP50Ms: 77.7 };
+    fixed.mockClear();
+    button.click();
+    await Promise.resolve();
+    // The live row formats once; the equal held measurement does not format a second time.
+    expect(fixed.mock.contexts.map(Number).filter((n) => n === 77.7)).toHaveLength(1);
+    snap = { ...snap, frameP50Ms: 88.8 };
+    button.click();
+    await Promise.resolve();
+    expect(root.textContent).toContain('CPU p50: 88.8 ms');
+    handle.dispose();
+  });
+
   it.each(['raf', 'timeout'] as const)('disposal retires the active %s orbit and retained button', async (kind) => {
     const pending = new Map<number, () => void>();
     let id = 0;

@@ -123,22 +123,38 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
   root.appendChild(section);
 
   let orbitResult: OrbitMeasurement | null = null;
+  let orbitText = 'not measured';
+  let governorLog: string | undefined;
+  let governorText = 'no changes yet';
+  let refreshCount = 0;
 
-  function renderRow(term: string, desc: string): void {
+  const rows = new Map<string, { dt: HTMLElement; dd: HTMLElement }>();
+  for (const term of [
+    'load', 'payload', 'payload now', 'draw calls', 'triangles', 'backend', 'tier',
+    'pixel ratio', 'render scale', 'gpu', 'frame p50', 'frame p95', 'gpu p50', 'gpu p95',
+    'data-post', 'governor', 'governor log', 'cache', 'look switch', 'orbit',
+  ]) {
     const dt = document.createElement('dt');
     dt.className = 'proof-panel__term';
     dt.textContent = term;
     const dd = document.createElement('dd');
     dd.className = 'proof-panel__desc';
-    dd.textContent = desc;
-    dl.appendChild(dt);
-    dl.appendChild(dd);
+    rows.set(term, { dt, dd });
+    dl.append(dt, dd);
+  }
+
+  function setText(element: HTMLElement, text: string): void {
+    if (element.textContent !== text) element.textContent = text;
+  }
+
+  function renderRow(term: string, desc: string): void {
+    const row = rows.get(term)!;
+    setText(row.dd, desc);
   }
 
   function refresh(): void {
     if (lifetime.signal.aborted) return;
     const snap = options.read();
-    dl.replaceChildren();
 
     renderRow('load', formatMs(snap.loadMs));
     renderRow('payload', `${snap.payloadBytes} bytes`);
@@ -156,23 +172,36 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
     // `available` is the series' own answer to "did this backend ever give a reading", which a
     // pair of nulls cannot tell apart from a window that has just been cleared for a Measure run.
     if (!snap.gpu.available) {
-      renderRow('GPU', 'not exposed by this backend');
+      setText(rows.get('gpu p50')!.dt, 'GPU');
+      renderRow('gpu p50', 'not exposed by this backend');
+      rows.get('gpu p95')!.dt.remove();
+      rows.get('gpu p95')!.dd.remove();
     } else {
+      setText(rows.get('gpu p50')!.dt, 'gpu p50');
+      const second = rows.get('gpu p95')!;
+      if (second.dt.parentNode !== dl) {
+        const next = rows.get('data-post')!.dt;
+        dl.insertBefore(second.dt, next);
+        dl.insertBefore(second.dd, next);
+      }
       renderRow('gpu p50', formatMs(snap.gpu.p50));
       renderRow('gpu p95', formatMs(snap.gpu.p95));
     }
 
     renderRow('data-post', snap.post);
     renderRow('governor', snap.governor ?? 'off');
-    renderRow('governor log', formatGovernorLog(snap.governorLog));
+    if (snap.governorLog !== governorLog) {
+      governorLog = snap.governorLog;
+      governorText = formatGovernorLog(governorLog);
+    }
+    renderRow('governor log', governorText);
     renderRow('cache', snap.cacheState);
     renderRow('look switch', formatMs(snap.lookSwitchMs));
 
-    if (orbitResult !== null) {
-      renderRow('orbit', formatOrbit(orbitResult));
-    } else {
-      renderRow('orbit', 'not measured');
-    }
+    renderRow('orbit', orbitText);
+    // Browser tests observe this completion counter, including refreshes with unchanged row text.
+    refreshCount += 1;
+    dl.dataset.refresh = String(refreshCount);
   }
 
   button.addEventListener('click', async () => {
@@ -185,7 +214,7 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
       const snap = options.read();
       const budget = tierBudgetMs(snap.tier);
       const check = snap.frameP95Ms <= budget ? 'inside' : 'over';
-      orbitResult = {
+      const result: OrbitMeasurement = {
         cpuP50: snap.frameP50Ms,
         cpuP95: snap.frameP95Ms,
         gpuP50: snap.gpu.p50,
@@ -194,6 +223,15 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
         budgetMs: budget,
         status: check,
       };
+      if (
+        orbitResult === null || result.cpuP50 !== orbitResult.cpuP50 ||
+        result.cpuP95 !== orbitResult.cpuP95 || result.gpuP50 !== orbitResult.gpuP50 ||
+        result.gpuP95 !== orbitResult.gpuP95 || result.gpuAvailable !== orbitResult.gpuAvailable ||
+        result.budgetMs !== orbitResult.budgetMs || result.status !== orbitResult.status
+      ) {
+        orbitText = formatOrbit(result);
+        orbitResult = result;
+      }
       status.textContent = '';
       refresh();
     } catch (error: unknown) {

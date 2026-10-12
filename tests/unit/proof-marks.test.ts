@@ -37,6 +37,20 @@ function fakeResource(name: string, transferSize: number, responseEnd: number): 
 }
 
 describe('markFirstFrame and firstFrameMs', () => {
+  it('retries absent marks, skips non-marks and caches the first immutable timestamp', async () => {
+    const marks = await loadMarks();
+    const entries = vi.spyOn(performance, 'getEntriesByName').mockReturnValue([]);
+    expect(marks.firstFrameMs()).toBeNull();
+    entries.mockReturnValue([
+      { ...fakeResource('first-frame', 0, 1), entryType: 'measure', startTime: 3 },
+      { ...fakeResource('first-frame', 0, 1), entryType: 'mark', startTime: 0 },
+      { ...fakeResource('first-frame', 0, 1), entryType: 'mark', startTime: 99 },
+    ]);
+    expect(marks.firstFrameMs()).toBe(0);
+    expect(marks.firstFrameMs()).toBe(0);
+    expect(entries).toHaveBeenCalledTimes(2);
+  });
+
   it('returns null before the first frame was marked', async () => {
     const marks = await loadMarks();
     expect(marks.firstFrameMs()).toBeNull();
@@ -135,6 +149,36 @@ describe('cacheState', () => {
 });
 
 describe('snapshot', () => {
+  it('reads one current resource buffer per snapshot, retaining late entries and buffer clears', async () => {
+    const marks = await loadMarks();
+    const resources = vi.spyOn(performance, 'getEntriesByType').mockReturnValue([]);
+    const input = {
+      info: { render: { drawCalls: 1, triangles: 2 } }, backend: 'webgpu', tier: 'high',
+      pixelRatio: 1, renderScale: 1, gpuName: 'Test GPU', frames: new FrameTimes(),
+      gpu: { p50: null, p95: null, available: false }, lookSwitchMs: null, post: 'off',
+    };
+    const read = (): unknown[] => {
+      const snap = marks.snapshot(input);
+      return [snap.loadMs, snap.payloadBytes, snap.payloadNowBytes, snap.cacheState];
+    };
+    expect(read()).toEqual([null, 0, 0, 'cold']);
+    marks.markFirstFrame(() => 50);
+    resources.mockReturnValue([
+      fakeResource('before.bin', 700, 49), fakeResource('at.bin', 300, 50),
+      fakeResource('late.bin', 900, 51), fakeResource('content/rotunda.glb', 0, 20),
+      fakeResource('second/rotunda.glb', 100, 21),
+      { ...fakeResource('missing-end.bin', 200, 1), responseEnd: undefined } as PerformanceEntry,
+      { ...fakeResource('missing-size.bin', 0, 1), transferSize: undefined } as PerformanceEntry,
+    ]);
+    expect(read()).toEqual([50, 1100, 2200, 'warm']);
+    // Resource Timing can expose an already finished request on a later read.
+    resources.mockReturnValue([fakeResource('content/rotunda.glb', 500, 40)]);
+    expect(read()).toEqual([50, 500, 500, 'cold']);
+    resources.mockReturnValue([]);
+    expect(read()).toEqual([50, 0, 0, 'cold']);
+    expect(resources).toHaveBeenCalledTimes(4);
+  });
+
   it('assembles every field from the input, the marks module and the frame buffer', async () => {
     const marks = await loadMarks();
     vi.spyOn(performance, 'getEntriesByType').mockReturnValue([

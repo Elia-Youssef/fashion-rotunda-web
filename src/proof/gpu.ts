@@ -11,8 +11,12 @@ export interface GpuTimes {
   clear(): void;
 }
 
+const ascending = (a: number, b: number): number => a - b;
+
 class GpuTimesBuffer implements GpuTimes {
   private readonly samples: number[];
+  private readonly sorted: number[];
+  private dirty = false;
   private next = 0;
   private filled = 0;
   private hasNonZero = false;
@@ -21,6 +25,7 @@ class GpuTimesBuffer implements GpuTimes {
   constructor(windowSize: number) {
     const size = Math.max(1, Math.floor(windowSize));
     this.samples = new Array<number>(size);
+    this.sorted = new Array<number>(size);
   }
 
   get available(): boolean {
@@ -45,6 +50,7 @@ class GpuTimesBuffer implements GpuTimes {
       return;
     }
     this.lastPushed = ms;
+    this.dirty = true;
     this.hasNonZero = true;
     this.samples[this.next] = ms;
     this.next = (this.next + 1) % this.samples.length;
@@ -68,6 +74,7 @@ class GpuTimesBuffer implements GpuTimes {
   clear(): void {
     this.next = 0;
     this.filled = 0;
+    this.dirty = false;
   }
 
   /**
@@ -77,7 +84,15 @@ class GpuTimesBuffer implements GpuTimes {
     if (!this.hasNonZero || this.filled === 0) {
       return null;
     }
-    const sorted = this.samples.slice(0, this.filled).sort((a, b) => a - b);
+    if (this.dirty) {
+      this.sorted.length = this.filled;
+      for (let i = 0; i < this.filled; i += 1) {
+        this.sorted[i] = this.samples[i];
+      }
+      this.sorted.sort(ascending);
+      this.dirty = false;
+    }
+    const sorted = this.sorted;
     const rank = Math.min(sorted.length, Math.max(1, Math.ceil((pct * this.filled) / 100)));
     return sorted[rank - 1];
   }

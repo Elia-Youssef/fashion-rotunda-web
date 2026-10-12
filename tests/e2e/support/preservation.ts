@@ -25,7 +25,7 @@ export interface CanvasReading {
   post: string | null;
 }
 
-/** Capture the live buffer and the published scale together at an actual panel refresh. */
+/** Capture live state and rows together after the panel publishes its refresh completion counter. */
 export async function nextProofReading(page: Page) {
   return page.evaluate(({ caps, timeout }) => new Promise<{
     canvas: CanvasReading;
@@ -37,7 +37,9 @@ export async function nextProofReading(page: Page) {
   }>((resolve, reject) => {
     const list = document.querySelector('.proof-panel__list');
     if (list === null) { reject(new Error('proof panel is unavailable')); return; }
+    const previousRefresh = list.getAttribute('data-refresh');
     const observer = new MutationObserver(() => {
+      if (list.getAttribute('data-refresh') === previousRefresh) return;
       observer.disconnect();
       clearTimeout(timer);
       try {
@@ -95,7 +97,7 @@ export async function nextProofReading(page: Page) {
       observer.disconnect();
       reject(new Error('proof panel did not refresh'));
     }, timeout);
-    observer.observe(list, { childList: true });
+    observer.observe(list, { attributes: true, attributeFilter: ['data-refresh'] });
   }), {
     caps: { base: TIERS.base.pixelRatioCap, mid: TIERS.mid.pixelRatioCap, high: TIERS.high.pixelRatioCap },
     timeout: PROOF_REFRESH_TIMEOUT_MS,

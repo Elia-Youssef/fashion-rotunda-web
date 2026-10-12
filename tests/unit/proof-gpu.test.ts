@@ -1,7 +1,79 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createGpuTimes } from '../../src/proof/gpu';
 
 describe('createGpuTimes', () => {
+  it('matches copy-and-sort ranks through fixed series, wrap, clear and non-finite readings', () => {
+    const values = [30, 10, 20, 20, 0, -5, 4, Infinity, NaN, NaN, 9, 12];
+    for (const capacity of [1, 3, 10]) {
+      const gpu = createGpuTimes(capacity);
+      const samples = new Array<number>(capacity);
+      let next = 0;
+      let filled = 0;
+      let last: number | null = null;
+      for (let index = 0; index < values.length * 2; index += 1) {
+        if (index === values.length) {
+          gpu.clear();
+          next = 0;
+          filled = 0;
+          expect(gpu.p50()).toBeNull();
+          expect(gpu.p95()).toBeNull();
+        }
+        const value = values[index % values.length];
+        gpu.push(value);
+        if (value > 0 || Number.isNaN(value)) {
+          if (value !== last) {
+            last = value;
+            samples[next] = value;
+            next = (next + 1) % capacity;
+            filled = Math.min(filled + 1, capacity);
+          }
+        }
+        const sorted = samples.slice(0, filled).sort((a, b) => a - b);
+        for (const pct of [50, 95]) {
+          const rank = Math.min(filled, Math.max(1, Math.ceil((pct * filled) / 100)));
+          const expected = filled === 0 ? null : sorted[rank - 1];
+          expect(pct === 50 ? gpu.p50() : gpu.p95()).toBe(expected);
+        }
+      }
+    }
+  });
+
+  it('reuses one sorted window for both ranks and invalidates only on accepted samples', () => {
+    const gpu = createGpuTimes(3);
+    const sort = vi.spyOn(Array.prototype, 'sort');
+    try {
+      gpu.push(30);
+      gpu.push(10);
+      gpu.push(20);
+      const read = (): number[] => [gpu.p50()!, gpu.p95()!];
+      const first = read();
+      const second = read();
+      gpu.push(20);
+      gpu.push(0);
+      const repeated = read();
+      expect(sort).toHaveBeenCalledTimes(1);
+      expect(first).toEqual([20, 30]);
+      expect(second).toEqual(first);
+      expect(repeated).toEqual(first);
+      gpu.push(40);
+      const wrapped = read();
+      expect(sort).toHaveBeenCalledTimes(2);
+      expect(wrapped).toEqual([20, 40]);
+      gpu.clear();
+      expect(gpu.p50()).toBeNull();
+      expect(gpu.p95()).toBeNull();
+      gpu.push(40);
+      expect(gpu.p50()).toBeNull();
+      gpu.push(5);
+      const refilled = read();
+      expect(sort).toHaveBeenCalledTimes(3);
+      expect(refilled).toEqual([5, 5]);
+      expect(gpu.available).toBe(true);
+    } finally {
+      sort.mockRestore();
+    }
+  });
+
   it('starts unavailable with null percentiles when empty', () => {
     const gpu = createGpuTimes(10);
     expect(gpu.available).toBe(false);

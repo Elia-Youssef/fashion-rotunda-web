@@ -7,6 +7,7 @@ const FIRST_FRAME_MARK = 'first-frame';
 // Module state on purpose: the first frame happens exactly once per page load, and every later
 // markFirstFrame call must be a no-op even if several code paths race to report it.
 let firstFrameMarked = false;
+let firstFrameTime: number | null = null;
 
 /**
  * Records the User Timing mark 'first-frame' once. Later calls are ignored. The optional clock
@@ -30,13 +31,14 @@ export function markFirstFrame(now?: () => number): void {
  * subtraction is needed here.
  */
 export function firstFrameMs(): number | null {
-  const marks = performance
-    .getEntriesByName(FIRST_FRAME_MARK)
-    .filter((entry): entry is PerformanceMark => entry.entryType === 'mark');
-  if (marks.length === 0) {
-    return null;
+  if (firstFrameTime !== null) return firstFrameTime;
+  for (const entry of performance.getEntriesByName(FIRST_FRAME_MARK)) {
+    if (entry.entryType === 'mark') {
+      firstFrameTime = entry.startTime;
+      return firstFrameTime;
+    }
   }
-  return marks[0].startTime;
+  return null;
 }
 
 /**
@@ -51,8 +53,12 @@ export function payloadBytes(untilFirstFrame?: boolean): number {
   if (limit === null && untilFirstFrame === true) {
     return 0;
   }
+  return sumPayload(performance.getEntriesByType('resource'), limit);
+}
+
+function sumPayload(entries: PerformanceEntry[], limit: number | null): number {
   let total = 0;
-  for (const entry of performance.getEntriesByType('resource')) {
+  for (const entry of entries) {
     // getEntriesByType is typed as PerformanceEntry[]; Resource Timing fields are read through
     // optional structural properties instead of a cast. entryType is named as well because the
     // compiler rejects assignments between types that share no property at all.
@@ -78,7 +84,11 @@ export function payloadBytes(untilFirstFrame?: boolean): number {
  * claim a hit that may never have happened, and the load number beside it would contradict it.
  */
 export function cacheState(): 'cold' | 'warm' {
-  for (const entry of performance.getEntriesByType('resource')) {
+  return resourceCacheState(performance.getEntriesByType('resource'));
+}
+
+function resourceCacheState(entries: PerformanceEntry[]): 'cold' | 'warm' {
+  for (const entry of entries) {
     const resource: { name?: string; transferSize?: number } = entry;
     if (typeof resource.name === 'string' && resource.name.includes('rotunda.glb')) {
       if (typeof resource.transferSize === 'number' && resource.transferSize > 0) {
@@ -169,10 +179,14 @@ export interface SnapshotInput {
  * running total beside it.
  */
 export function snapshot(input: SnapshotInput): ProofSnapshot {
+  const loadMs = firstFrameMs();
+  // Read the current buffer once. Late entries and buffer clears must still affect both sums
+  // and the first matching rotunda entry; those answers are not immutable like the mark.
+  const resources = performance.getEntriesByType('resource');
   return {
-    loadMs: firstFrameMs(),
-    payloadBytes: payloadBytes(true),
-    payloadNowBytes: payloadBytes(),
+    loadMs,
+    payloadBytes: loadMs === null ? 0 : sumPayload(resources, loadMs),
+    payloadNowBytes: sumPayload(resources, null),
     drawCalls: input.info.render.drawCalls,
     triangles: input.info.render.triangles,
     backend: input.backend,
@@ -187,6 +201,6 @@ export function snapshot(input: SnapshotInput): ProofSnapshot {
     post: input.post,
     governor: input.governor ?? 'off',
     governorLog: input.governorLog ?? '',
-    cacheState: input.cacheState ?? cacheState(),
+    cacheState: input.cacheState ?? resourceCacheState(resources),
   };
 }
