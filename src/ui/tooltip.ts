@@ -9,7 +9,12 @@ export interface TooltipHandle {
 }
 
 const TOOLTIP_ID = 'a11y-tooltip';
-const VIEWPORT_PADDING_PX = 8;
+/**
+ * The tooltip's margin to every viewport edge, on both axes. Must equal
+ * --tooltip-viewport-inset in styles.css: the stylesheet caps the box at 100vw minus two of
+ * these and the clamp below keeps it inside the same rectangle.
+ */
+export const VIEWPORT_PADDING_PX = 8;
 const ANCHOR_GAP_PX = 6;
 // Allow a pointer to cross the existing gap without briefly removing the text.
 const HOVER_TRANSIT_DELAY_MS = 150;
@@ -112,6 +117,11 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
   }
 
   function updatePosition(anchor: HTMLElement): void {
+    // A shrink-to-fit fixed box wraps into the space right of its current left edge, so the box
+    // is parked at the inset before it is measured: the measurement is then the widest the
+    // stylesheet allows, taken from a full-width line. Measuring at the previous position could
+    // return a narrower, taller box than the clamped position will ever show.
+    tooltip.style.setProperty('--tooltip-x', `${VIEWPORT_PADDING_PX}px`);
     const rect = anchor.getBoundingClientRect();
     const tipWidth = tooltip.offsetWidth;
     const tipHeight = tooltip.offsetHeight;
@@ -124,6 +134,12 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
     if (y < VIEWPORT_PADDING_PX) {
       y = rect.bottom + ANCHOR_GAP_PX;
     }
+    // Either side of the anchor can sit too close to the viewport edge for the wrapped box, so
+    // both axes clamp last; the worst case covers its own anchor but keeps every glyph on
+    // screen. The clamp can only move the box right of the parked inset, where the stylesheet
+    // gives the box at least the measured width, so it never re-wraps after the measurement.
+    const maxY = window.innerHeight - tipHeight - VIEWPORT_PADDING_PX;
+    y = Math.max(VIEWPORT_PADDING_PX, Math.min(y, maxY));
 
     tooltip.style.setProperty('--tooltip-x', `${Math.round(x)}px`);
     tooltip.style.setProperty('--tooltip-y', `${Math.round(y)}px`);

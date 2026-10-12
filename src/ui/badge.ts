@@ -19,6 +19,9 @@ export function mountBadge(root: HTMLElement, state: BadgeState): BadgeHandle {
   const badge = document.createElement('div');
   badge.className = 'badge';
   badge.setAttribute('role', 'status');
+  // The GPU name is only in the tooltip, so the badge is a tab stop: a keyboard visitor reaches
+  // it like every other tooltip anchor and the tooltip module shows it on focus-visible focus.
+  badge.tabIndex = 0;
 
   const backendLabel = document.createElement('span');
   backendLabel.className = 'badge__backend';

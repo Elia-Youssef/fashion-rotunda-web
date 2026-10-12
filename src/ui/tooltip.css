@@ -1,6 +1,8 @@
 /* Lightweight tooltip and accessibility utilities.
-   Positioned fixed relative to the viewport to prevent clipping by scrolling ancestors. The
-   gate layer is the highest the page paints, and the tooltip mounts after the gate, so a
+   Positioned fixed relative to the viewport to prevent clipping by scrolling ancestors. The box
+   wraps inside a viewport-bounded width, and the position clamp in tooltip.ts keeps the measured
+   box inside the same inset rectangle, so no text leaves the screen at narrow widths or zoom.
+   The gate layer is the highest the page paints, and the tooltip mounts after the gate, so a
    tooltip never hides behind the entry scrim. */
 
 .a11y-tooltip {
@@ -17,7 +19,9 @@
   font-family: var(--font-ui);
   font-size: var(--type-sm);
   line-height: 1.3;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: calc(100vw - 2 * var(--tooltip-viewport-inset));
   box-shadow: var(--shadow-raised);
   opacity: 1;
   transition: opacity var(--dur-fast) ease;

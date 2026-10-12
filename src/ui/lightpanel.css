@@ -137,7 +137,9 @@
   justify-content: space-between;
   padding: 0 var(--space-1);
   font-size: var(--type-sm);
-  color: var(--text-muted);
+  /* The guidance floats over the scene through the translucent panel, so it reads with the
+     muted-on-glass tone the AA audit pinned for scene-backed muted text. */
+  color: var(--text-muted-glass);
   letter-spacing: 0.02em;
   pointer-events: none;
 }

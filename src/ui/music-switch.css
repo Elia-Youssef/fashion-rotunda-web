@@ -26,9 +26,10 @@
 }
 
 /* The error state reads as unavailable but stays pressable, so the pointer stays a pointer: the
-   press is the retry. */
+   press is the retry. Its label sits on the same header glass as the tier label, so it takes the
+   muted-on-glass tone the AA audit pinned for that surface. */
 .music-switch[data-music='error'] {
-  color: var(--text-muted);
+  color: var(--text-muted-glass);
 }
 
 .music-switch__glyph {
