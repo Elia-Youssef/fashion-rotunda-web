@@ -27,6 +27,18 @@ const MIN_HELD_STEP_M = 0.05;
 const TOUR_MIN_MOVED_M = 0.25;
 /** Covers the 500 ms idle start, the eased 940 ms to the minimum travel, and slow-machine slack. */
 const TOUR_MOVE_TIMEOUT_MS = 15_000;
+// Half a metre proves forward input works before the rear-wall contact near foot z=6.83.
+const WALL_MIN_FORWARD_M = 0.5;
+// The observed approach advances 0.14 m per frame. At curved-wall contact, z recedes
+// 1.6-4.4 mm per frame while x slides sideways. Allow 1 mm of forward jitter, far below
+// an unobstructed step, without rejecting the intended sideways collision response.
+const WALL_CONTACT_FORWARD_EPSILON_M = 0.001;
+// Three consecutive newer-frame observations reject a single short step as contact.
+const WALL_CONTACT_CONFIRMATIONS = 3;
+// The 1.33 m approach takes about 1 s at walk speed; allow software-rendered frame delays.
+const WALL_MOVE_TIMEOUT_MS = 15_000;
+// Only delivery of a latched event observation is polled, never the transient stopped-tour state.
+const ATTRACT_INPUT_TIMEOUT_MS = 5_000;
 
 // Camera and turntable through the real page: a drag orbits the inspection camera, the turntable turns the
 // look while it runs, and the loop goes back to sleep once both are still. Reads and the toggle go
@@ -154,19 +166,54 @@ test('walk mode stops at walls and stays above floor', async ({ page }) => {
 
   // Point camera toward the nearest wall behind starting pose:
   // Default pose: foot at [0, 0, 5.5], facing origin (yaw = 0).
-  // The wall behind is at z ~ 7.5 m. Setting yaw = Math.PI points toward [0, 0, 7.5].
+  // Setting yaw = Math.PI points toward +z. Rear-wall contact is near foot z=6.83,
+  // where the collision response blocks forward progress but allows sideways sliding.
   await page.evaluate(() => {
     window.archvizCamera?.walk?.setPose([0, 0, 5.5], Math.PI, 0);
   });
 
+  const readWalkFrame = (): Promise<{ foot: [number, number, number]; frames: number }> =>
+    page.evaluate(() => {
+      const walk = window.archvizCamera?.walk;
+      const scene = document.querySelector<HTMLCanvasElement>('canvas#scene');
+      if (walk === undefined || scene?.dataset.frames === undefined) {
+        throw new Error('the walkthrough or frame counter is unavailable');
+      }
+      return { foot: walk.foot, frames: Number(scene.dataset.frames) };
+    });
+  const before = await readWalkFrame();
   await canvas.focus();
   await page.keyboard.down('KeyW');
-  await page.waitForTimeout(3000);
-  await page.keyboard.up('KeyW');
+  try {
+    await expect
+      .poll(async () => (await readWalkFrame()).foot[2] - before.foot[2], {
+        message: 'forward input moved the foot toward the wall',
+        timeout: WALL_MOVE_TIMEOUT_MS,
+      })
+      .toBeGreaterThanOrEqual(WALL_MIN_FORWARD_M);
 
-  const foot = await page.evaluate((): [number, number, number] => {
-    return window.archvizCamera?.walk?.foot ?? [0, -1, 0];
-  });
+    // Keep forward held until consecutive newer-frame readings show no forward progress.
+    // Sideways sliding along the curved wall is allowed; repeated reads of one frame do not count.
+    let previous = await readWalkFrame();
+    let blockedReadings = 0;
+    await expect
+      .poll(async () => {
+        const current = await readWalkFrame();
+        if (current.frames <= previous.frames) return false;
+        const forwardStep = current.foot[2] - previous.foot[2];
+        previous = current;
+        blockedReadings = forwardStep <= WALL_CONTACT_FORWARD_EPSILON_M ? blockedReadings + 1 : 0;
+        return blockedReadings >= WALL_CONTACT_CONFIRMATIONS;
+      }, {
+        message: 'the wall stopped forward progress across consecutive newer rendered frames',
+        timeout: WALL_MOVE_TIMEOUT_MS,
+      })
+      .toBe(true);
+  } finally {
+    await page.keyboard.up('KeyW');
+  }
+
+  const { foot } = await readWalkFrame();
 
   expect(foot[1], 'foot stays on or above the floor').toBeGreaterThanOrEqual(0);
   const distance = Math.hypot(foot[0], foot[2]);
@@ -415,13 +462,37 @@ test('attract loop tours presets when idle and cancels on input', async ({ page 
     })
     .toBeGreaterThanOrEqual(TOUR_MIN_MOVED_M);
 
-  // Synthetic pointermove sets data-attract to 0
+  // This listener is registered after mount.ts's bubbling window input listener. Latch the
+  // real state in the trusted event task, before any later frame can restart the idle tour.
+  let runningAfterInput: boolean | undefined;
+  await page.exposeFunction('recordAttractInput', (running: boolean | undefined) => {
+    runningAfterInput = running;
+  });
+  await page.evaluate(() => {
+    const observedWindow = window as typeof window & {
+      recordAttractInput: (running: boolean | undefined) => Promise<void>;
+    };
+    const onInput = (event: PointerEvent): void => {
+      if (!event.isTrusted) return;
+      window.removeEventListener('pointermove', onInput);
+      void observedWindow.recordAttractInput(window.archvizCamera?.attract.running);
+    };
+    window.addEventListener('pointermove', onInput);
+  });
+
   const box = await canvas.boundingBox();
   if (box === null) {
     throw new Error('the canvas has no box to move pointer over');
   }
+  expect(await page.evaluate(() => window.archvizCamera?.attract.running), 'the tour is running before input')
+    .toBe(true);
   await page.mouse.move(box.x + 50, box.y + 50);
-  await expect(canvas).toHaveAttribute('data-attract', '0', { timeout: 2_000 });
+  await expect
+    .poll(() => runningAfterInput, {
+      message: 'trusted pointer input synchronously cancelled the running tour',
+      timeout: ATTRACT_INPUT_TIMEOUT_MS,
+    })
+    .toBe(false);
 
   expect(errors).toEqual([]);
 });

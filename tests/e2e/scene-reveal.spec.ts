@@ -95,6 +95,12 @@ const HANDSHAKE_TIMEOUT_MS = 10_000;
 // workers, and sits far below the 90 s test budget.
 const LOADING_HOLD_TIMEOUT_MS = 30_000;
 
+// A 100 px yaw drag at 0.005 rad/px moves the proof camera about 2 m. 0.1 m rejects
+// unchanged poses and spherical round-trip noise while allowing a partially applied gesture.
+const MIN_REVEALED_DRAG_M = 0.1;
+// Input wakes the render loop immediately; 5 s allows slow frames without reaching the idle tour.
+const REVEALED_DRAG_TIMEOUT_MS = 5_000;
+
 // Waits until the handshake is parked at the `?freeze=black-hold` seam with its two stable frames.
 // `stableFrames` only grows from 0 to 2 while the veil reads black-hold, and the seam then holds it
 // at 2 until unfreeze() or a disruption. `timestamps.holdEnd` is recorded immediately before the
@@ -235,9 +241,8 @@ test.describe('Scene Reveal Transition', () => {
     await enterExperience(lobby, canvas, backend);
     await expect(veil).toHaveAttribute('data-state', 'revealing', { timeout: 60_000 });
 
-    // The test seam now pauses before the 600 ms production fade wait, so this delay lands within
-    // the running CSS opacity transition rather than after the transition has already completed.
-    await page.waitForTimeout(300);
+    // The revealing seam holds a paused CSS animation at its negative-delay partial sample.
+    // The sample stays fixed until unfreeze(), so observing the held state needs no delay.
     const reading = await veil.evaluate((element) => ({
       opacity: Number.parseFloat(getComputedStyle(element).opacity),
       revealEnd: window.archvizTransitionSeam?.timestamps.revealEnd ?? null,
@@ -417,8 +422,16 @@ test.describe('Scene Reveal Transition', () => {
     await expect(veil).toHaveAttribute('data-state', 'revealed', { timeout: 30_000 });
 
     // After reveal: dragging canvas rotates camera
-    const initialTurntable = await page.evaluate(() => window.archvizE2E?.turntableState());
-    expect(initialTurntable).toBeDefined();
+    const readCameraFrame = (): Promise<{ position: [number, number, number]; frames: number }> =>
+      page.evaluate(() => {
+        const camera = window.archvizCamera;
+        const scene = document.querySelector<HTMLCanvasElement>('canvas#scene');
+        if (camera === undefined || scene?.dataset.frames === undefined) {
+          throw new Error('the revealed camera or frame counter is unavailable');
+        }
+        return { position: camera.orbit.position, frames: Number(scene.dataset.frames) };
+      });
+    const before = await readCameraFrame();
 
     // Drag on canvas
     await page.mouse.move(canvasBox!.x + canvasBox!.width / 2, canvasBox!.y + canvasBox!.height / 2);
@@ -426,9 +439,21 @@ test.describe('Scene Reveal Transition', () => {
     await page.mouse.move(canvasBox!.x + canvasBox!.width / 2 + 100, canvasBox!.y + canvasBox!.height / 2);
     await page.mouse.up();
 
-    // Canvas drew frames
-    const frames = Number(await canvas.getAttribute('data-frames') ?? '0');
-    expect(frames).toBeGreaterThan(0);
+    // One reading must prove camera displacement and a frame drawn after the pre-drag baseline.
+    await expect
+      .poll(async () => {
+        const after = await readCameraFrame();
+        const moved = Math.hypot(
+          after.position[0] - before.position[0],
+          after.position[1] - before.position[1],
+          after.position[2] - before.position[2],
+        );
+        return moved >= MIN_REVEALED_DRAG_M && after.frames > before.frames;
+      }, {
+        message: 'the revealed drag moved the camera and drew a new frame',
+        timeout: REVEALED_DRAG_TIMEOUT_MS,
+      })
+      .toBe(true);
   });
 
   for (const vp of VIEWPORTS) {

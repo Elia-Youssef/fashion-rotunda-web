@@ -214,7 +214,6 @@ test.describe('Product-Card Parity and Narration Cleanup', () => {
     await expect(canvas).toHaveAttribute('data-variant', 'base', { timeout: SWITCH_TIMEOUT });
     await expect(base).toHaveAttribute('aria-checked', 'true');
     await expect(dark).toHaveAttribute('aria-checked', 'false');
-    await page.waitForTimeout(500);
     await expect(canvas).toHaveAttribute('data-variant', 'base');
   });
 
@@ -450,12 +449,10 @@ test.describe('Product-Card Parity and Narration Cleanup', () => {
 
     // Resize to tablet
     await page.setViewportSize({ width: 820, height: 1180 });
-    await page.waitForTimeout(100);
     await expect(materialBtn).toBeFocused();
 
     // Resize back to desktop
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.waitForTimeout(100);
     await expect(materialBtn).toBeFocused();
   });
 });
