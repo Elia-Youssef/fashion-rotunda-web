@@ -28,7 +28,6 @@ import type { Scene, Texture } from 'three';
 import { PMREMGenerator } from 'three/webgpu';
 import type { WebGPURenderer } from 'three/webgpu';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
 import { createGradientSkyTexture, environmentSkyPalette, visibleSkyPalette } from './sky';
 
@@ -355,8 +354,11 @@ export async function createProceduralEnvironment(renderer: WebGPURenderer): Pro
  * deprecation. UltraHDRLoader was the other candidate and is not used: the authored asset is a linear
  * EXR and the deterministic pipeline converts it to the Radiance HDR both render backends already read.
  */
+let hdrLoaderReady: Promise<typeof import('three/addons/loaders/HDRLoader.js')> | null = null;
+
 export async function createHdrEnvironment(renderer: WebGPURenderer, url: string): Promise<Environment> {
   await renderer.init();
+  const { HDRLoader } = await (hdrLoaderReady ??= import('three/addons/loaders/HDRLoader.js'));
   const resources = environmentResources();
   try {
     // DataTextureLoader.load returns the texture before its request settles (three r186 lines
