@@ -27,7 +27,7 @@
   "author": "",
   "license": "UNLICENSED",
   "dependencies": {
-    "three": "0.186.0",
+    "three": "0.186.1",
     "three-mesh-bvh": "0.9.15"
   },
   "devDependencies": {

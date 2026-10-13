@@ -127,7 +127,7 @@ type DissolveThreshold = typeof DISSOLVE_THRESHOLD;
  * type is MeshStandardMaterial from createDefaultMaterial, line 2321) and the renderer turns them
  * into node materials per build by copying enumerable properties, including inherited ones,
  * onto the node class for the type (node_modules/three/src/renderers/common/nodes/NodeLibrary.js
- * lines 52-70, reached from NodeBuilder.prebuild, NodeBuilder.js line 3156). The
+ * lines 52-70, reached from NodeBuilder.prebuild, NodeBuilder.js line 3158). The
  * fade writes opacityNode on the classic instance and lets that copy carry it into the shader.
  * Material's type carries neither node slot, so the one assertion below widens to this structural
  * type.
