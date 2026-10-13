@@ -114,7 +114,12 @@ export interface PostChain {
   render(): void;
   /** True when the chain does more than pass the beauty through. */
   readonly active: boolean;
-  /** What is on: ao, traa, msaa, ssgi, ssr, bloom, lut, vignette, dof. */
+  /**
+   * What is on: ao, traa, msaa, ssgi, ssr, bloom, lut, vignette, dof. The chain owns the returned
+   * record and reuses it until a published value would change (a graph rebuild, a fallback, or a
+   * motion or depth-of-field transition), so readers can key on the record identity; they must
+   * copy it, never mutate it.
+   */
   readonly features: {
     ao: boolean;
     traa: boolean;
@@ -189,6 +194,9 @@ const PASS_THROUGH: PostSettings = {
 
 /** How long after the last motion notification the camera still counts as moving. */
 const MOTION_MS = 500;
+
+/** How long after arming the stable rest callback re-checks the rest deadline. */
+const MOTION_REST_DELAY_MS = MOTION_MS + 10;
 
 /**
  * The depth-of-field bokeh scale while the camera rests. Halved from 2.5 on 2026-09-23 at the
@@ -462,6 +470,24 @@ export function createPostChain(options: PostChainOptions): PostChain {
     return currentLevel() === 'full' ? 1.0 : 0.5;
   }
 
+  /**
+   * settingsForLevel copies the settings record for every degraded level, and the governor can sit
+   * on one level for thousands of rendered frames, so this chain derives each level of its ladder
+   * once and reuses the record. The map is created per chain instance: two chains never share
+   * derived settings, and no reader mutates a settings record after it is built.
+   */
+  const levelSettings = new Map<EnhancedLevel, PostSettings>();
+
+  function settingsForCurrentLevel(): PostSettings {
+    const level = currentLevel();
+    let derived = levelSettings.get(level);
+    if (derived === undefined) {
+      derived = settingsForLevel(settings, level);
+      levelSettings.set(level, derived);
+    }
+    return derived;
+  }
+
   function scenePassFor(wanted: PostSettings): PassNode {
     if (wanted.ao || wanted.traa || wanted.msaa || wanted.ssgi !== 'off' || wanted.ssr) {
       return pass(scene, camera, { samples: wanted.msaa ? 4 : 0 });
@@ -703,7 +729,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
 
   // Start a rebuilt graph at the carried governor level, rather than constructing/rendering a
   // one-frame full-quality graph before render() has a chance to apply that level.
-  let graph = buildGraph(settingsForLevel(settings, currentLevel()));
+  let graph = buildGraph(settingsForCurrentLevel());
   // Initial recovery eligibility is applied once fellBack exists. A carried qualification only
   // survives when the reconstructed chain is eligible right now.
   applyRecoveryEligible(options.recoveryEligible === true);
@@ -741,7 +767,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
     if (fellBack) {
       return;
     }
-    const wanted = settingsForLevel(settings, currentLevel());
+    const wanted = settingsForCurrentLevel();
     if (
       wanted.ssgi === graph.settings.ssgi &&
       wanted.ssr === graph.settings.ssr &&
@@ -761,24 +787,50 @@ export function createPostChain(options: PostChainOptions): PostChain {
     }
   }
 
+  /**
+   * The features record handed out by the getter, rebuilt only when one of its inputs moves: the
+   * graph (a governor rebuild, a fallback or a new chain), the SSGI scale, the depth-of-field gate
+   * or the motion window. Between changes the same record is returned, so the composition root can
+   * key its publication on the record identity and skip the string building entirely. The record is
+   * chain-owned: readers must copy it, never mutate it.
+   */
+  let publishedFeatures: PostChain['features'] | null = null;
+  let publishedFeaturesGraph: ChainGraph | null = null;
+  let publishedFeaturesSSGIScale = 1.0;
+  let publishedFeaturesDofAllowed = true;
+  let publishedFeaturesMoving = false;
+
   function currentFeatures(): PostChain['features'] {
-    const effective = effectiveSettings();
+    const graphNow = graph;
+    const ssgiScale = wantedSSGIScale();
+    const dofAllowed = depthOfFieldAllowed;
+    const moving = performance.now() - lastMotionTimestamp < MOTION_MS;
+    if (
+      publishedFeatures !== null &&
+      publishedFeaturesGraph === graphNow &&
+      publishedFeaturesSSGIScale === ssgiScale &&
+      publishedFeaturesDofAllowed === dofAllowed &&
+      publishedFeaturesMoving === moving
+    ) {
+      return publishedFeatures;
+    }
+
+    const effective = graphNow.settings;
     let ssgiFeature: 'off' | 'half' | 'full' = 'off';
     if (effective.ssgi !== 'off') {
-      ssgiFeature = wantedSSGIScale() < 1 ? 'half' : 'full';
+      ssgiFeature = ssgiScale < 1 ? 'half' : 'full';
     }
 
     let dofFeature: 'off' | 'ready' | 'on' = 'off';
-    if (effective.dof !== 'off' && graph.dofNode !== null) {
-      if (!depthOfFieldAllowed) {
+    if (effective.dof !== 'off' && graphNow.dofNode !== null) {
+      if (!dofAllowed) {
         dofFeature = 'off';
       } else {
-        const isMoving = performance.now() - lastMotionTimestamp < MOTION_MS;
-        dofFeature = isMoving ? 'ready' : 'on';
+        dofFeature = moving ? 'ready' : 'on';
       }
     }
 
-    return {
+    publishedFeatures = {
       ao: effective.ao,
       traa: effective.traa,
       msaa: effective.msaa,
@@ -789,9 +841,32 @@ export function createPostChain(options: PostChainOptions): PostChain {
       vignette: effective.vignette,
       dof: dofFeature,
     };
+    publishedFeaturesGraph = graphNow;
+    publishedFeaturesSSGIScale = ssgiScale;
+    publishedFeaturesDofAllowed = dofAllowed;
+    publishedFeaturesMoving = moving;
+    return publishedFeatures;
   }
 
   let motionTimer: number | null = null;
+
+  /**
+   * The one stable rest callback, created once per chain. Motion noticed after it was armed moves
+   * the rest deadline forward, so a firing callback re-arms itself for the remainder instead of
+   * every moving frame canceling and re-registering a timer. At the true deadline it asks for the
+   * one redraw that switches depth of field from 'ready' to 'on', which render() applies.
+   */
+  function onMotionRest(): void {
+    motionTimer = null;
+    const remaining = MOTION_REST_DELAY_MS - (performance.now() - lastMotionTimestamp);
+    if (remaining > 0 && graph.dofNode !== null) {
+      motionTimer = window.setTimeout(onMotionRest, remaining);
+      return;
+    }
+    if (graph.dofNode !== null && depthOfFieldAllowed) {
+      requestFrame?.();
+    }
+  }
 
   /** The one gate behind the interface method and the test-only handle below. */
   function applyDepthOfFieldAllowed(allowed: boolean): void {
@@ -977,18 +1052,11 @@ export function createPostChain(options: PostChainOptions): PostChain {
     notifyMotion(): void {
       if (disposed) return;
       lastMotionTimestamp = performance.now();
-      if (typeof window !== 'undefined') {
-        if (motionTimer !== null) {
-          window.clearTimeout(motionTimer);
-        }
-        motionTimer = window.setTimeout(() => {
-          motionTimer = null;
-          // Rest switches DoF from 'ready' to 'on', which is applied inside render().
-          const dofNeedsRedraw = graph.dofNode !== null && depthOfFieldAllowed;
-          if (dofNeedsRedraw) {
-            requestFrame?.();
-          }
-        }, MOTION_MS + 10);
+      // The stable rest callback below holds the rest deadline once armed, so a moving frame
+      // neither cancels nor registers a timer; a new one is needed only when none is pending and
+      // a live depth-of-field graph exists that its rest redraw could serve.
+      if (typeof window !== 'undefined' && motionTimer === null && graph.dofNode !== null) {
+        motionTimer = window.setTimeout(onMotionRest, MOTION_REST_DELAY_MS);
       }
     },
 

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   CROSSFADE_MS,
@@ -315,5 +316,56 @@ describe('createFadeMachine', () => {
     }
 
     expect(run.counts.settles).toBe(2);
+  });
+});
+
+describe('independent fade machines', () => {
+  it('runs two machines side by side without sharing fade or opacity state', () => {
+    const first = harness();
+    const second = harness();
+    const a = fakeLook('a');
+    const b = fakeLook('b');
+    const c = fakeLook('c');
+    const d = fakeLook('d');
+
+    first.machine.start(a, b, CROSSFADE_MS);
+    second.machine.start(c, d, CROSSFADE_MS);
+
+    // Half of the first fade runs (the step clamp needs three frames); the second machine's
+    // looks stay whole.
+    for (let frame = 0; frame < 3; frame += 1) {
+      first.machine.advance(MAX_FADE_STEP_MS);
+    }
+    expect(a.opacity).toBeCloseTo(0.5, 10);
+    expect(c.opacity).toBe(1);
+    expect(d.opacity).toBe(1);
+    expect(second.machine.running).toBe(true);
+    expect(second.machine.outgoing).toBe(c);
+
+    // The second fade runs to its end; the first keeps its own state and finishes on its own.
+    for (let frame = 0; frame < CROSSFADE_MS / MAX_FADE_STEP_MS; frame += 1) {
+      second.machine.advance(MAX_FADE_STEP_MS);
+    }
+    expect(second.machine.running).toBe(false);
+    expect(c.disposals).toBe(1);
+    expect(first.machine.running).toBe(true);
+    expect(a.opacity).toBeCloseTo(0.5, 10);
+    expect(b.opacity).toBe(1);
+    expect(a.disposals).toBe(0);
+
+    for (let frame = 0; frame < CROSSFADE_MS / MAX_FADE_STEP_MS; frame += 1) {
+      first.machine.advance(MAX_FADE_STEP_MS);
+    }
+    expect(first.machine.running).toBe(false);
+    expect(a.disposals).toBe(1);
+    expect(b.opacity).toBe(1);
+  });
+
+  it('advances a fade without calling the public allocating fadeOpacities', () => {
+    const source = readFileSync(new URL('../../src/scene/crossfade.ts', import.meta.url), 'utf8');
+    const machine = source.slice(source.indexOf('export function createFadeMachine'));
+    expect(machine, 'the machine passes the two scalars, not a snapshot record').not.toContain(
+      'fadeOpacities(',
+    );
   });
 });

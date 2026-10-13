@@ -147,16 +147,18 @@ const SSGI_LADDER: readonly EnhancedLevel[] = ['full', 'ssgi-half', 'no-ssgi', '
 const SSR_ONLY_LADDER: readonly EnhancedLevel[] = ['full', 'no-ssr', 'base'];
 
 /**
- * Computes nearest-rank 95th percentile on a sorted copy of the window samples.
- * Nearest-rank matches FrameTimes.percentile: rank = ceil(0.95 * n), clamped to [1, n].
+ * Computes nearest-rank 95th percentile by sorting the window in place. The governor owns the
+ * window and clears it right after this read on the only call path, so no reader sees the
+ * disturbed order and the once-per-window completion stays copy-free. Nearest-rank matches
+ * FrameTimes.percentile: rank = ceil(0.95 * n), clamped to [1, n].
  */
-function calculateP95(samples: readonly number[]): number {
-  if (samples.length === 0) {
+function calculateP95(window: number[]): number {
+  if (window.length === 0) {
     return 0;
   }
-  const sorted = [...samples].sort((a, b) => a - b);
-  const rank = Math.min(sorted.length, Math.max(1, Math.ceil((95 * sorted.length) / 100)));
-  return sorted[rank - 1];
+  window.sort((a, b) => a - b);
+  const rank = Math.min(window.length, Math.max(1, Math.ceil((95 * window.length) / 100)));
+  return window[rank - 1];
 }
 
 function isFiniteNonNegative(value: unknown): value is number {
@@ -317,8 +319,11 @@ export function createGovernor(options: GovernorOptions): Governor {
 
   function pushEvent(event: GovernorEvent): void {
     events.push(Object.freeze(event));
+    // One push at a time can exceed the cap by only one entry, so the oldest leaves through shift,
+    // which returns the dropped entry, instead of splice, which would build a removed-elements
+    // array only for the caller to discard it.
     if (events.length > GOVERNOR_EVENT_LOG_CAP) {
-      events.splice(0, events.length - GOVERNOR_EVENT_LOG_CAP);
+      events.shift();
     }
     history = Object.freeze([...events]);
     historyVersion = nextHistoryVersion++;

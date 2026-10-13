@@ -36,6 +36,14 @@ export function fadeProgress(state: FadeState): number {
 }
 
 /**
+ * The outgoing opacity for a progress value, clamped; the one arithmetic source behind the public
+ * fadeOpacities and the fade machine's reused result.
+ */
+function outgoingOpacityFor(progress: number): number {
+  return 1 - Math.min(Math.max(progress, 0), 1);
+}
+
+/**
  * The outgoing and incoming opacities for a progress value.
  *
  * The incoming look is opaque for the whole fade and the outgoing look dissolves over it. Two
@@ -45,8 +53,7 @@ export function fadeProgress(state: FadeState): number {
  * below 0 or above 1.
  */
 export function fadeOpacities(progress: number): { outgoing: number; incoming: number } {
-  const clamped = Math.min(Math.max(progress, 0), 1);
-  return { outgoing: 1 - clamped, incoming: 1 };
+  return { outgoing: outgoingOpacityFor(progress), incoming: 1 };
 }
 
 /**
@@ -96,10 +103,18 @@ interface RunningFade<T> {
 export function createFadeMachine<T>(callbacks: FadeCallbacks<T>): FadeMachine<T> {
   let current: RunningFade<T> | null = null;
 
+  /**
+   * The machine's own opacity result, rewritten in place on every advance; a fade allocates
+   * nothing for it. fadeOpacities stays the allocating public form for callers that need a
+   * snapshot of their own.
+   */
+  const opacityResult = { outgoing: 1, incoming: 1 };
+
   function applyOpacities(running: RunningFade<T>): void {
-    const { outgoing, incoming } = fadeOpacities(fadeProgress(running.state));
-    callbacks.opacity(running.outgoing, outgoing);
-    callbacks.opacity(running.incoming, incoming);
+    opacityResult.outgoing = outgoingOpacityFor(fadeProgress(running.state));
+    opacityResult.incoming = 1;
+    callbacks.opacity(running.outgoing, opacityResult.outgoing);
+    callbacks.opacity(running.incoming, opacityResult.incoming);
   }
 
   function finish(): void {

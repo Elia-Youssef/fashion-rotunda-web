@@ -48,7 +48,8 @@ const snippet = statements.slice(0, publishIndex + 2).map((node) => node.getText
 const compiled = ts.transpileModule(`
   let showroom = null, contentOnScreen = false, frameCount = 0, frameWaiters = [];
   const chain = null, proofOn = false;
-  ${['loadContentSet', 'chooseLook', 'chooseVariant', 'publishSceneState', 'drawFrame'].map(functionText).join('\n')}
+  ${['loadContentSet', 'chooseLook', 'chooseVariant', 'publishSceneState', 'createMemoryPublisher', 'drawFrame'].map(functionText).join('\n')}
+  const publishMemory = createMemoryPublisher(canvas.dataset);
   return {
     async run() { try { ${snippet} } ${startup.catchClause.getText(source)} },
     drawFrame,

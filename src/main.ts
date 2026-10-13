@@ -249,6 +249,98 @@ function createGovernorPublisher(dataset: DOMStringMap): (diagnostics: GovernorD
 }
 
 /**
+ * The post-state publisher: the features string in its fixed order, built only when the chain
+ * hands out a features record this publisher has not seen. The chain reuses one record until a
+ * published value would change (a graph rebuild, a fallback, or a motion or depth-of-field
+ * transition), so an ordinary frame formats nothing; the governor record still rides every call.
+ * The starting sentinel is undefined, so even a first null call writes 'off' exactly as the
+ * per-frame formatting this replaces did.
+ */
+function createPostStatePublisher(
+  dataset: DOMStringMap,
+  publishGovernor: (diagnostics: GovernorDiagnostics | null) => void,
+): (features: PostChain['features'] | null, diagnostics: GovernorDiagnostics | null) => void {
+  let published: PostChain['features'] | null | undefined;
+  return (features, diagnostics) => {
+    if (features !== published) {
+      published = features;
+      const value =
+        features === null
+          ? 'off'
+          : [
+              features.ao ? 'ao' : '',
+              features.traa ? 'traa' : '',
+              features.msaa ? 'msaa' : '',
+              features.ssgi === 'half' ? 'ssgi-half' : features.ssgi === 'full' ? 'ssgi' : '',
+              features.ssr ? 'ssr' : '',
+              features.bloom ? 'bloom' : '',
+              features.lut ? 'lut' : '',
+              features.vignette ? 'vignette' : '',
+              features.dof === 'on' ? 'dof' : '',
+            ]
+              .filter((feature) => feature !== '')
+              .join(',') || 'off';
+      if (dataset.post !== value) {
+        dataset.post = value;
+      }
+    }
+    publishGovernor(diagnostics);
+  };
+}
+
+/**
+ * The memory attribute as the e2e switch test reads it: geometries/textures. Both counts are
+ * lifetime totals of live objects and only move when a resource is uploaded or disposed, so the
+ * counts are compared as numbers and the string is built only for a change; a still page touches
+ * the dataset neither to read nor to write. The sentinels are negative, so the first call always
+ * writes, exactly as the compare-against-the-attribute form this replaces did.
+ */
+function createMemoryPublisher(
+  dataset: DOMStringMap,
+): (geometries: number, textures: number) => void {
+  let lastGeometries = -1;
+  let lastTextures = -1;
+  return (geometries, textures) => {
+    if (geometries === lastGeometries && textures === lastTextures) {
+      return;
+    }
+    lastGeometries = geometries;
+    lastTextures = textures;
+    dataset.memory = `${geometries}/${textures}`;
+  };
+}
+
+/**
+ * The proof timestamp bridge: at most one resolve in flight. Both query pools already coalesce a
+ * resolve issued while one is running and answer it with the same duration
+ * (WebGPUTimestampQueryPool.js lines 104-106; the WebGL pool keeps the same flag at lines
+ * 190-196), and the backend writes exactly what the pool returned into info.render.timestamp
+ * (Backend.js, resolveTimestampsAsync), so a call skipped here cannot make the standing reading
+ * staler: it only skips a duplicate write of the same number and its promise chain. The reading
+ * is pushed before the resolve is requested, so what the series records is unchanged either way.
+ */
+function createTimestampResolveBridge(
+  resolve: () => Promise<unknown>,
+  onError: (error: unknown) => void,
+): () => void {
+  let inFlight = false;
+  const settled = (): void => {
+    inFlight = false;
+  };
+  const failed = (error: unknown): void => {
+    inFlight = false;
+    onError(error);
+  };
+  return () => {
+    if (inFlight) {
+      return;
+    }
+    inFlight = true;
+    void resolve().then(settled, failed);
+  };
+}
+
+/**
  * The startup-failure routing, assigned as main()'s first act so every throw below it already
  * has a visible surface. Held at module scope for the catch at the bottom of this file, which
  * also runs when main() ends before the assignment.
@@ -454,6 +546,13 @@ async function main(): Promise<void> {
 
   let frameCount = 0;
   let frameWaiters: (() => void)[] = [];
+  /** At most one timestamp resolve in flight; see createTimestampResolveBridge. */
+  const requestTimestampResolve = createTimestampResolveBridge(
+    () => renderer.resolveTimestampsAsync(),
+    handleTimestampError,
+  );
+  /** Writes the memory attribute only when one of the two resource counts moved. */
+  const publishMemory = createMemoryPublisher(canvas.dataset);
   function drawFrame(): void {
     renderer.info.reset();
     if (showroom === null) {
@@ -469,7 +568,7 @@ async function main(): Promise<void> {
       // reading lags the frame it belongs to by one. Never awaited here, which would stall the
       // render callback on the GPU.
       gpuSeries.push(renderer.info.render.timestamp);
-      void renderer.resolveTimestampsAsync().catch(handleTimestampError);
+      requestTimestampResolve();
     }
     frameCount += 1;
     // Readable from outside without exposing the renderer: the e2e tests watch this counter to prove
@@ -477,16 +576,12 @@ async function main(): Promise<void> {
     canvas.dataset.frames = String(frameCount);
     // Active GPU resources as geometries/textures, the pair the e2e switch test compares before and
     // after ten look changes. Both counts are lifetime totals of live objects, not per frame, and
-    // they only move when a resource is uploaded or disposed, so the write is skipped when nothing
-    // changed.
-    const reading = `${renderer.info.memory.geometries}/${renderer.info.memory.textures}`;
-    if (canvas.dataset.memory !== reading) {
-      canvas.dataset.memory = reading;
-    }
+    // they only move when a resource is uploaded or disposed, so the string is built only then.
+    publishMemory(renderer.info.memory.geometries, renderer.info.memory.textures);
     if (chain !== null) {
       // Per frame, not once at creation: a runtime fallback to pass-through changes what the chain
       // is doing, and the attribute is what the e2e suite and the overlay read it from.
-      publishPostState();
+      publishPostState(chain);
     }
     if (contentOnScreen) {
       // The first frame is the first one with the scene on it: an empty warm-up frame is not what
@@ -741,28 +836,9 @@ async function main(): Promise<void> {
    * the canvas and the proof panel only after render() has applied it.
    */
   const publishGovernor = createGovernorPublisher(canvas.dataset);
-  function publishPostState(): void {
-    const on = chain?.features ?? null;
-    const value =
-      on === null
-        ? 'off'
-        : [
-            on.ao ? 'ao' : '',
-            on.traa ? 'traa' : '',
-            on.msaa ? 'msaa' : '',
-            on.ssgi === 'half' ? 'ssgi-half' : on.ssgi === 'full' ? 'ssgi' : '',
-            on.ssr ? 'ssr' : '',
-            on.bloom ? 'bloom' : '',
-            on.lut ? 'lut' : '',
-            on.vignette ? 'vignette' : '',
-            on.dof === 'on' ? 'dof' : '',
-          ]
-            .filter((feature) => feature !== '')
-            .join(',') || 'off';
-    if (canvas.dataset.post !== value) {
-      canvas.dataset.post = value;
-    }
-    publishGovernor(chain?.governorDiagnostics ?? null);
+  const publishPost = createPostStatePublisher(canvas.dataset, publishGovernor);
+  function publishPostState(chainNow: PostChain | null): void {
+    publishPost(chainNow?.features ?? null, chainNow?.governorDiagnostics ?? null);
   }
 
   /**
