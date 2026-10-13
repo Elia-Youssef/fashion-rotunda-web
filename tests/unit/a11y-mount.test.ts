@@ -165,6 +165,17 @@ describe('mountA11y', () => {
       const liveRegion = root.querySelector('.a11y-live-region');
       expect(liveRegion).not.toBeNull();
 
+      if (retainedLobby) {
+        // A competing control inserted after mount must not change the observer's owner.
+        const competingHeader = document.createElement('header');
+        const competingButton = document.createElement('button');
+        competingButton.className = 'music-switch';
+        competingButton.setAttribute('aria-pressed', String(!enabled));
+        competingButton.dataset.music = enabled ? 'off' : 'on';
+        competingHeader.appendChild(competingButton);
+        root.prepend(competingHeader);
+      }
+
       musicBtn?.setAttribute('aria-pressed', String(enabled));
       if (musicBtn !== null) musicBtn.dataset.music = enabled ? 'on' : 'off';
 

@@ -135,7 +135,7 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
 
   const headerEl = musicButton?.closest('header') ?? null;
   const headerObserver = new MutationObserver(() => {
-    const btn = root.querySelector<HTMLButtonElement>('header button.music-switch');
+    const btn = musicButton;
     if (btn !== null) {
       const pressed = btn.getAttribute('aria-pressed');
       const state = btn.dataset.music ?? null;
