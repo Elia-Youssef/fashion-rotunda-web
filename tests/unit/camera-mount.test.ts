@@ -121,6 +121,26 @@ describe('mountCamera', () => {
     observer.disconnect();
   });
 
+  it('publishes repeated non-finite yaw once, then a finite yaw', () => {
+    const yaw = NaN;
+    const { mount: current } = make({ search: '?attract=0' });
+    const observer = new MutationObserver(() => {});
+    observer.observe(canvas, { attributes: true, attributeFilter: ['data-yaw'] });
+    try {
+      current.turntable.setYaw(yaw);
+      expect(canvas.dataset.yaw).toBe(yaw.toFixed(3));
+      expect(observer.takeRecords()).toHaveLength(1);
+      current.turntable.setYaw(yaw);
+      expect(canvas.dataset.yaw).toBe(yaw.toFixed(3));
+      expect(observer.takeRecords()).toHaveLength(0);
+      current.turntable.setYaw(1.25);
+      expect(canvas.dataset.yaw).toBe('1.250');
+      expect(observer.takeRecords()).toHaveLength(1);
+    } finally {
+      observer.disconnect();
+    }
+  });
+
   it('uses the default idle delay for malformed attractIdle values', () => {
     expect(attractIdleMsFromSearch('?attractIdle=not-a-number')).toBe(60_000);
     expect(attractIdleMsFromSearch('?attractIdle=Infinity')).toBe(60_000);
