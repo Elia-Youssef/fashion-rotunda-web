@@ -173,3 +173,119 @@ it('keeps the ordinary footer and badge rules unchanged until a proof panel is m
     style.remove();
   }
 });
+
+it('lifts the proof column above the open desktop bar and restores the closed layout after it', () => {
+  const style = document.createElement('style');
+  style.textContent = readFileSync('src/styles.css', 'utf8');
+  document.head.appendChild(style);
+  const row = document.createElement('div');
+  row.id = 'shell-light-row';
+  const footer = document.createElement('footer');
+  const strip = document.createElement('aside');
+  strip.id = 'shell-proof';
+  const badge = document.createElement('p');
+  badge.className = 'badge';
+  const panel = document.createElement('section');
+  panel.className = 'proof-panel';
+  strip.appendChild(badge);
+  strip.appendChild(panel);
+  footer.appendChild(strip);
+  document.body.appendChild(row);
+  document.body.appendChild(footer);
+  try {
+    const rules = [...style.sheet!.cssRules];
+    const barMode = rules.filter(
+      (rule) => rule instanceof CSSMediaRule &&
+        rule.conditionText === '(min-width: 1200px) and (min-height: 600px)',
+    ) as CSSMediaRule[];
+    expect(barMode.length, 'the desktop bar mode has its own media').toBeGreaterThan(0);
+    const barModeRules = barMode.flatMap((media) => [...media.cssRules]).filter(
+      (entry): entry is CSSStyleRule => entry instanceof CSSStyleRule,
+    );
+    const matching = (node: Element): CSSStyleRule[] =>
+      barModeRules.filter((rule) => node.matches(rule.selectorText));
+
+    // The lift keys on the open row: closed must match nothing, open exactly the two rules.
+    row.dataset.open = 'false';
+    expect(matching(footer), 'the closed bar lifts nothing').toEqual([]);
+    expect(matching(panel), 'the closed bar lifts nothing').toEqual([]);
+    row.dataset.open = 'true';
+    const footerLift = matching(footer);
+    const panelLift = matching(panel);
+    expect(footerLift, 'the open bar lifts the column floor').toHaveLength(1);
+    expect(panelLift, 'the open bar lowers the readout ceiling').toHaveLength(1);
+    expect(
+      footerLift[0].style.getPropertyValue('bottom').replace(/\s+/g, ' ').trim(),
+    ).toBe(
+      'calc(var(--safe-area-bottom) + var(--space-4) + var(--light-bar-clearance) + var(--space-2))',
+    );
+    expect(
+      panelLift[0].style.getPropertyValue('max-height').replace(/\s+/g, ' ').trim(),
+    ).toBe(
+      'calc( 100dvh - var(--header-height) - var(--safe-area-top) - var(--safe-area-bottom) - ' +
+        '2 * var(--space-4) - 2 * var(--space-2) - var(--control-height) - ' +
+        'var(--light-bar-clearance) )',
+    );
+    row.dataset.open = 'false';
+    expect(matching(footer), 'closing the bar restores the accepted closed layout').toEqual([]);
+
+    const root = rules.find(
+      (rule) => rule instanceof CSSStyleRule && rule.selectorText === ':root',
+    ) as CSSStyleRule;
+    // A custom property value comes back re-serialized, so compare it with every space stripped.
+    const token = root.style.getPropertyValue('--light-bar-clearance').replace(/\s+/g, '');
+    expect(token).toBe(
+      'calc(var(--light-bar-pad-top)+var(--light-bar-pad-bottom)+1.1*var(--light-type-title)+' +
+        '3*var(--control-height)+2px)',
+    );
+    // The reserve prices the bar's title line and its bar-mode media from lightpanel.css itself,
+    // so a change there that outgrows the reserve fails here instead of on the page.
+    const lightpanel = readFileSync('src/ui/lightpanel.css', 'utf8');
+    expect(lightpanel).toMatch(/line-height:\s*1\.1;/);
+    expect(lightpanel).toContain('@media (min-width: 1200px) and (min-height: 600px) {');
+
+    // Check the lift across the bar sizes the lightdrawer spec opens, root font sizes and insets.
+    // The expressions tie this algebra to the shipped declarations, not an independent mock.
+    const rem = (token: string): number => {
+      const raw = root.style.getPropertyValue(token).trim();
+      expect(raw).toMatch(/^\d+(?:\.\d+)?rem$/);
+      return parseFloat(raw);
+    };
+    for (const font of [16, 20, 24]) {
+      expect(
+        3 * rem('--light-target-fine') * font,
+        'the reserve is the coarse-pointer bound',
+      ).toBeLessThan(3 * rem('--control-height') * font);
+    }
+    const clearance = (font: number): number =>
+      (rem('--light-bar-pad-top') + rem('--light-bar-pad-bottom') +
+        1.1 * rem('--light-type-title') + 3 * rem('--control-height')) * font + 2;
+    for (const width of [1200, 1280, 1366, 1440, 1669]) {
+      for (const height of [600, 640, 720, 768, 900, 1080, 1115]) {
+        for (const font of [16, 20, 24]) {
+          for (const inset of [0, 24]) {
+            const gap4 = rem('--space-4') * font;
+            const gap2 = rem('--space-2') * font;
+            const barTop = inset + gap4 + clearance(font);
+            const stripFloor = barTop + gap2;
+            const badge = rem('--control-height') * font;
+            const header = rem('--header-height') * font + inset;
+            const ceiling = height - header - inset - 2 * gap4 - 2 * gap2 - badge -
+              clearance(font);
+            expect(stripFloor - barTop, 'the floor sits one strip gap above the bar')
+              .toBeCloseTo(gap2);
+            expect(ceiling, 'the readout keeps a positive ceiling').toBeGreaterThan(0);
+            expect(height - stripFloor - badge - gap2 - ceiling, 'the readout still starts one ' +
+              'gap under the header').toBeCloseTo(header + gap4);
+            expect(width - inset - 2 * gap4 - Math.min(rem('--card-width') * font, width * 0.4),
+              'the bar and column keep the card column between them').toBeGreaterThan(0);
+          }
+        }
+      }
+    }
+  } finally {
+    footer.remove();
+    row.remove();
+    style.remove();
+  }
+});

@@ -190,6 +190,16 @@
   --light-type-title: 1.25rem;
   --light-type-label: 0.875rem;
   --light-type-readout: 0.6875rem;
+  /* The open desktop bar's worst-case border box, priced from the bar's own metrics: its vertical
+     padding, its title line at the 1.1 line height of the lightpanel bar block, its three studio
+     rows at the coarse 44 px target, and its two 1 px borders. A fine-pointer bar draws about
+     2.5rem shorter than this, so a reserve built on it clears a coarse bar at every root size and
+     lifts a little higher than a fine bar strictly needs. Keep in step with the bar block of
+     src/ui/lightpanel.css. */
+  --light-bar-clearance: calc(
+    var(--light-bar-pad-top) + var(--light-bar-pad-bottom) + 1.1 * var(--light-type-title) +
+      3 * var(--control-height) + 2px
+  );
   --footer-proof-height: min(12rem, 24dvh);
   /* When a phone sheet is open, its bottom edge clears the compact badge/Measure strip instead
      of painting over the controls. The two touch rows are also enough room when proof is absent. */
@@ -730,6 +740,28 @@ footer .proof-panel__measure {
     max-height: calc(
       100dvh - var(--header-height) - var(--safe-area-top) - var(--safe-area-bottom) -
         var(--space-4) - var(--control-height) - var(--space-2) - var(--space-1)
+    );
+  }
+}
+
+/* While the desktop bar is open, the bar and the proof column share the band between the rail and
+   the card, and from 1200 to the mid-1600s of viewport width the bar's reach crosses the column.
+   With the bar open the column's floor therefore lifts above the bar's worst-case box
+   (--light-bar-clearance) plus one strip gap, and the readout's ceiling follows: the closed
+   formula with its bottom term swapped for the lifted floor. The column keeps its width, the bar
+   keeps all four columns at their targets, and closing the bar restores the accepted closed
+   layout, because every selector here also requires the open row. */
+@media (min-width: 1200px) and (min-height: 600px) {
+  body:has(#shell-light-row[data-open='true']) footer:has(.proof-panel) {
+    bottom: calc(var(--safe-area-bottom) + var(--space-4) + var(--light-bar-clearance) +
+      var(--space-2));
+  }
+
+  body:has(#shell-light-row[data-open='true']) footer:has(.proof-panel) .proof-panel {
+    max-height: calc(
+      100dvh - var(--header-height) - var(--safe-area-top) - var(--safe-area-bottom) -
+        2 * var(--space-4) - 2 * var(--space-2) - var(--control-height) -
+        var(--light-bar-clearance)
     );
   }
 }
