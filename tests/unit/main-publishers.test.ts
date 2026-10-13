@@ -133,16 +133,21 @@ describe('createPostStatePublisher', () => {
   });
 
   it('gives two publishers their own published record', () => {
-    const { dataset } = recordingDataset();
+    // One dataset per publisher: the attribute guard reads the dataset it is given, so one
+    // shared attribute would mask the second formatting pass behind a suppressed write and
+    // the readout would look the same either way. The write logs are the witness: the second
+    // publisher's first call writes even though the first already published the same string,
+    // which one shared last-formatted record would skip without a write of its own.
+    const firstDataset = recordingDataset();
+    const secondDataset = recordingDataset();
     const record = features({ lut: true, vignette: true });
-    const first = createPostStatePublisher(dataset, () => {});
-    const second = createPostStatePublisher(dataset, () => {});
+    const first = createPostStatePublisher(firstDataset.dataset, () => {});
+    const second = createPostStatePublisher(secondDataset.dataset, () => {});
 
     first(record, null);
-    expect(dataset.post).toBe('lut,vignette');
+    expect(firstDataset.writeLog).toEqual(['lut,vignette']);
     second(record, null);
-    // The second publisher has not formatted anything yet, so its first call still publishes.
-    expect(dataset.post).toBe('lut,vignette');
+    expect(secondDataset.writeLog).toEqual(['lut,vignette']);
   });
 });
 
