@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { MusicState } from '../../src/audio/music';
 import { mountA11y } from '../../src/ui/a11y';
 import type { A11yMount } from '../../src/ui/a11y';
+import { mountMusicSwitch } from '../../src/ui/music-switch';
+import type { MusicSwitchHandle } from '../../src/ui/music-switch';
 import { ONBOARDING_STORAGE_KEY } from '../../src/ui/onboarding';
 
 let root: HTMLElement;
@@ -10,6 +13,10 @@ let aside: HTMLElement;
 let canvas: HTMLCanvasElement;
 let header: HTMLElement;
 let a11y: A11yMount | null = null;
+let musicSwitch: MusicSwitchHandle | null = null;
+
+// Match the announcer's coalescing window to test completion before and after it closes.
+const ANNOUNCEMENT_WINDOW_MS = 500;
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -57,12 +64,64 @@ beforeEach(() => {
 afterEach(() => {
   a11y?.dispose();
   a11y = null;
+  musicSwitch?.dispose();
+  musicSwitch = null;
   root.innerHTML = '';
   localStorage.clear();
   vi.useRealTimers();
 });
 
 describe('mountA11y', () => {
+  const playbackTransitions: { initial: MusicState; next: MusicState }[] = [
+    { initial: 'armed', next: 'loading' },
+    { initial: 'armed', next: 'playing' },
+    { initial: 'loading', next: 'playing' },
+    { initial: 'playing', next: 'armed' },
+    { initial: 'off', next: 'error' },
+    { initial: 'error', next: 'off' },
+  ];
+
+  it.each(
+    playbackTransitions.flatMap((transition) =>
+      [0, ANNOUNCEMENT_WINDOW_MS].map((delay) => ({ ...transition, delay })),
+    ),
+  )(
+    'preserves readiness for $initial -> $next after $delay ms and announces user toggles',
+    async ({ initial, next, delay }) => {
+      header.replaceChildren();
+      let state = initial;
+      musicSwitch = mountMusicSwitch(header, {
+        state,
+        onToggle: () => {
+          state = state === 'off' || state === 'error' ? 'loading' : 'off';
+          musicSwitch?.setState(state, null);
+        },
+      });
+      const musicBtn = header.querySelector<HTMLButtonElement>('button.music-switch')!;
+      a11y = mountA11y({ root, aside, canvas, search: '?e2e=1' });
+      const liveRegion = root.querySelector('.a11y-live-region')!;
+
+      a11y.announcer.say('Experience ready');
+      expect(liveRegion.textContent).toBe('Experience ready');
+      vi.advanceTimersByTime(delay);
+
+      // Playback completion rewrites both attributes while the switch stays on or stays off.
+      state = next;
+      musicSwitch.setState(state, null);
+      await Promise.resolve();
+      vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+      expect(liveRegion.textContent).toBe('Experience ready');
+
+      // Native clicks exercise both toggle directions after automatic playback settles.
+      for (let toggle = 0; toggle < 2; toggle += 1) {
+        musicBtn.click();
+        await Promise.resolve();
+        vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+        expect(liveRegion.textContent).toBe(state === 'off' ? 'Music off' : 'Music on');
+      }
+    },
+  );
+
   it('sets canvas aria-label, removes role and keeps tabindex=0', () => {
     canvas.setAttribute('role', 'img');
     a11y = mountA11y({ root, aside, canvas, search: '' });

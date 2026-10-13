@@ -102,7 +102,6 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
 
   const musicButton = root.querySelector<HTMLButtonElement>('header button.music-switch');
   let prevMusicPressed = musicButton?.getAttribute('aria-pressed') ?? null;
-  let prevMusicState = musicButton?.dataset.music ?? null;
 
   const canvasObserver = new MutationObserver(() => {
     const currentLook = canvas.dataset.look ?? null;
@@ -138,10 +137,9 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
     const btn = musicButton;
     if (btn !== null) {
       const pressed = btn.getAttribute('aria-pressed');
-      const state = btn.dataset.music ?? null;
-      if (pressed !== null && (pressed !== prevMusicPressed || state !== prevMusicState)) {
+      // Playback progress can change while the switch stays on. Announce only on/off changes.
+      if (pressed !== null && pressed !== prevMusicPressed) {
         prevMusicPressed = pressed;
-        prevMusicState = state;
         announcer.say(pressed === 'true' ? 'Music on' : 'Music off');
       }
     }
@@ -150,7 +148,7 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
     headerObserver.observe(headerEl, {
       attributes: true,
       subtree: true,
-      attributeFilter: ['aria-pressed', 'data-music'],
+      attributeFilter: ['aria-pressed'],
     });
   }
 
