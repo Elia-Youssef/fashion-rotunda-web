@@ -21,7 +21,7 @@ export const KELVIN_RANGE: readonly [number, number] = [2700, 8000];
 export const CANDELA_RANGE: readonly [number, number] = [0, 50];
 
 /** Unreal is centimetres, three is metres. */
-export const UNREAL_CM_PER_M = 100;
+const UNREAL_CM_PER_M = 100;
 
 /** Krystek's approximation is published for 1000 K to 15000 K; the polynomials drift outside it. */
 const PLANCKIAN_KELVIN_RANGE: readonly [number, number] = [1000, 15000];

@@ -28,14 +28,14 @@ import {
 } from 'three';
 
 /** Straight up: a clear midday blue, the Rayleigh sky seen through the dome. sRGB hex. */
-export const SKY_ZENITH_HEX = 0x4a7fc4;
+const SKY_ZENITH_HEX = 0x4a7fc4;
 /**
  * The horizon haze: the Unreal height fog albedo #99BEE7, desaturated toward white so the lower sky
  * reads as pale haze rather than a second blue. sRGB hex.
  */
-export const SKY_HORIZON_HEX = 0xc6d8ec;
+const SKY_HORIZON_HEX = 0xc6d8ec;
 /** Below the horizon: a neutral mid grey, never black, and no green or yellow. sRGB hex. */
-export const SKY_GROUND_HEX = 0x808080;
+const SKY_GROUND_HEX = 0x808080;
 
 /**
  * The visible sky's linear luminance per band, in the radiance units of the School Field HDR it
@@ -43,15 +43,15 @@ export const SKY_GROUND_HEX = 0x808080;
  * backgroundIntensity curve was tuned against. The horizon is the brightest band, as in a clear sky.
  */
 export const VISIBLE_ZENITH_LUMINANCE = 2.0;
-export const VISIBLE_HORIZON_LUMINANCE = 2.6;
+const VISIBLE_HORIZON_LUMINANCE = 2.6;
 export const VISIBLE_GROUND_LUMINANCE = 0.55;
 /**
  * Above the horizon the weight toward the zenith is sin(elevation) ** falloff: below 1 the blue takes
  * over a few degrees up. Below the horizon the weight toward the ground is sin(-elevation) **
  * GROUND_FALLOFF: a small value closes the haze into the ground within a few degrees.
  */
-export const VISIBLE_SKY_FALLOFF = 0.55;
-export const GROUND_FALLOFF = 0.3;
+const VISIBLE_SKY_FALLOFF = 0.55;
+const GROUND_FALLOFF = 0.3;
 
 /**
  * The lighting sky's relative luminance per band (zenith 1). The shape is calibrated, not chosen by
@@ -62,10 +62,10 @@ export const GROUND_FALLOFF = 0.3;
  * contrast; the ground at 0.09 holds the side fill inside 10 percent. The absolute level is
  * PROCEDURAL_ENVIRONMENT_SCALE in compose.ts. The visible copy uses the VISIBLE_* constants only.
  */
-export const ENVIRONMENT_ZENITH_LUMINANCE = 1;
-export const ENVIRONMENT_HORIZON_LUMINANCE = 0.03;
-export const ENVIRONMENT_GROUND_LUMINANCE = 0.09;
-export const ENVIRONMENT_SKY_FALLOFF = 1.0;
+const ENVIRONMENT_ZENITH_LUMINANCE = 1;
+const ENVIRONMENT_HORIZON_LUMINANCE = 0.03;
+const ENVIRONMENT_GROUND_LUMINANCE = 0.09;
+const ENVIRONMENT_SKY_FALLOFF = 1.0;
 
 /**
  * The lighting copy keeps this share of each colour's saturation. The visible sky wants a clear blue;

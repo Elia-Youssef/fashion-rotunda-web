@@ -19,7 +19,7 @@ import type { Object3D } from 'three/webgpu';
 import type { GLTF, GLTFParser } from 'three/addons/loaders/GLTFLoader.js';
 
 /** The extension name, as it appears in the glTF file and in userData.gltfExtensions. */
-export const VARIANTS_EXTENSION = 'KHR_materials_variants';
+const VARIANTS_EXTENSION = 'KHR_materials_variants';
 
 /** Where a primitive's first material is parked so an unmapped variant can restore it. */
 const ORIGINAL_MATERIAL = 'originalMaterial';
