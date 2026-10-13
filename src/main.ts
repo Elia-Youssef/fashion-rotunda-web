@@ -19,10 +19,9 @@ import type { PostChain } from './post/chain';
 import { postChainRebuildAllowed } from './post/chain';
 import type { GovernorDiagnostics } from './post/governor';
 import { FrameTimes } from './proof/frametime';
-import { createGpuTimes, handleTimestampError } from './proof/gpu';
 import { latestLookSwitchMs, markFirstFrame, snapshot } from './proof/marks';
-import { PROOF_POSITION, PROOF_TARGET, runProofOrbit } from './proof/orbit-run';
-import { mountProofPanel, overlayWanted } from './proof/panel';
+import { overlayWanted } from './proof/overlay';
+import { loadProof } from './proof/load';
 import { createRenderer, describeRendererError } from './renderer/create';
 import { withCompilationDeadline } from './renderer/compile-deadline';
 import { showLossNotice, showPoster } from './renderer/notices';
@@ -433,6 +432,8 @@ async function main(): Promise<void> {
   // asks for the panel pays for neither. Read once, used by the renderer options, by drawFrame and
   // by the mount below, so the three can never disagree.
   const proofOn = overlayWanted(search, import.meta.env.DEV);
+  const proofReady = loadProof(search, import.meta.env.DEV);
+  const proofTools = proofReady === null ? null : await proofReady;
 
   let revealCoordinator: SceneRevealCoordinator | null = null;
   /**
@@ -555,7 +556,7 @@ async function main(): Promise<void> {
   /** At most one timestamp resolve in flight; see createTimestampResolveBridge. */
   const requestTimestampResolve = createTimestampResolveBridge(
     () => renderer.resolveTimestampsAsync(),
-    handleTimestampError,
+    (error) => proofTools?.handleTimestampError(error),
   );
   /** Writes the memory attribute only when one of the two resource counts moved. */
   const publishMemory = createMemoryPublisher(canvas.dataset);
@@ -573,7 +574,7 @@ async function main(): Promise<void> {
       // standing in info.render.timestamp now is the one an earlier frame's resolve wrote, and the
       // reading lags the frame it belongs to by one. Never awaited here, which would stall the
       // render callback on the GPU.
-      gpuSeries.push(renderer.info.render.timestamp);
+      gpuSeries?.push(renderer.info.render.timestamp);
       requestTimestampResolve();
     }
     frameCount += 1;
@@ -673,7 +674,7 @@ async function main(): Promise<void> {
   const frames = new FrameTimes();
   // One window per series, the same 240 frames the FrameTimes default holds, so the CPU and GPU
   // percentiles printed side by side cover the same stretch of the run.
-  const gpuSeries = createGpuTimes(240);
+  const gpuSeries = proofTools?.createGpuTimes(240) ?? null;
   const loop = createLoop({
     render: (dtMs) => {
       cameraMount?.update(dtMs);
@@ -758,8 +759,8 @@ async function main(): Promise<void> {
     updateRecoveryEligibility();
   });
 
-  if (proofOn) {
-    mountProofPanel(shell.roots.proof, {
+  if (proofTools !== null && gpuSeries !== null) {
+    proofTools.mountProofPanel(shell.roots.proof, {
       read: () =>
         snapshot({
           info: renderer.info,
@@ -787,11 +788,11 @@ async function main(): Promise<void> {
         // The catalogue's view once the camera has mounted, which is the only state this runs in;
         // the module constants are the fallback and are pinned to the catalogue by a unit test.
         const view = proofView;
-        await runProofOrbit({
+        await proofTools.runProofOrbit({
           // The run reuses one position tuple across ticks; setPose consumes it synchronously.
           setPose: (pos, tgt) => mount.orbit.setPose(pos, tgt),
-          proofPosition: view === null ? PROOF_POSITION : view.position,
-          proofTarget: view === null ? PROOF_TARGET : view.target,
+          proofPosition: view === null ? proofTools.PROOF_POSITION : view.position,
+          proofTarget: view === null ? proofTools.PROOF_TARGET : view.target,
           durationMs: 10_000,
           onFrame: () => loop.invalidate(),
           now: () => performance.now(),
