@@ -1,5 +1,5 @@
-// The environment light: what comes through the dome. Thin on purpose, because none of it can be unit
-// tested without a GPU, so every line here is either an API call or a disposal. The default sky is the
+// The environment light: what comes through the dome. Factories own their work until the environment
+// is ready, and release it on failure. The default sky is the
 // runtime gradient from sky.ts; the School Field HDR is kept only as the ?sky=hdr diagnostic, and
 // three's RoomEnvironment only as the failure fallback.
 //
@@ -15,16 +15,20 @@
 import {
   DataTexture,
   DataUtils,
+  CubeUVReflectionMapping,
   EquirectangularReflectionMapping,
   FloatType,
   HalfFloatType,
+  LinearFilter,
+  LinearSRGBColorSpace,
+  RenderTarget,
+  RGBAFormat,
 } from 'three';
 import type { Scene, Texture } from 'three';
 import { PMREMGenerator } from 'three/webgpu';
 import type { WebGPURenderer } from 'three/webgpu';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
-import type { RenderTarget } from 'three';
 
 import { createGradientSkyTexture, environmentSkyPalette, visibleSkyPalette } from './sky';
 
@@ -42,6 +46,91 @@ export interface Environment {
  * into the soft gradient a showroom sky wants.
  */
 const ROOM_BLUR_RADIANS = 0.3;
+
+interface Disposable {
+  dispose(): void;
+}
+
+/** A factory retains ownership until construction and the normal temporary releases succeed. */
+function environmentResources() {
+  const owned = new Set<Disposable>();
+  return {
+    own<T extends Disposable>(resource: T): T {
+      owned.add(resource);
+      return resource;
+    },
+    release(resource: Disposable): void {
+      // Remove before calling: a throwing release is still one attempt, never a retry in finally.
+      owned.delete(resource);
+      resource.dispose();
+    },
+    transfer(...resources: Disposable[]): void {
+      for (const resource of resources) owned.delete(resource);
+    },
+    cleanup(): void {
+      const errors: unknown[] = [];
+      for (const resource of owned) {
+        owned.delete(resource);
+        try {
+          resource.dispose();
+        } catch (error) {
+          errors.push(error);
+        }
+      }
+      if (errors.length > 0) console.warn('[archviz] environment resource release failed', errors);
+    },
+  };
+}
+
+type EnvironmentResources = ReturnType<typeof environmentResources>;
+
+// Match three r186 PMREMGenerator's _setSize, _allocateTarget and _createRenderTarget (lines
+// 359-363, 407-415 and 838-855). Supplying the public renderTarget argument keeps the output owned
+// even when conversion throws before returning it; generator.dispose() frees only its internals.
+const ROOM_CUBE_SIZE = 256;
+const EQUIRECTANGULAR_FACE_DIVISOR = 4;
+const CUBE_UV_COLUMNS = 3;
+const CUBE_UV_ROWS = 4;
+const CUBE_UV_MIN_TILE_SIZE = 16;
+const CUBE_UV_MIN_TILES = 7;
+
+function createPmremTarget(resources: EnvironmentResources, faceSize: number, depthBuffer: boolean): RenderTarget {
+  const cubeSize = 2 ** Math.floor(Math.log2(faceSize));
+  const width = CUBE_UV_COLUMNS * Math.max(cubeSize, CUBE_UV_MIN_TILE_SIZE * CUBE_UV_MIN_TILES);
+  const target = resources.own(new RenderTarget(width, CUBE_UV_ROWS * cubeSize, {
+    magFilter: LinearFilter,
+    minFilter: LinearFilter,
+    generateMipmaps: false,
+    type: HalfFloatType,
+    format: RGBAFormat,
+    colorSpace: LinearSRGBColorSpace,
+    depthBuffer,
+  }));
+  target.texture.mapping = CubeUVReflectionMapping;
+  target.texture.name = 'PMREM.cubeUv';
+  Object.assign(target.texture, { isPMREMTexture: true });
+  target.scissorTest = true;
+  return target;
+}
+
+/** PMREM restores renderer state only on success; restore it before releasing a failed output. */
+function convertPmrem(renderer: WebGPURenderer, convert: () => void): void {
+  const previous = renderer.getRenderTarget();
+  const face = renderer.getActiveCubeFace();
+  const level = renderer.getActiveMipmapLevel();
+  const autoClear = renderer.autoClear;
+  try {
+    convert();
+  } catch (error) {
+    try {
+      renderer.autoClear = autoClear;
+      renderer.setRenderTarget(previous, face, level);
+    } catch (restoreError) {
+      console.warn('[archviz] environment render target restore failed', restoreError);
+    }
+    throw error;
+  }
+}
 
 /**
  * `school-field-cloudy` is a complete outdoor panorama: its field begins below the cloud band.
@@ -138,19 +227,25 @@ export function createSkyOnlyBackground(source: Texture): Texture {
     }
   }
 
-  const background = new DataTexture(pixels, backgroundWidth, backgroundHeight, undefined, source.type);
-  background.name = `${source.name || 'HDR'} visible sky`;
-  background.mapping = source.mapping;
-  background.colorSpace = source.colorSpace;
-  background.flipY = source.flipY;
-  background.wrapS = source.wrapS;
-  background.wrapT = source.wrapT;
-  background.magFilter = source.magFilter;
-  background.minFilter = source.minFilter;
-  background.anisotropy = source.anisotropy;
-  background.generateMipmaps = source.generateMipmaps;
-  background.needsUpdate = true;
-  return background;
+  const resources = environmentResources();
+  try {
+    const background = resources.own(new DataTexture(pixels, backgroundWidth, backgroundHeight, undefined, source.type));
+    background.name = `${source.name || 'HDR'} visible sky`;
+    background.mapping = source.mapping;
+    background.colorSpace = source.colorSpace;
+    background.flipY = source.flipY;
+    background.wrapS = source.wrapS;
+    background.wrapT = source.wrapT;
+    background.magFilter = source.magFilter;
+    background.minFilter = source.minFilter;
+    background.anisotropy = source.anisotropy;
+    background.generateMipmaps = source.generateMipmaps;
+    background.needsUpdate = true;
+    resources.transfer(background);
+    return background;
+  } finally {
+    resources.cleanup();
+  }
 }
 
 /**
@@ -205,12 +300,22 @@ export function fromRenderTarget(
  */
 export async function createRoomEnvironment(renderer: WebGPURenderer): Promise<Environment> {
   await renderer.init();
-  const generator = new PMREMGenerator(renderer);
-  const room = new RoomEnvironment();
-  const target = generator.fromScene(room, ROOM_BLUR_RADIANS);
-  room.dispose();
-  generator.dispose();
-  return fromRenderTarget(target);
+  const resources = environmentResources();
+  try {
+    const generator = resources.own(new PMREMGenerator(renderer));
+    const room = resources.own(new RoomEnvironment());
+    const target = createPmremTarget(resources, ROOM_CUBE_SIZE, true);
+    convertPmrem(renderer, () => {
+      generator.fromScene(room, ROOM_BLUR_RADIANS, undefined, undefined, { renderTarget: target });
+    });
+    resources.release(room);
+    resources.release(generator);
+    const environment = fromRenderTarget(target);
+    resources.transfer(target);
+    return environment;
+  } finally {
+    resources.cleanup();
+  }
 }
 
 /**
@@ -220,18 +325,26 @@ export async function createRoomEnvironment(renderer: WebGPURenderer): Promise<E
  */
 export async function createProceduralEnvironment(renderer: WebGPURenderer): Promise<Environment> {
   await renderer.init();
-  const source = createGradientSkyTexture(environmentSkyPalette(), 'procedural sky lighting');
-  const background = createGradientSkyTexture(visibleSkyPalette(), 'procedural sky visible');
-  const generator = new PMREMGenerator(renderer);
-  const target = generator.fromEquirectangular(source);
-  generator.dispose();
-  // fromEquirectangular renders the cube faces inside this call once the backend is up, so the
-  // upload of the lighting copy has already been issued (WebGL texImage2D and WebGPU writeTexture
-  // copy the data when called). Only the PMREM target is sampled afterwards: release the source
-  // and its 1 MB CPU array now rather than holding both for the page's life. The visible copy
-  // stays, because the background samples it every frame.
-  source.dispose();
-  return fromRenderTarget(target, background);
+  const resources = environmentResources();
+  try {
+    const source = resources.own(createGradientSkyTexture(environmentSkyPalette(), 'procedural sky lighting'));
+    const background = resources.own(createGradientSkyTexture(visibleSkyPalette(), 'procedural sky visible'));
+    const generator = resources.own(new PMREMGenerator(renderer));
+    const target = createPmremTarget(resources, source.image.width / EQUIRECTANGULAR_FACE_DIVISOR, false);
+    convertPmrem(renderer, () => { generator.fromEquirectangular(source, target); });
+    resources.release(generator);
+    // fromEquirectangular renders the cube faces inside this call once the backend is up, so the
+    // upload of the lighting copy has already been issued (WebGL texImage2D and WebGPU writeTexture
+    // copy the data when called). Only the PMREM target is sampled afterwards: release the source
+    // now rather than retaining its texture and 1 MB CPU array for the page's life. The visible copy
+    // stays, because the background samples it every frame.
+    resources.release(source);
+    const environment = fromRenderTarget(target, background);
+    resources.transfer(target, background);
+    return environment;
+  } finally {
+    resources.cleanup();
+  }
 }
 
 /**
@@ -244,11 +357,23 @@ export async function createProceduralEnvironment(renderer: WebGPURenderer): Pro
  */
 export async function createHdrEnvironment(renderer: WebGPURenderer, url: string): Promise<Environment> {
   await renderer.init();
-  const source = await new HDRLoader().loadAsync(url);
-  orientHdrEquirectangular(source);
-  const background = createSkyOnlyBackground(source);
-  const generator = new PMREMGenerator(renderer);
-  const target = generator.fromEquirectangular(source);
-  generator.dispose();
-  return fromRenderTarget(target, background, source);
+  const resources = environmentResources();
+  try {
+    // DataTextureLoader.load returns the texture before its request settles (three r186 lines
+    // 48-93). loadAsync hides it on rejection, so retain that same texture before awaiting it.
+    const source = await new Promise<DataTexture>((resolve, reject) => {
+      resources.own(new HDRLoader().load(url, resolve, undefined, reject));
+    });
+    orientHdrEquirectangular(source);
+    const background = resources.own(createSkyOnlyBackground(source));
+    const generator = resources.own(new PMREMGenerator(renderer));
+    const target = createPmremTarget(resources, source.image.width / EQUIRECTANGULAR_FACE_DIVISOR, false);
+    convertPmrem(renderer, () => { generator.fromEquirectangular(source, target); });
+    resources.release(generator);
+    const environment = fromRenderTarget(target, background, source);
+    resources.transfer(target, background, source);
+    return environment;
+  } finally {
+    resources.cleanup();
+  }
 }
