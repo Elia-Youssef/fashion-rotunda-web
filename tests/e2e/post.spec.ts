@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { waitForSceneInitialization } from './support/ready';
+import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import type { Locator, Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 import { canvasStats } from './support/pixels';
@@ -148,7 +148,8 @@ function watchConsoleErrors(page: Page, into: string[]): void {
  * the chain.
  */
 async function openSlice(page: Page, slice: string): Promise<Locator> {
-  await page.goto(`/?webgl=1&gate=off&post=${slice}`);
+  // Retain normal onboarding while enabling the final diagnostic handle.
+  await page.goto(`/?webgl=1&gate=off&e2e=1&onboarding=1&post=${slice}`);
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
@@ -168,27 +169,13 @@ async function openSlice(page: Page, slice: string): Promise<Locator> {
   return canvas;
 }
 
-/**
- * Waits until the page has stopped changing what it draws, and returns the backing-store size it
- * settled at. Two things move after a load: the resolution scaler walks the backing store down
- * while it measures the load's own heavy frames, and the loop stops drawing WAKE_MS after the last
- * input. Both samples standing still means the scale has landed and no frame is owed, so the
- * screenshot that follows is the frame the page came to rest on.
- */
+/** Reads the backing store after the shared idle/frame-delivery proof. */
 async function settledBacking(page: Page): Promise<string> {
-  let previous = '';
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const current = await page.evaluate(() => {
-      const element = document.querySelector<HTMLCanvasElement>('canvas#scene');
-      return element === null ? '' : `${element.width}x${element.height}|${element.dataset.frames}`;
-    });
-    if (current !== '' && current === previous) {
-      return current.split('|')[0];
-    }
-    previous = current;
-    await page.waitForTimeout(1000);
-  }
-  throw new Error('the page never stopped drawing, so no two frames are comparable');
+  await waitForLoopIdle(page);
+  return page.evaluate(() => {
+    const element = document.querySelector<HTMLCanvasElement>('canvas#scene')!;
+    return `${element.width}x${element.height}`;
+  });
 }
 
 /** Average red, green and blue of every cell of a cells x cells grid over the whole image. */

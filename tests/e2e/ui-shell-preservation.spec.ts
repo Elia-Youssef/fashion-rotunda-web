@@ -1,14 +1,13 @@
 import { expect, test } from '@playwright/test';
-import { waitForSceneInitialization } from './support/ready';
+import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import { assertRendererPreserved, nextProofReading } from './support/preservation';
-import type { Locator, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
 // UI12-AUDIT-06: opening a purely presentational shell disclosure must not reset or otherwise
 // perturb renderer state. This lives apart from the layout suite because it is deliberately about
 // the runtime handles and drawing buffer, not the disclosure's geometry.
 
 const SCENE_READY_TIMEOUT = 60_000;
-const IDLE_TIMEOUT_ATTEMPTS = 12;
 
 type RendererState = Omit<Awaited<ReturnType<typeof nextProofReading>>, 'drawCalls'>;
 
@@ -23,20 +22,6 @@ async function readRendererState(page: Page): Promise<RendererState> {
   const { drawCalls, ...state } = await nextProofReading(page);
   void drawCalls;
   return state;
-}
-
-/** Two equal readings a second apart establish that the demand loop has gone back to sleep. */
-async function waitForLoopIdle(canvas: Locator, page: Page): Promise<number> {
-  let previous = Number(await canvas.getAttribute('data-frames'));
-  for (let attempt = 0; attempt < IDLE_TIMEOUT_ATTEMPTS; attempt += 1) {
-    await page.waitForTimeout(1000);
-    const current = Number(await canvas.getAttribute('data-frames'));
-    if (current > 0 && current === previous) {
-      return current;
-    }
-    previous = current;
-  }
-  throw new Error(`the render loop did not become idle within ${IDLE_TIMEOUT_ATTEMPTS} seconds`);
 }
 
 test('opening and closing Light Control preserves renderer state and returns to idle', async ({
@@ -62,7 +47,7 @@ test('opening and closing Light Control preserves renderer state and returns to 
     }
     camera.orbit.setPose([1.5, 2.0, 3.0], [0, 1.2, 0], 40);
   });
-  await waitForLoopIdle(canvas, page);
+  await waitForLoopIdle(page);
   const before = await readRendererState(page);
   expect(before.camera.mode, 'the preservation fixture begins in inspection mode').toBe('orbit');
   for (const [axis, wanted] of [1.5, 2, 3].entries()) {
@@ -96,7 +81,7 @@ test('opening and closing Light Control preserves renderer state and returns to 
     .toBeGreaterThan(before.frames);
   const immediatelyAfter = await readRendererState(page);
 
-  const idleFrames = await waitForLoopIdle(canvas, page);
+  const idleFrames = await waitForLoopIdle(page);
   const after = await readRendererState(page);
   expect(after.frames, 'the reported idle frame count agrees with the canvas').toBe(idleFrames);
 

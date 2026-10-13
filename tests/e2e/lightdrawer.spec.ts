@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { waitForSceneInitialization } from './support/ready';
+import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import { waitForTooltipInstallation } from './support/a11y-mount';
 import { assertCanvasPreserved, nextProofReading, stableDrawCalls } from './support/preservation';
 import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
@@ -208,17 +208,6 @@ async function proofDrawCalls(page: Page): Promise<number | null> {
     const match = term?.nextElementSibling?.textContent?.match(/^(\d+) calls$/);
     return match === undefined || match === null ? null : Number(match[1]);
   });
-}
-
-async function waitForIdle(page: Page, canvas: Locator): Promise<{ frames: number; attempts: number }> {
-  let previous = Number(await canvas.getAttribute('data-frames'));
-  for (let attempt = 1; attempt <= 15; attempt += 1) {
-    await page.waitForTimeout(1000);
-    const current = Number(await canvas.getAttribute('data-frames'));
-    if (current > 0 && current === previous) return { frames: current, attempts: attempt };
-    previous = current;
-  }
-  throw new Error(`render loop did not return to idle; last frame count ${previous}`);
 }
 
 async function newTouchPage(browser: Browser): Promise<{ context: BrowserContext; page: Page }> {
@@ -551,7 +540,7 @@ test.describe('simplified Light Control drawer and rig', () => {
       test.setTimeout(120_000);
       const errors = watchErrors(page);
       await page.setViewportSize(viewport);
-      const canvas = await openScene(page);
+      await openScene(page);
       await installSafeArea(page);
 
       const rail = page.locator('#looks');
@@ -602,7 +591,7 @@ test.describe('simplified Light Control drawer and rig', () => {
       await expect(lookToggle).toBeFocused();
       await expect(rail).toBeVisible();
       await assertHitAndSafe(firstRailControl, viewport, 'post-Escape rail first item');
-      await waitForIdle(page, canvas);
+      await waitForLoopIdle(page);
       expectNoErrors(errors);
     });
   }
@@ -612,7 +601,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     test.setTimeout(120_000);
     const errors = watchErrors(page);
     await page.setViewportSize({ width: 1440, height: 900 });
-    const canvas = await openScene(page);
+    await openScene(page);
     const toggle = page.locator('#shell-light-toggle');
     const panel = page.locator('#shell-light-panel');
 
@@ -674,7 +663,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     await page.keyboard.press('Escape');
     await expect(panel).toBeHidden();
     await expect(toggle).toBeFocused();
-    await waitForIdle(page, canvas);
+    await waitForLoopIdle(page);
     expectNoErrors(errors);
   });
 
@@ -736,7 +725,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     await expect(panel).toBeVisible();
     await assertPanelColors();
     await expectRigAndUrl(page, expectedRig());
-    await waitForIdle(page, canvas);
+    await waitForLoopIdle(page);
     expectNoErrors(errors);
   });
 
@@ -774,7 +763,7 @@ test.describe('simplified Light Control drawer and rig', () => {
       page,
       'v2;key,1,15,ffffff;fill,0,7,ffffff;back,0,7,ffffff;day,0.85;e,0.93',
     );
-    await waitForIdle(page, canvas);
+    await waitForLoopIdle(page);
     expectNoErrors(errors);
   });
 
@@ -861,7 +850,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     await toggle('back').click();
     enabled.back = false;
     await expectDefaultRigWithoutUrl(page, expectedRig());
-    await waitForIdle(page, canvas);
+    await waitForLoopIdle(page);
     expectNoErrors(errors);
   });
 

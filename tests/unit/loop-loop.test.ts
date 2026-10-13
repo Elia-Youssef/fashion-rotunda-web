@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLoop } from '../../src/loop/loop';
+import type { Page } from '@playwright/test';
+import { waitForLoopIdle } from '../e2e/support/ready';
 
 /**
  * Hand-driven raf/caf/clock. pump() runs the oldest scheduled callback, the way a frame fires,
@@ -185,5 +187,178 @@ describe('createLoop', () => {
     expect(h.scheduledCount()).toBe(1);
     h.pump();
     expect(render).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('pull-only loop diagnostics', () => {
+  function diagnosticLoop(h: Harness, render = vi.fn(), frameCap: number | null = null) {
+    return createLoop({ render, frameCap, raf: h.raf, caf: h.caf, now: h.now, diagnostics: true });
+  }
+
+  it('omits the reader without the diagnostic switch', () => {
+    const loop = makeLoop(makeHarness(), vi.fn(), null);
+    expect(Object.hasOwn(loop, 'diagnostics')).toBe(false);
+  });
+
+  it('reports running independently of scheduling and preserves owed work after stop', () => {
+    const h = makeHarness();
+    const loop = diagnosticLoop(h);
+    expect(loop.diagnostics!()).toEqual({ running: false, scheduled: false, animating: false, invalidated: false });
+    loop.start();
+    expect(loop.diagnostics!().running).toBe(true);
+    loop.invalidate();
+    loop.stop();
+    expect(loop.diagnostics!()).toEqual({ running: false, scheduled: false, animating: false, invalidated: true });
+  });
+
+  it('reports scheduled and invalidated work even when delivery is stalled', () => {
+    const h = makeHarness();
+    const render = vi.fn();
+    const loop = diagnosticLoop(h, render);
+    loop.start();
+    loop.invalidate();
+    h.advance(10_000); // Deliberately never pump the owed RAF.
+    expect(render).not.toHaveBeenCalled();
+    expect(loop.diagnostics!()).toEqual({ running: true, scheduled: true, animating: false, invalidated: true });
+    const detached = loop.diagnostics!();
+    detached.invalidated = false;
+    expect(loop.diagnostics!().invalidated).toBe(true);
+    h.pump();
+    expect(loop.diagnostics!()).toEqual({ running: true, scheduled: false, animating: false, invalidated: false });
+  });
+
+  it('keeps cap-deferred frames owed and scheduled', () => {
+    const h = makeHarness();
+    const render = vi.fn();
+    const loop = diagnosticLoop(h, render, 30);
+    loop.start();
+    loop.invalidate();
+    h.pump();
+    loop.invalidate();
+    h.advance(20);
+    h.pump();
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(loop.diagnostics!()).toEqual({ running: true, scheduled: true, animating: false, invalidated: true });
+  });
+
+  it('reports continuous animation and its cancellation separately from invalidation', () => {
+    const h = makeHarness();
+    const loop = diagnosticLoop(h);
+    loop.start();
+    loop.setAnimating(true);
+    h.pump();
+    expect(loop.diagnostics!()).toEqual({ running: true, scheduled: true, animating: true, invalidated: false });
+    loop.setAnimating(false);
+    expect(loop.diagnostics!()).toEqual({ running: true, scheduled: false, animating: false, invalidated: false });
+  });
+
+  it('reports an invalidation raised during rendering instead of false idle', () => {
+    const h = makeHarness();
+    const loop = diagnosticLoop(h, vi.fn(() => loop.invalidate()));
+    loop.start();
+    loop.invalidate();
+    h.pump();
+    expect(loop.diagnostics!()).toEqual({ running: true, scheduled: true, animating: false, invalidated: true });
+  });
+});
+
+// Executes the helper's browser predicates against a controlled transport. No browser or timers run.
+function idleTransport() {
+  const state = { initialized: true, idle: true, frames: 1 };
+  let requested = false;
+  let deliver = true;
+  let dishonestIdle = false;
+  let installed = true;
+  const disposals = vi.fn();
+  const polls: { polling: number; timeout: number }[] = [];
+  const requests = vi.fn(() => {
+    requested = true;
+    state.idle = dishonestIdle;
+    return state.frames;
+  });
+  const hooks = { loopState: () => ({ ...state }), requestFrame: requests };
+  vi.stubGlobal('window', {
+    get archvizE2E() { return installed ? hooks : undefined; },
+  });
+  const quiet = vi.fn();
+  const page = {
+    async waitForFunction(fn: (arg: number | undefined) => unknown, arg: number | undefined,
+      options: { polling: number; timeout: number }) {
+      polls.push(options);
+      // Four deterministic polls replace wall-clock waiting in this unit transport.
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        const result = fn(arg);
+        if (result) return { jsonValue: async () => result, dispose: disposals };
+        if (requested && deliver) {
+          state.frames += 1;
+          state.idle = true;
+          requested = false;
+        }
+      }
+      throw new Error('diagnostic poll timed out');
+    },
+    async evaluate(fn: () => unknown) { return fn(); },
+    async waitForTimeout(ms: number) { quiet(ms); },
+  } as unknown as Page;
+  return {
+    page, state, polls, quiet, requests, disposals,
+    stall(pretendIdle = false) { deliver = false; dishonestIdle = pretendIdle; },
+    uninstall() { installed = false; },
+  };
+}
+
+describe('shared idle proof', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('requests a fresh frame before observing quiet and returns the drawn baseline', async () => {
+    const transport = idleTransport();
+    transport.quiet.mockImplementation(() => {
+      expect(transport.state.frames).toBe(2);
+      expect(transport.requests).toHaveBeenCalledTimes(1);
+    });
+    expect(await waitForLoopIdle(transport.page)).toBe(2);
+    expect(transport.quiet).toHaveBeenCalledWith(250);
+    expect(transport.polls).toEqual([{ polling: 100, timeout: 60_000 }, { polling: 100, timeout: 5_000 }]);
+    expect(transport.disposals).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects incomplete initialization even if old frames exist', async () => {
+    const transport = idleTransport();
+    transport.state.initialized = false;
+    await expect(waitForLoopIdle(transport.page)).rejects.toThrow('diagnostic poll timed out');
+    expect(transport.requests).not.toHaveBeenCalled();
+  });
+
+  it('rejects owed owner work even when the frame counter is constant', async () => {
+    const transport = idleTransport();
+    transport.state.idle = false;
+    await expect(waitForLoopIdle(transport.page)).rejects.toThrow('diagnostic poll timed out');
+    expect(transport.requests).not.toHaveBeenCalled();
+  });
+
+  it('rejects a stalled requested frame even if the owner falsely reports idle', async () => {
+    const transport = idleTransport();
+    transport.stall(true);
+    await expect(waitForLoopIdle(transport.page)).rejects.toThrow('diagnostic poll timed out');
+    expect(transport.requests).toHaveBeenCalledTimes(1);
+    expect(transport.quiet).not.toHaveBeenCalled();
+  });
+
+  it('rejects a frame drawn during the quiet observation', async () => {
+    const transport = idleTransport();
+    transport.quiet.mockImplementation(() => { transport.state.frames += 1; });
+    await expect(waitForLoopIdle(transport.page)).rejects.toThrow('during the quiet observation');
+  });
+
+  it('rejects owed work during quiet even without a completed frame', async () => {
+    const transport = idleTransport();
+    transport.quiet.mockImplementation(() => { transport.state.idle = false; });
+    await expect(waitForLoopIdle(transport.page)).rejects.toThrow('during the quiet observation');
+  });
+
+  it('rejects loss of the initialized handle during quiet', async () => {
+    const transport = idleTransport();
+    transport.quiet.mockImplementation(() => transport.uninstall());
+    await expect(waitForLoopIdle(transport.page)).rejects.toThrow('during the quiet observation');
   });
 });

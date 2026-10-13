@@ -1,12 +1,12 @@
 // Renderer-only WebGL 2 visual baselines at the catalogue proof pose.
 
 import { expect, test } from '@playwright/test';
+import { waitForLoopIdle } from './support/ready';
 import type { Locator, Page } from '@playwright/test';
 
 const SCENE_READY_TIMEOUT = 60_000;
 const SWITCH_TIMEOUT = 30_000;
 const TEST_TIMEOUT = 180_000;
-const IDLE_ATTEMPTS = 15;
 const MAX_STABILIZATION_ORBITS = 8;
 const REQUIRED_STABLE_TRANSITIONS = 2;
 
@@ -57,7 +57,7 @@ interface StableTransition {
   attempt: number;
   before: ProfileIdentity;
   after: ProfileIdentity;
-  idle: boolean;
+  idleFrames: number;
   exact: boolean;
   consecutiveExact: number;
 }
@@ -157,24 +157,6 @@ async function readRendererProfile(page: Page): Promise<RendererProfile> {
   });
 }
 
-/** Two equal readings one second apart establish that the demand loop has actually gone idle. */
-async function waitForLoopIdle(page: Page, canvas: Locator): Promise<boolean> {
-  let previous = Number(await canvas.getAttribute('data-frames'));
-  for (let attempt = 0; attempt < IDLE_ATTEMPTS; attempt += 1) {
-    await page.waitForTimeout(1000);
-    const current = Number(await canvas.getAttribute('data-frames'));
-    if (current > 0 && current === previous) {
-      return true;
-    }
-    previous = current;
-  }
-  return false;
-}
-
-async function expectLoopIdle(page: Page, canvas: Locator): Promise<void> {
-  expect(await waitForLoopIdle(page, canvas), 'the demand loop became idle').toBe(true);
-}
-
 async function runMeasure(page: Page): Promise<void> {
   const button = page.locator('.proof-panel__measure');
   await expect(button).toBeVisible({ timeout: SCENE_READY_TIMEOUT });
@@ -198,23 +180,23 @@ async function runMeasure(page: Page): Promise<void> {
  * 1280x720 / scale-1 profile required by the baseline. A weaker rounded proof-panel label alone
  * would not prove the backing buffer is comparable.
  */
-async function stabilizeExactProfile(page: Page, canvas: Locator): Promise<StableTransition[]> {
+async function stabilizeExactProfile(page: Page): Promise<StableTransition[]> {
   const transitions: StableTransition[] = [];
   let before = await readRendererProfile(page);
   let consecutiveExact = 0;
   for (let attempt = 1; attempt <= MAX_STABILIZATION_ORBITS; attempt += 1) {
     await runMeasure(page);
-    const idle = await waitForLoopIdle(page, canvas);
+    const idleFrames = await waitForLoopIdle(page);
     const after = await readRendererProfile(page);
     const beforeIdentity = profileIdentity(before);
     const afterIdentity = profileIdentity(after);
-    const exact = idle && sameProfile(beforeIdentity, afterIdentity) && isExactVisualProfile(afterIdentity);
+    const exact = sameProfile(beforeIdentity, afterIdentity) && isExactVisualProfile(afterIdentity);
     consecutiveExact = exact ? consecutiveExact + 1 : 0;
     transitions.push({
       attempt,
       before: beforeIdentity,
       after: afterIdentity,
-      idle,
+      idleFrames,
       exact,
       consecutiveExact,
     });
@@ -233,7 +215,7 @@ async function resetAndExpectProofPose(page: Page, canvas: Locator): Promise<Ren
   // of injecting a pose through an e2e handle, so this guards the visitor-facing reset path too.
   await canvas.focus();
   await page.keyboard.press('Home');
-  await expectLoopIdle(page, canvas);
+  await waitForLoopIdle(page);
   const profile = await readRendererProfile(page);
   expect(profile.position).toHaveLength(3);
   expect(profile.target).toHaveLength(3);
@@ -376,8 +358,8 @@ test('visual baselines for the first look and the New Look Dress', async ({ page
   const canvas = page.locator('canvas#scene');
 
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
-  await expectLoopIdle(page, canvas);
-  const stabilization = await stabilizeExactProfile(page, canvas);
+  await waitForLoopIdle(page);
+  const stabilization = await stabilizeExactProfile(page);
   const firstProfile = await resetAndExpectProofPose(page, canvas);
   expectExactRendererProfile(firstProfile, EXPECTED_LOOKS.first);
 
@@ -412,7 +394,7 @@ test('visual baselines for the first look and the New Look Dress', async ({ page
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
   // The new look can trigger the adaptive scaler while its materials settle. Requalify the
   // exact renderer profile before comparing a second image against a fixed-size baseline.
-  const newLookStabilization = await stabilizeExactProfile(page, canvas);
+  const newLookStabilization = await stabilizeExactProfile(page);
   await test.info().attach('new-look-visual-stabilization.json', {
     body: JSON.stringify(newLookStabilization, null, 2),
     contentType: 'application/json',

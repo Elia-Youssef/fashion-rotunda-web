@@ -13,6 +13,7 @@ import { contentUrl, loadCatalog } from './catalog/catalog';
 import type { Catalog, CatalogLook } from './catalog/catalog';
 import { composeLighting, enableShadows } from './lighting/compose';
 import { createLoop } from './loop/loop';
+import type { LoopDiagnostics } from './loop/loop';
 import { ResolutionScaler } from './loop/scaler';
 import { createPostChain, preparePostChain } from './post/chain';
 import type { PostChain } from './post/chain';
@@ -63,6 +64,16 @@ declare global {
      * through it without depending on the catalogue UI, and reads back what the loader built.
      */
     archvizE2E?: {
+      /** Final initialization is acknowledged by installation of this handle. */
+      loopState(): LoopDiagnostics & {
+        initialized: true;
+        frames: number;
+        moving: boolean;
+        fading: boolean;
+        idle: boolean;
+      };
+      /** Owes one loop frame without opening the continuous wake window. Returns the baseline. */
+      requestFrame(): number;
       switchLooks(count: number): Promise<void>;
       describeScene(): SceneDescription;
       /** The lighting rig as the URL carries it, and the music's state, for the browser tests. */
@@ -676,6 +687,7 @@ async function main(): Promise<void> {
   // percentiles printed side by side cover the same stretch of the run.
   const gpuSeries = proofTools?.createGpuTimes(240) ?? null;
   const loop = createLoop({
+    diagnostics: import.meta.env.DEV || params.get('e2e') === '1',
     render: (dtMs) => {
       cameraMount?.update(dtMs);
       showroom?.update(dtMs);
@@ -1123,7 +1135,30 @@ async function main(): Promise<void> {
 
     if (import.meta.env.DEV || params.get('e2e') === '1') {
       const ids = catalog.looks.map((entry) => entry.id);
+      const readLoopDiagnostics = loop.diagnostics;
+      if (readLoopDiagnostics === undefined) {
+        throw new Error('loop diagnostics are unavailable for the test handle');
+      }
       window.archvizE2E = {
+        loopState() {
+          const state = readLoopDiagnostics();
+          const moving = cameraMount?.moving === true;
+          const fading = showroom?.fading === true;
+          return {
+            ...state,
+            initialized: true,
+            frames: frameCount,
+            moving,
+            fading,
+            idle: canvas.dataset.scene === 'ready' && state.running && !state.scheduled &&
+              !state.animating && !state.invalidated && !moving && !fading,
+          };
+        },
+        requestFrame(): number {
+          const before = frameCount;
+          loop.invalidate();
+          return before;
+        },
         async switchLooks(count: number): Promise<void> {
           const active = showroom;
           if (active === null) {

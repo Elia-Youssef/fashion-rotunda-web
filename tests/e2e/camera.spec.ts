@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { backendPath } from './support/backend';
+import { waitForLoopIdle } from './support/ready';
 
 const SCENE_READY_TIMEOUT = 60_000;
 // The turntable publishes its yaw from rendered frames (mount.ts writeYaw inside update), so every
@@ -137,17 +138,7 @@ test('the turntable turns the look and the loop settles once it stops', async ({
   await page.waitForTimeout(500);
   expect(await readYaw(), 'the look holds where the turntable stopped').toBe(stopped);
 
-  const readFrames = async (): Promise<number> =>
-    Number((await canvas.getAttribute('data-frames')) ?? '0');
-  let previous = await readFrames();
-  let settled = false;
-  for (let attempt = 0; attempt < 12 && !settled; attempt += 1) {
-    await page.waitForTimeout(1000);
-    const current = await readFrames();
-    settled = current > 0 && current === previous;
-    previous = current;
-  }
-  expect(settled, 'the frame counter stopped within twelve seconds').toBe(true);
+  await waitForLoopIdle(page);
 });
 
 test('walk mode stops at walls and stays above floor', async ({ page }) => {

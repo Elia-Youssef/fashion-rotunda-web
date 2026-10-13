@@ -2,10 +2,19 @@
 // (setAnimating), enforces the frame cap by skipping early ticks, and reports the render call's
 // own duration. raf, caf and now are injectable so tests drive frames by hand.
 
+export interface LoopDiagnostics {
+  running: boolean;
+  scheduled: boolean;
+  animating: boolean;
+  invalidated: boolean;
+}
+
 export interface LoopOptions {
   render: (dtMs: number) => void;
   /** Frames per second; null means uncapped. */
   frameCap: number | null;
+  /** Installs a pull-only state reader for test switches. */
+  diagnostics?: boolean;
   onFrameTime?: (workMs: number) => void;
   raf?: (cb: (t: number) => void) => number;
   caf?: (id: number) => void;
@@ -20,6 +29,7 @@ export interface Loop {
   start(): void;
   stop(): void;
   readonly running: boolean;
+  diagnostics?: () => LoopDiagnostics;
 }
 
 export function createLoop(options: LoopOptions): Loop {
@@ -71,7 +81,7 @@ export function createLoop(options: LoopOptions): Loop {
     }
   }
 
-  return {
+  const loop: Loop = {
     invalidate(): void {
       invalidated = true;
       if (running) {
@@ -108,4 +118,8 @@ export function createLoop(options: LoopOptions): Loop {
       return running;
     },
   };
+  if (options.diagnostics === true) {
+    loop.diagnostics = () => ({ running, scheduled: rafId !== null, animating, invalidated });
+  }
+  return loop;
 }

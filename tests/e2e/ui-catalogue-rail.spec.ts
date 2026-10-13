@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { waitForSceneInitialization } from './support/ready';
+import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import type { Locator, Page } from '@playwright/test';
 import { holdFirstRequest } from './support/held-request';
 
@@ -721,19 +721,7 @@ test.describe('Catalogue Rail Parity', () => {
     await rail.locator('button[data-look="wallis-dress"]').click();
     await expect(canvas).toHaveAttribute('data-look', 'wallis-dress', { timeout: SWITCH_TIMEOUT });
 
-    // Wait for loop to return to idle
-    let prevFrames = Number(await canvas.getAttribute('data-frames'));
-    let settled = false;
-    for (let attempt = 0; attempt < 15; attempt++) {
-      await page.waitForTimeout(1000);
-      const cur = Number(await canvas.getAttribute('data-frames'));
-      if (cur > 0 && cur === prevFrames) {
-        settled = true;
-        break;
-      }
-      prevFrames = cur;
-    }
-    expect(settled, 'demand render loop returns to idle').toBe(true);
+    await waitForLoopIdle(page);
 
     const finalMetrics = await page.evaluate(() => {
       const cv = document.querySelector<HTMLCanvasElement>('canvas#scene');
