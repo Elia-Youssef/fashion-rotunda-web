@@ -2,13 +2,16 @@ import { expect, test } from '@playwright/test';
 import { waitForSceneInitialization } from './support/ready';
 import type { APIRequestContext, ConsoleMessage, Locator, Page } from '@playwright/test';
 import { canvasStats } from './support/pixels';
+import { backendPath, projectBackend } from './support/backend';
 import { parseCatalog } from '../../src/catalog/catalog';
 import type { Catalog } from '../../src/catalog/catalog';
 
-// The rotunda, the plinth and one look, loaded from public/content. The suite runs on the
-// webgl2 project only. Nothing here is backend specific, the checks are about what the page loaded
-// and what it freed, and the webgpu project opens a window on this machine that the memory run
-// would hold open for minutes.
+// The rotunda, the plinth and one look, loaded from public/content. The content checks run on the
+// webgl2 project only: nothing in them is backend specific, they are about what the page loaded,
+// and the webgpu project opens a window on this machine that a duplicate content run would hold
+// open for nothing. The look-switch memory check is the exception: freeing what a replaced look
+// held is renderer behaviour, so it runs on both projects, each pinned to its project's backend
+// through the canvas data-backend attribute before any reading is taken.
 
 const SCENE_READY_TIMEOUT = 60_000;
 /** Ten switches of the unoptimized set, 6 to 17 MB each, well past the 60 s default. */
@@ -16,7 +19,7 @@ const SWITCH_RUN_TIMEOUT = 240_000;
 const SWITCHES = 10;
 
 function skipUnlessWebgl2(): void {
-  test.skip(test.info().project.name !== 'webgl2', 'the scene checks are backend independent');
+  test.skip(test.info().project.name !== 'webgl2', 'the content checks are backend independent');
 }
 
 /** The catalogue the page itself will load, read through the same server. */
@@ -112,15 +115,25 @@ test('builds the room from the material classes GLTFLoader creates', async ({ pa
   expect(description.triangles, 'triangles in the last frame').toBeGreaterThan(0);
 });
 
-test('frees the look it replaces, so ten switches end where they started', async ({ page }) => {
-  skipUnlessWebgl2();
+test('frees the look it replaces on both backends', async ({ page }) => {
   test.setTimeout(SWITCH_RUN_TIMEOUT);
 
-  const canvas = await openScene(page, '/?webgl=1&e2e=1');
+  const canvas = await openScene(page, backendPath('/?e2e=1'));
+  // A silent fallback would make the run read the wrong renderer, so the page must be on the
+  // backend its project promises before any reading is taken.
+  await expect(canvas).toHaveAttribute('data-backend', projectBackend(), {
+    timeout: SCENE_READY_TIMEOUT,
+  });
   await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
   const lookBefore = await canvas.getAttribute('data-look');
   // data-memory is renderer.info.memory as geometries/textures: live GPU resources, written after
-  // every drawn frame. Both readings below are taken with the same look on the plinth.
+  // every drawn frame. Both readings are taken with the same look on the plinth, so ten switches
+  // that free what they replace end where they started, and a look whose GPU resources were never
+  // released ends above its start. The count covers the renderer's resources only. The CPU-side
+  // bulk of a look, the geometry attribute arrays and the compressed image bytes, lives outside
+  // them, and the browser's JavaScript heap numbers exclude those buffers as external memory, so
+  // no heap reading available to this page can see a look the page still references. That the
+  // JavaScript graph itself is released is pinned by the look-owner unit tests.
   const memoryBefore = await canvas.getAttribute('data-memory');
   expect(memoryBefore, 'the memory reading is published').not.toBeNull();
 
