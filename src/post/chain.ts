@@ -34,7 +34,6 @@ import {
 } from 'three/webgpu';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
 import { traa } from 'three/addons/tsl/display/TRAANode.js';
-import { ssgi } from 'three/addons/tsl/display/SSGINode.js';
 import { ssr } from 'three/addons/tsl/display/SSRNode.js';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { lut3D } from 'three/addons/tsl/display/Lut3DNode.js';
@@ -208,6 +207,22 @@ const MOTION_REST_DELAY_MS = MOTION_MS + 10;
  * softening of about 1 px the scale does not control, so the result is less than twice as sharp.
  */
 export const DOF_BOKEH_SCALE = 1.25;
+
+type SsgiFactory = typeof import('three/addons/tsl/display/SSGINode.js')['ssgi'];
+let ssgiFactory: SsgiFactory | null = null;
+let ssgiReady: Promise<void> | null = null;
+
+/** Prepare the diagnostic factory once; render, resize and recovery remain synchronous. */
+export function preparePostChain(
+  options: Pick<PostChainOptions, 'tier' | 'isTouch' | 'backend'>,
+): Promise<void> | null {
+  const { settings } = applyDevSwitch(postSettingsFor(options.tier, options.isTouch, options.backend), options.backend);
+  if (settings.ssgi === 'off') return null;
+  ssgiReady ??= import('three/addons/tsl/display/SSGINode.js').then(({ ssgi }) => {
+    ssgiFactory = ssgi;
+  });
+  return ssgiReady;
+}
 
 /**
  * `?post=` forces a slice of the chain for development: off, ao, aa, gi, ssr, finish or max.
@@ -546,7 +561,8 @@ export function createPostChain(options: PostChainOptions): PostChain {
 
     if (wanted.ssgi !== 'off' && prePass !== null) {
       // SSGINode computes horizon-based diffuse bounce illumination from beauty, depth and normal.
-      const rawSSGI = ssgi(
+      if (ssgiFactory === null) throw new Error('SSGI diagnostic was not prepared');
+      const rawSSGI = ssgiFactory(
         scenePass.getTextureNode(),
         prePass.getTextureNode('depth'),
         prePass.getTextureNode(),

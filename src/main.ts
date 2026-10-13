@@ -14,7 +14,7 @@ import type { Catalog, CatalogLook } from './catalog/catalog';
 import { composeLighting, enableShadows } from './lighting/compose';
 import { createLoop } from './loop/loop';
 import { ResolutionScaler } from './loop/scaler';
-import { createPostChain } from './post/chain';
+import { createPostChain, preparePostChain } from './post/chain';
 import type { PostChain } from './post/chain';
 import { postChainRebuildAllowed } from './post/chain';
 import type { GovernorDiagnostics } from './post/governor';
@@ -952,6 +952,8 @@ async function main(): Promise<void> {
 
     // The settled tier decides which effects the chain builds, which is why the chain is created
     // here and not before the benchmark: the benchmark measures the plain render it calibrates on.
+    const postReady = preparePostChain({ tier: settings, isTouch, backend });
+    if (postReady !== null) await postReady;
     const initializedChain = rebuildPostChain();
     if (initializedChain === null) {
       throw new Error('the post chain was not created for the loaded showroom');
