@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { contrast, over } from '../support/contrast';
+import { readStylesheet } from '../support/stylesheet';
 
 // Muted text over the glass chrome: the roles that sit directly on translucent surfaces with no
 // opaque panel behind them carry --text-muted-glass, which must reach WCAG AA (4.5:1) against
@@ -11,38 +11,35 @@ import { contrast, over } from '../support/contrast';
 // --text-muted stays on the opaque panels, where it passes, and the panel opacities are
 // unchanged by this contract.
 
-const stylesCss = readFileSync('src/styles.css', 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
-const musicSwitchCss = readFileSync('src/ui/music-switch.css', 'utf8').replace(
-  /\/\*[\s\S]*?\*\//g,
-  '',
-);
-const lightpanelCss = readFileSync('src/ui/lightpanel.css', 'utf8').replace(
-  /\/\*[\s\S]*?\*\//g,
-  '',
-);
+const stylesCss = readStylesheet('src/styles.css');
+const musicSwitchCss = readStylesheet('src/ui/music-switch.css', 'src/styles.css');
+const lightpanelCss = readStylesheet('src/ui/lightpanel.css', 'src/styles.css');
 
 const GLASS_TOKEN = '--text-muted-glass';
 const MINIMUM_TEXT_CONTRAST = 4.5;
 
-const tokens = new Map(
-  [...stylesCss.matchAll(/^\s*(--[\w-]+):\s*([^;]+);/gm)].map((match) => [match[1], match[2].trim()]),
-);
+const { tokens, color } = stylesCss;
 
-function declaration(css: string, selector: string, property: string): string {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const rule = css.match(new RegExp(`^${escaped}\\s*\\{([^}]*)\\}`, 'm'))?.[1];
-  const value = rule?.match(new RegExp(`(?:^|;)\\s*${property}:\\s*([^;]+);`))?.[1];
+function declaration(sheet: ReturnType<typeof readStylesheet>, selector: string, property: string): string {
+  const value = sheet.declaration(selector, property);
   expect(value, `${selector} declares ${property}`).toBeTruthy();
-  return value!.trim();
+  return value!;
 }
 
 function tokenColor(name: string): [number, number, number] {
   const hex = tokens.get(name) ?? '';
   expect(hex, `styles.css defines ${name} as a hex colour`).toMatch(/^#[\da-f]{6}$/i);
-  return [1, 3, 5].map((index) => parseInt(hex.slice(index, index + 2), 16)) as [number, number, number];
+  const [red, green, blue] = color(`var(${name})`);
+  return [red, green, blue];
 }
 
 describe('muted-on-glass text contrast', () => {
+  it('preserves alpha in comma and slash colour syntax', () => {
+    expect(color('rgba(20, 40, 60, 0.5)')).toEqual([20, 40, 60, 0.5]);
+    expect(color('rgb(20 40 60 / 0)')).toEqual([20, 40, 60, 0]);
+    expect(color('rgb(20, 40, 60)')).toEqual([20, 40, 60, 1]);
+  });
+
   it('composites translucent text before computing contrast', () => {
     expect(over([255, 255, 255, 0.5], [0, 0, 0, 1])).toEqual([127.5, 127.5, 127.5, 1]);
     expect(contrast([255, 255, 255, 0], [0, 0, 0, 1])).toBe(1);

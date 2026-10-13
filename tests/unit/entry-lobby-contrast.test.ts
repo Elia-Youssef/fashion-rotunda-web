@@ -1,39 +1,24 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import { contrast, over } from '../support/contrast';
-import type { Color } from '../support/contrast';
+import { readStylesheet } from '../support/stylesheet';
 
-const tokensCss = readFileSync('src/styles.css', 'utf8');
-const lobbyCss = readFileSync('src/ui/entry-lobby.css', 'utf8');
-const tokens = new Map([...tokensCss.matchAll(/^\s*(--[\w-]+):\s*([^;]+);/gm)]
-  .map((match) => [match[1], match[2].trim()]));
+const sheet = readStylesheet('src/ui/entry-lobby.css', 'src/styles.css');
+const { color } = sheet;
 
 function declaration(selector: string, property: string): string {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const rule = lobbyCss.match(new RegExp(`^${escaped} \\{([^}]+)\\}`, 'm'))?.[1];
-  const value = rule?.match(new RegExp(`(?:^|;)\\s*${property}:\\s*([^;]+);`))?.[1];
+  const value = sheet.declaration(selector, property);
   if (!value) throw new Error(`Missing ${property} on ${selector}`);
-  return value.trim();
-}
-
-function color(value: string): Color {
-  const reference = value.match(/^var\((--[\w-]+)\)$/)?.[1];
-  if (reference) {
-    const token = tokens.get(reference);
-    if (!token) throw new Error(`Missing color token ${reference}`);
-    return color(token);
-  }
-  if (/^#[\da-f]{6}$/i.test(value)) {
-    return [1, 3, 5].map((index) => parseInt(value.slice(index, index + 2), 16)).concat(1) as Color;
-  }
-  const rgb = value.match(/^rgba?\((.+)\)$/)?.[1];
-  if (!rgb) throw new Error(`Unsupported color ${value}`);
-  const channels = rgb.split(/[\s,/]+/).filter(Boolean).map(Number);
-  return [...channels.slice(0, 3), channels[3] ?? 1] as Color;
+  return value;
 }
 
 describe('lobby contrast accessibility contract', () => {
+  it('preserves alpha in comma and slash colour syntax', () => {
+    expect(color('rgba(20, 40, 60, 0.5)')).toEqual([20, 40, 60, 0.5]);
+    expect(color('rgb(20 40 60 / 0)')).toEqual([20, 40, 60, 0]);
+    expect(color('rgb(20, 40, 60)')).toEqual([20, 40, 60, 1]);
+  });
+
   it('composites translucent surfaces without rounding channels', () => {
     expect(over([255, 255, 255, 0.5], [0, 0, 0, 1])).toEqual([127.5, 127.5, 127.5, 1]);
     expect(contrast([255, 255, 255, 0], [0, 0, 0, 1])).toBe(1);
