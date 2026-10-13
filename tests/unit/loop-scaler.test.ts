@@ -105,4 +105,33 @@ describe('ResolutionScaler', () => {
     expect(scaler.update(30, 6999)).toBe(1);
     expect(scaler.update(30, 7000)).toBe(0.85);
   });
+
+  it.each(STEPS)('adopts scale %s and resumes from that step in either direction', (scale) => {
+    const index = STEPS.indexOf(scale);
+    for (const over of [false, true]) {
+      const scaler = makeScaler();
+      const sample = over ? 30 : 10;
+      const windowMs = over ? 2000 : 5000;
+      scaler.update(sample, 0);
+      scaler.setScale(scale);
+      expect(scaler.scale).toBe(scale);
+      // Even the same step must discard qualification accumulated before adoption.
+      expect(scaler.update(sample, 60000)).toBe(scale);
+      expect(scaler.update(sample, 60000 + windowMs - 1)).toBe(scale);
+      const next = Math.max(0, Math.min(STEPS.length - 1, index + (over ? 1 : -1)));
+      expect(scaler.update(sample, 60000 + windowMs)).toBe(STEPS[next]);
+    }
+  });
+
+  it.each([0, 0.9, Number.NaN, Number.POSITIVE_INFINITY])(
+    'rejects unconfigured scale %s without changing the step or streak',
+    (scale) => {
+      const scaler = makeScaler();
+      scaler.update(30, 0);
+      scaler.update(30, 2000);
+      expect(() => scaler.setScale(scale)).toThrow(RangeError);
+      expect(scaler.scale).toBe(STEPS[1]);
+      expect(scaler.update(30, 4000)).toBe(STEPS[2]);
+    },
+  );
 });

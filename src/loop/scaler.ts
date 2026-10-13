@@ -54,6 +54,17 @@ export class ResolutionScaler {
     return this.steps[this.index];
   }
 
+  /** Adopts an externally applied step; fresh samples must qualify the next change. */
+  setScale(scale: number): void {
+    const index = this.steps.indexOf(scale);
+    if (index < 0) {
+      throw new RangeError('the scale must be a configured scaler step');
+    }
+    this.index = index;
+    this.streakStart = null;
+    this.streakOver = false;
+  }
+
   reset(): void {
     this.index = 0;
     this.streakStart = null;

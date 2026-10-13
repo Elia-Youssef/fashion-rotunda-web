@@ -1194,6 +1194,9 @@ async function main(): Promise<void> {
         },
         scaler: {
           setDeterministic(on: boolean): void {
+            if (e2eDeterministicScaler && !on) {
+              scaler.setScale(renderScale);
+            }
             e2eDeterministicScaler = on;
           },
           step(index: number): void {
