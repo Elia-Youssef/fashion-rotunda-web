@@ -14,6 +14,7 @@ import type { Catalog, CatalogLook } from './catalog/catalog';
 import { composeLighting, enableShadows } from './lighting/compose';
 import { createLoop } from './loop/loop';
 import type { LoopDiagnostics } from './loop/loop';
+import { RecoveryEligibility } from './loop/recovery';
 import { ResolutionScaler } from './loop/scaler';
 import { createPostChain, preparePostChain } from './post/chain';
 import type { PostChain } from './post/chain';
@@ -459,10 +460,7 @@ async function main(): Promise<void> {
    * renderer callbacks below so they can drop recovery eligibility on a device error.
    */
   let chain: PostChain | null = null;
-  /** True once the renderer or GPU device reported an error or loss; recovery never requalifies. */
-  let rendererError = false;
-  /** Pagehide remains in force until pageshow, including across a post-graph resize rebuild. */
-  let pageActive = true;
+  const recovery = new RecoveryEligibility();
   /** True once the scene reveal reached 'revealed', or loading settled on the no-lobby path. */
   let revealSettled = false;
   /** True once a look stands on the plinth, which is what makes a frame worth marking. */
@@ -477,14 +475,7 @@ async function main(): Promise<void> {
    * count toward the ten-second qualification. The chain adds its own fallback rule on top.
    */
   function recoveryEligibleNow(): boolean {
-    return (
-      contentOnScreen &&
-      tierSettled &&
-      revealSettled &&
-      pageActive &&
-      !document.hidden &&
-      !rendererError
-    );
+    return recovery.eligible(contentOnScreen, tierSettled, revealSettled, !document.hidden);
   }
 
   function updateRecoveryEligibility(): void {
@@ -500,7 +491,7 @@ async function main(): Promise<void> {
     trackTimestamp: proofOn,
     onDeviceLost: (info) => {
       const message = 'The graphics device was lost. Reload to restore the showroom.';
-      rendererError = true;
+      recovery.setRendererError(true);
       updateRecoveryEligibility();
       canvas.dataset.scene = 'error';
       if (revealCoordinator !== null) {
@@ -514,7 +505,7 @@ async function main(): Promise<void> {
     onError: (error) => {
       // The message goes out as text: the console's preview of the error object cuts it short.
       console.error('[archviz] renderer error', describeRendererError(error), error);
-      rendererError = true;
+      recovery.setRendererError(true);
       updateRecoveryEligibility();
       canvas.dataset.scene = 'error';
       const message = 'Renderer initialization failed. Please retry.';
@@ -769,11 +760,11 @@ async function main(): Promise<void> {
     updateRecoveryEligibility();
   });
   window.addEventListener('pagehide', () => {
-    pageActive = false;
+    recovery.pageActive = false;
     updateRecoveryEligibility();
   });
   window.addEventListener('pageshow', () => {
-    pageActive = true;
+    recovery.pageActive = true;
     updateRecoveryEligibility();
   });
 
