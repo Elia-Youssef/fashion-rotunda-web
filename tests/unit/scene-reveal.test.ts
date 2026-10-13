@@ -10,6 +10,7 @@ import {
   REVEAL_MS,
 } from '../../src/ui/scene-reveal';
 import type { ReadinessPredicates } from '../../src/ui/scene-reveal';
+import { assertDisruptionReset, assertFreshStableFrames } from '../e2e/support/reveal-disruption';
 
 
 function createMockLobby(): EntryLobby {
@@ -448,6 +449,123 @@ describe('SceneRevealCoordinator', () => {
     await runPromise;
     expect(coordinator.state).toBe('revealed');
   });
+
+  it('retains the real resize reset through a fresh, scheduled three-frame handshake', async () => {
+    const frameResolvers: (() => void)[] = [];
+    const coordinator = new SceneRevealCoordinator({
+      canvas,
+      search: '?e2e=1&gate=on&freeze=black-hold',
+      lobby: mockLobby,
+      predicates: createAllPassingPredicates(),
+      wakeRenderer: vi.fn(),
+      onFrameRequest: () => new Promise<void>((resolve) => frameResolvers.push(resolve)),
+    });
+    const completeFrame = async (): Promise<void> => {
+      expect(frameResolvers.length, 'one scheduled render must be pending').toBe(1);
+      frameResolvers.shift()!();
+      await vi.advanceTimersByTimeAsync(0);
+    };
+    const seam = window.archvizTransitionSeam!;
+    const runPromise = coordinator.execute();
+    expect(seam.parked).toBe(false);
+    await vi.advanceTimersByTimeAsync(READY_HIDDEN_HOLD_MS + COVER_TO_BLACK_MS);
+    await completeFrame();
+    await completeFrame();
+    await completeFrame();
+    await vi.advanceTimersByTimeAsync(BLACK_HOLD_MIN_MS);
+    expect(seam.parked).toBe(true);
+    expect(seam.stableFrameSamples).toEqual([
+      { generation: 0, stableFrames: 1 }, { generation: 0, stableFrames: 2 },
+    ]);
+    const previousGeneration = seam.generation;
+    const oldSnapshot = seam.disruptions;
+
+    window.dispatchEvent(new Event('resize'));
+    const reset = seam.disruptions[0];
+    expect(reset, 'the actual window listener must retain its reset').toBeDefined();
+    assertDisruptionReset(reset, previousGeneration);
+    expect(reset).toEqual({
+      type: 'resize', source: 'window', generation: previousGeneration + 1, stableFrames: 0,
+      width: window.innerWidth, height: window.innerHeight,
+    });
+    expect(oldSnapshot).toEqual([]);
+    expect(seam.parked).toBe(true);
+    expect(coordinator.veil.dataset.state).toBe('black-hold');
+    expect(coordinator.veil.hidden).toBe(false);
+    expect(frameResolvers).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(BLACK_HOLD_MIN_MS + REVEAL_MS);
+    expect(seam.stableFrames).toBe(0);
+
+    const sampleBaseline = seam.stableFrameSamples.length;
+    seam.unfreeze();
+    expect(seam.parked).toBe(false);
+    await vi.advanceTimersByTimeAsync(0);
+    await completeFrame();
+    expect(seam.stableFrameSamples.slice(sampleBaseline)).toEqual([]);
+    expect(coordinator.state).toBe('black-hold');
+    await completeFrame();
+    expect(seam.stableFrameSamples.slice(sampleBaseline)).toEqual([
+      { generation: seam.generation, stableFrames: 1 },
+    ]);
+    expect(coordinator.state).toBe('black-hold');
+    await completeFrame();
+    assertFreshStableFrames(seam.stableFrameSamples.slice(sampleBaseline), reset.generation);
+    await vi.advanceTimersByTimeAsync(BLACK_HOLD_MIN_MS + REVEAL_MS);
+    await runPromise;
+    expect(coordinator.state).toBe('revealed');
+    expect(seam.stableFrames).toBe(2);
+    expect(seam.disruptions[0]).toEqual(reset);
+    expect(seam.disruptions[0].stableFrames).toBe(0);
+    expect(Object.isFrozen(seam.disruptions)).toBe(true);
+    expect(Object.isFrozen(reset)).toBe(true);
+    expect(Object.isFrozen(seam.stableFrameSamples)).toBe(true);
+    expect(Object.isFrozen(seam.stableFrameSamples[0])).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(seam, 'parked')?.set).toBeUndefined();
+    expect(Object.getOwnPropertyDescriptor(seam, 'generation')?.set).toBeUndefined();
+  });
+
+  it('records ordered window and visual-viewport lifecycle deliveries without conflating their sources', () => {
+    const visualViewport = new EventTarget();
+    const originalViewport = Object.getOwnPropertyDescriptor(window, 'visualViewport');
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: visualViewport });
+    const coordinator = new SceneRevealCoordinator({
+      canvas,
+      search: '?e2e=1&gate=on',
+      lobby: mockLobby,
+      predicates: createAllPassingPredicates(),
+      wakeRenderer: vi.fn(),
+      onFrameRequest: vi.fn().mockResolvedValue(undefined),
+    });
+    try {
+      window.dispatchEvent(new Event('resize'));
+      window.dispatchEvent(new Event('orientationchange'));
+      visualViewport.dispatchEvent(new Event('resize'));
+      expect(window.archvizTransitionSeam?.disruptions).toEqual([
+        expect.objectContaining({ type: 'resize', source: 'window', generation: 1, stableFrames: 0 }),
+        expect.objectContaining({ type: 'orientationchange', source: 'window', generation: 2, stableFrames: 0 }),
+        expect.objectContaining({ type: 'resize', source: 'visual-viewport', generation: 3, stableFrames: 0 }),
+      ]);
+      coordinator.dispose();
+      window.dispatchEvent(new Event('resize'));
+      expect(window.archvizTransitionSeam?.disruptions).toHaveLength(3);
+    } finally {
+      coordinator.dispose();
+      if (originalViewport === undefined) Reflect.deleteProperty(window, 'visualViewport');
+      else Object.defineProperty(window, 'visualViewport', originalViewport);
+    }
+  });
+
+  it.each(['', '?e2e=1', '?gate=on', '?e2e=0&gate=on'])(
+    'keeps diagnostics unavailable outside the exact E2E gate guard: %s', (search) => {
+      const coordinator = new SceneRevealCoordinator({
+        canvas, search, lobby: mockLobby, predicates: createAllPassingPredicates(),
+        wakeRenderer: vi.fn(), onFrameRequest: vi.fn().mockResolvedValue(undefined),
+      });
+      window.dispatchEvent(new Event('resize'));
+      expect(window.archvizTransitionSeam).toBeUndefined();
+      coordinator.dispose();
+    },
+  );
 
   it('disposing cancels all timers and aborts gracefully', async () => {
     const predicates = createAllPassingPredicates();

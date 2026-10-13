@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import type { ConsoleMessage, Locator, Page } from '@playwright/test';
 
 import { holdFirstRequest } from './support/held-request';
+import { assertDisruptionReset, assertFreshStableFrames } from './support/reveal-disruption';
 
 // E2E transition verification suite for two-stage stable-frame black reveal.
 // Tests run on WebGL2 and WebGPU projects where available.
@@ -288,15 +289,49 @@ test.describe('Scene Reveal Transition', () => {
     await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
     await expectParkedBehindBlack(page);
 
-    await page.setViewportSize({ width: 820, height: 1180 });
+    const target = VIEWPORTS.find((viewport) => viewport.name === 'tablet')!;
+    const before = await page.evaluate(() => {
+      const seam = window.archvizTransitionSeam;
+      if (seam === undefined) throw new Error('guarded transition diagnostics are unavailable');
+      return {
+        generation: seam.generation,
+        disruptions: seam.disruptions.length,
+        parked: seam.parked,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      };
+    });
+    expect(before.parked, 'the coordinator is latched at the black-hold freeze before resizing').toBe(true);
+    expect(before.width !== target.width || before.height !== target.height, 'the viewport change is real').toBe(true);
+
+    await page.setViewportSize({ width: target.width, height: target.height });
+    const readResize = () => page.evaluate(({ start, width, height }) =>
+      window.archvizTransitionSeam?.disruptions.slice(start).find((record) =>
+        record.source === 'window' && record.type === 'resize' && record.width === width && record.height === height,
+      ) ?? null, { start: before.disruptions, width: target.width, height: target.height });
     await expect
-      .poll(() => page.evaluate(() => window.archvizTransitionSeam?.stableFrames ?? -1))
-      .toBe(0);
+      .poll(readResize, { message: 'production window resize handler did not record delivery for the changed viewport' })
+      .not.toBeNull();
+    const reset = (await readResize())!;
+    assertDisruptionReset(reset, before.generation);
     await expect(veil).toHaveAttribute('data-state', 'black-hold');
+    await expect(veil).toBeVisible();
+    await expect(veil).toHaveCSS('opacity', '1');
+
+    const release = await page.evaluate(() => {
+      const seam = window.archvizTransitionSeam;
+      if (seam === undefined) throw new Error('guarded transition diagnostics are unavailable');
+      return { parked: seam.parked, samples: seam.stableFrameSamples.length, stableFrames: seam.stableFrames };
+    });
+    expect(release.parked, 'the disruption leaves the black-hold latch closed until release').toBe(true);
+    expect(release.stableFrames, 'no stable frame is counted while the disrupted handshake is parked').toBe(0);
 
     await page.evaluate(() => window.archvizTransitionSeam?.unfreeze());
     await expect(veil).toHaveAttribute('data-state', 'revealed', { timeout: 30_000 });
     expect(await page.evaluate(() => window.archvizTransitionSeam?.stableFrames)).toBeGreaterThanOrEqual(2);
+    const freshSamples = await page.evaluate((start) =>
+      window.archvizTransitionSeam?.stableFrameSamples.slice(start) ?? [], release.samples);
+    assertFreshStableFrames(freshSamples, reset.generation);
   });
 
   test('waits for a hidden-tab restore, then reruns the black-frame handshake before reveal', async ({ page }) => {

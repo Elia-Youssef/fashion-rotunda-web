@@ -57,10 +57,28 @@ export interface TransitionTimestamps {
   revealEnd: number | null;
 }
 
+export interface TransitionDisruption {
+  readonly type: string;
+  readonly source: 'window' | 'visual-viewport';
+  readonly generation: number;
+  readonly stableFrames: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+export interface TransitionStableFrame {
+  readonly generation: number;
+  readonly stableFrames: number;
+}
+
 export interface TransitionSeam {
   readonly state: RevealState;
   readonly timestamps: TransitionTimestamps;
   readonly stableFrames: number;
+  readonly generation: number;
+  readonly parked: boolean;
+  readonly disruptions: readonly TransitionDisruption[];
+  readonly stableFrameSamples: readonly TransitionStableFrame[];
   readPredicates(): Record<string, boolean>;
   unfreeze(): void;
 }
@@ -99,6 +117,8 @@ export class SceneRevealCoordinator {
   private unfreezeResolver: (() => void) | null = null;
   private visibilityResolver: (() => void) | null = null;
   private restartGeneration = 0;
+  private observeDisruption: ((event: Event, source: TransitionDisruption['source']) => void) | null = null;
+  private observeStableFrame: (() => void) | null = null;
 
   private readonly timestamps: TransitionTimestamps = {
     readyHidden: performance.now(),
@@ -214,6 +234,28 @@ export class SceneRevealCoordinator {
 
     const getState = (): RevealState => this.currentState;
     const getStableFrames = (): number => this.stableFrames;
+    const getGeneration = (): number => this.restartGeneration;
+    const isParked = (): boolean => this.frozenState === 'black-hold' && this.unfreezeResolver !== null;
+    // Retain observations at their source so later polling cannot miss a transient reset.
+    // Only this guarded seam allocates records; snapshots cannot mutate coordinator diagnostics.
+    const disruptions: TransitionDisruption[] = [];
+    const stableFrameSamples: TransitionStableFrame[] = [];
+    this.observeDisruption = (event, source) => {
+      disruptions.push(Object.freeze({
+        type: event.type,
+        source,
+        generation: this.restartGeneration,
+        stableFrames: this.stableFrames,
+        width: window.innerWidth,
+        height: window.innerHeight,
+      }));
+    };
+    this.observeStableFrame = () => {
+      stableFrameSamples.push(Object.freeze({
+        generation: this.restartGeneration,
+        stableFrames: this.stableFrames,
+      }));
+    };
     window.archvizTransitionSeam = {
       get state(): RevealState {
         return getState();
@@ -221,6 +263,18 @@ export class SceneRevealCoordinator {
       timestamps: this.timestamps,
       get stableFrames(): number {
         return getStableFrames();
+      },
+      get generation(): number {
+        return getGeneration();
+      },
+      get parked(): boolean {
+        return isParked();
+      },
+      get disruptions(): readonly TransitionDisruption[] {
+        return Object.freeze([...disruptions]);
+      },
+      get stableFrameSamples(): readonly TransitionStableFrame[] {
+        return Object.freeze([...stableFrameSamples]);
       },
       readPredicates: () => this.evaluatePredicates(),
       unfreeze: () => {
@@ -254,10 +308,14 @@ export class SceneRevealCoordinator {
     }
 
     if (typeof window !== 'undefined') {
-      const disrupt = (): void => this.requestRestabilization();
-      window.addEventListener('resize', disrupt, { signal });
-      window.addEventListener('orientationchange', disrupt, { signal });
-      window.visualViewport?.addEventListener('resize', disrupt, { signal });
+      const disrupt = (event: Event, source: TransitionDisruption['source']): void => {
+        this.requestRestabilization();
+        this.observeDisruption?.(event, source);
+      };
+      const disruptWindow = (event: Event): void => disrupt(event, 'window');
+      window.addEventListener('resize', disruptWindow, { signal });
+      window.addEventListener('orientationchange', disruptWindow, { signal });
+      window.visualViewport?.addEventListener('resize', (event) => disrupt(event, 'visual-viewport'), { signal });
     }
   }
 
@@ -386,6 +444,7 @@ export class SceneRevealCoordinator {
           break;
         }
         this.stableFrames += 1;
+        this.observeStableFrame?.();
       }
       if (generation !== this.restartGeneration || this.stableFrames < 2) {
         continue;
