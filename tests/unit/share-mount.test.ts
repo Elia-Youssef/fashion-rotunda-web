@@ -218,6 +218,7 @@ describe('share mount', () => {
     const handle = mount(stage);
     const status = stage.root.querySelector('.share__status')!;
     stage.root.querySelector<HTMLButtonElement>('.share__button--screenshot')!.click();
+    await vi.dynamicImportSettled();
     expect(stage.options.drawFrame).toHaveBeenCalledTimes(1);
     expect(stage.options.renderer.setPixelRatio).toHaveBeenCalledTimes(2);
     handle.dispose();
@@ -251,6 +252,7 @@ describe('share mount', () => {
     const handle = mount(stage);
     const status = stage.root.querySelector('.share__status')!;
     stage.root.querySelector<HTMLButtonElement>('.share__button--screenshot')!.click();
+    await vi.dynamicImportSettled();
     await vi.advanceTimersByTimeAsync(0);
     expect(share).toHaveBeenCalledTimes(1);
     expect(stage.options.onChange).toHaveBeenCalledTimes(1);

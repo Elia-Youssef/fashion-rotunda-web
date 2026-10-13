@@ -10,15 +10,17 @@ export interface ScreenshotOptions {
   canvas: HTMLCanvasElement;
   /** Draws one frame at the current pixel ratio, synchronously; the composition root passes drawFrame. */
   drawFrame: () => void;
-  /** Multiplier over the current pixel ratio. */
+  /** Multiplier over the requested pixel ratio, or the live ratio when none was recorded. */
   scale: number;
+  /** Ratio at the request, retained across asynchronous preparation; absent uses the live ratio. */
+  requestedPixelRatio?: number;
 }
 
 /** Draws one frame at scale, reads the canvas as a PNG blob in the same task, restores the ratio. */
 export function captureStill(options: ScreenshotOptions): Promise<Blob> {
   const { renderer, canvas, drawFrame, scale } = options;
   const previousRatio = renderer.getPixelRatio();
-  const scaledRatio = previousRatio * scale;
+  const scaledRatio = (options.requestedPixelRatio ?? previousRatio) * scale;
 
   renderer.setPixelRatio(scaledRatio);
   try {

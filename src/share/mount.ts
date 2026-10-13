@@ -6,7 +6,6 @@ import { MUSIC_STORAGE_KEY, resolveMusicPreference } from '../audio/preference';
 import type { KeyValueStore, MusicPreference } from '../audio/preference';
 import type { Rig } from '../lighting/rig';
 import { mountShare as mountShareUI } from '../ui/share';
-import { captureStill, deliverStill } from './screenshot';
 import type { ScreenshotOptions } from './screenshot';
 import { DEFAULT_RIG_SERIALIZED, buildSearch, parseShareState } from './state';
 import type { ShareState } from './state';
@@ -81,6 +80,7 @@ function formatStillFileName(lookId: string, date: Date = new Date()): string {
 export function mountShare(options: ShareMountOptions): ShareMount {
   const lifetime = new AbortController();
   const signal = lifetime.signal;
+  let screenshotReady: Promise<typeof import('./screenshot')> | null = null;
   // Capture proof position before applying any state overrides so proof resets can be detected.
   const proofPos = options.camera.orbit.position;
   const proofPosition: [number, number, number] = [proofPos[0], proofPos[1], proofPos[2]];
@@ -253,11 +253,16 @@ export function mountShare(options: ShareMountOptions): ShareMount {
     async screenshot(): Promise<void> {
       if (signal.aborted) return;
       try {
+        // Input wakes the frame loop; loading must not let a scaler step change the requested size.
+        const requestedPixelRatio = options.renderer.getPixelRatio();
+        const { captureStill, deliverStill } = await (screenshotReady ??= import('./screenshot'));
+        if (signal.aborted) return;
         const blob = await captureStill({
           renderer: options.renderer,
           canvas: options.canvas,
           drawFrame: options.drawFrame,
           scale: 2,
+          requestedPixelRatio,
         });
         if (signal.aborted) return;
         options.onChange();
