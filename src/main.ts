@@ -81,6 +81,12 @@ declare global {
         observe(workMs: number, nowMs: number, eligible: boolean): GovernorDiagnostics | null;
         diagnostics(): GovernorDiagnostics | null;
       };
+      /** Test-only resolution steps, using the tier's values and retaining the post graph. */
+      scaler: {
+        setDeterministic(on: boolean): void;
+        step(index: number): void;
+        diagnostics(): { step: number; scale: number; steps: readonly number[] };
+      };
     };
   }
 }
@@ -651,6 +657,8 @@ async function main(): Promise<void> {
     steps: settings.scalerSteps,
   });
   let renderScale = scaler.scale;
+  // Only the guarded test handle can suspend real-frame scaler samples.
+  let e2eDeterministicScaler = false;
   function applyResolution(): void {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, settings.pixelRatioCap) * renderScale);
     resize();
@@ -682,7 +690,7 @@ async function main(): Promise<void> {
     frameCap: isTouch ? settings.frameCapTouch : null,
     onFrameTime: (workMs) => {
       frames.push(workMs);
-      const next = scaler.update(frames.p95(), performance.now());
+      const next = e2eDeterministicScaler ? renderScale : scaler.update(frames.p95(), performance.now());
       chain?.observeFrame(workMs);
       if (next !== renderScale) {
         renderScale = next;
@@ -1182,6 +1190,31 @@ async function main(): Promise<void> {
           },
           diagnostics(): GovernorDiagnostics | null {
             return chain?.governorDiagnostics ?? null;
+          },
+        },
+        scaler: {
+          setDeterministic(on: boolean): void {
+            e2eDeterministicScaler = on;
+          },
+          step(index: number): void {
+            if (!e2eDeterministicScaler) {
+              throw new Error('deterministic scaler sampling must be enabled before stepping');
+            }
+            if (!Number.isInteger(index) || index < 0 || index >= settings.scalerSteps.length) {
+              throw new RangeError('the scaler step must be an index in the current tier');
+            }
+            const scale = settings.scalerSteps[index];
+            // Same path as a real scaler step: resize the buffer without rebuilding the graph.
+            renderScale = scale;
+            applyResolution();
+            loop.invalidate();
+          },
+          diagnostics(): { step: number; scale: number; steps: readonly number[] } {
+            return {
+              step: settings.scalerSteps.indexOf(renderScale),
+              scale: renderScale,
+              steps: [...settings.scalerSteps],
+            };
           },
         },
       };
