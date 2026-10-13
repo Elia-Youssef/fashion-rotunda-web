@@ -95,7 +95,13 @@ declare global {
       scaler: {
         setDeterministic(on: boolean): void;
         step(index: number): void;
-        diagnostics(): { step: number; scale: number; steps: readonly number[] };
+        diagnostics(): {
+          step: number;
+          scale: number;
+          steps: readonly number[];
+          appliedPixelRatio: number;
+          deterministic: boolean;
+        };
       };
     };
   }
@@ -1250,11 +1256,13 @@ async function main(): Promise<void> {
             applyResolution();
             loop.invalidate();
           },
-          diagnostics(): { step: number; scale: number; steps: readonly number[] } {
+          diagnostics() {
             return {
               step: settings.scalerSteps.indexOf(renderScale),
               scale: renderScale,
               steps: [...settings.scalerSteps],
+              appliedPixelRatio: renderer.getPixelRatio(),
+              deterministic: e2eDeterministicScaler,
             };
           },
         },

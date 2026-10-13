@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { ResizeHandshake } from './support/resize-handshake';
+import { BEFORE_RESIZE, RESIZE_VIEWPORT, STALE_BUFFER } from './support/resize-snapshots';
 
 // The bidirectional frame-time governor on native WebGPU. The deterministic
 // harness behind `?e2e=1` (window.archvizE2E.governor) is the only thing this spec drives: it
@@ -13,8 +15,6 @@ import type { Page } from '@playwright/test';
 
 const SCENE_READY_TIMEOUT = 60_000;
 const POLL_TIMEOUT = 15_000;
-/** Flooring the backing dimensions leaves less than one pixel of uncertainty per axis. */
-const BACKING_ROUNDING_PX = 1;
 /** The high tier's frame budget and the comfortable threshold derived from it. */
 const BUDGET_MS = 16.7;
 const THRESHOLD_MS = BUDGET_MS * 0.8;
@@ -82,39 +82,29 @@ async function resizeAndReadDiagnostics(
       frames: Number(surface.dataset.frames),
       viewportWidth: window.innerWidth,
       viewportHeight: window.innerHeight,
+      scaler: window.archvizE2E?.scaler.diagnostics() ?? null,
     };
   });
   const before = await readSize();
   expect(Number.isFinite(before.frames), 'a drawn-frame baseline exists before resizing').toBe(true);
+  const handshake = new ResizeHandshake(before, viewport);
   await page.setViewportSize(viewport);
-  let resized = before;
-  await expect.poll(async () => {
-    resized = await readSize();
-    // Three floors both backing dimensions after applying the same effective pixel ratio.
-    // The two possible ratio intervals must overlap; this also permits scaler adaptation.
-    const ratioMin = Math.max(resized.width / resized.boxWidth, resized.height / resized.boxHeight);
-    const ratioMax = Math.min(
-      (resized.width + BACKING_ROUNDING_PX) / resized.boxWidth,
-      (resized.height + BACKING_ROUNDING_PX) / resized.boxHeight,
-    );
-    return resized.viewportWidth === viewport.width && resized.viewportHeight === viewport.height &&
-      resized.boxWidth > 0 && resized.boxHeight > 0 &&
-      resized.boxWidth !== before.boxWidth && resized.boxHeight !== before.boxHeight &&
-      resized.width > 0 && resized.height > 0 &&
-      resized.width !== before.width && resized.height !== before.height && ratioMin < ratioMax;
-  }, {
-    timeout: POLL_TIMEOUT,
-    message: 'the resized canvas box has a matching new drawing buffer',
-  }).toBe(true);
-
-  // A pre-resize frame can advance the original counter while resize delivery is pending.
-  // Require a frame beyond the size acknowledgement too, and wake the render-on-demand loop.
-  const acknowledgedFrames = Math.max(before.frames, resized.frames);
-  await page.mouse.move(viewport.width / 2, viewport.height / 2);
-  await expect.poll(async () => (await readSize()).frames, {
-    timeout: POLL_TIMEOUT,
-    message: 'a frame is drawn after the resized drawing buffer is acknowledged',
-  }).toBeGreaterThan(acknowledgedFrames);
+  try {
+    await expect.poll(async () => {
+      const poll = handshake.poll(await readSize());
+      if (poll.acknowledgedNow) {
+        // Wake the render-on-demand loop only after acknowledging the applied resolution.
+        await page.mouse.move(viewport.width / 2, viewport.height / 2);
+      }
+      return poll.ready;
+    }, {
+      timeout: POLL_TIMEOUT,
+      message: 'the resized canvas has its applied drawing buffer and a newer drawn frame',
+    }).toBe(true);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(handshake.failureMessage(message), { cause: error });
+  }
   return diagnostics(page);
 }
 
@@ -164,6 +154,9 @@ test('the governor degrades, holds its cooldown, and recovers on webgpu', async 
     'the High WebGPU chain has SSR and rest-only depth of field; the WebGL 2 chain does not',
   );
   test.setTimeout(180_000);
+  // Replaying a delayed buffer guards the handshake even when a browser delivers resize atomically.
+  const replay = new ResizeHandshake(BEFORE_RESIZE, RESIZE_VIEWPORT).poll(STALE_BUFFER);
+  expect(replay.sizeReady, 'the resize predicate rejects a stale buffer after the CSS box changes').toBe(false);
   const errors: string[] = [];
   watchPageErrors(page, errors);
 
@@ -194,6 +187,9 @@ test('the governor degrades, holds its cooldown, and recovers on webgpu', async 
     'v2;key,1,15,ffffff;fill,0,7,ffffff;back,0,7,ffffff;day,0.5',
   );
   await page.evaluate(() => window.archvizE2E?.governor.setDeterministic(true));
+  // This test proves governor preservation across CSS resizes, not adaptive resolution decisions.
+  // Retain the currently rendered step so live frame work cannot move the resize target mid-handshake.
+  await page.evaluate(() => window.archvizE2E?.scaler.setDeterministic(true));
 
   // 3. Two complete over-budget windows (60 samples each) drop the normal High SSR-only graph
   // straight to no-ssr. The synthetic clock advances only inside drive(), so gaps and cooldown
