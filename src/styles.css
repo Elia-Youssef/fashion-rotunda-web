@@ -706,6 +706,34 @@ footer .proof-panel__measure {
   }
 }
 
+/* Beside a floating card, the proof owns a separate column with the same outer inset and a
+   spacing-scale gap. Stack its badge below the full-width readout and use the height below the
+   header, rather than the compact sheet ceiling. Long readouts keep their internal list scroll.
+   Only a mounted proof panel needs this column; the ordinary backend badge stays in its corner. */
+@media (min-width: 768px) and (min-height: 600px) {
+  footer:has(.proof-panel) {
+    right: calc(var(--safe-area-right) + 2 * var(--space-4) + min(var(--card-width), 40vw));
+    width: min(
+      var(--card-width),
+      calc(100vw - var(--safe-area-left) - var(--safe-area-right) - 3 * var(--space-4) -
+        min(var(--card-width), 40vw))
+    );
+  }
+
+  footer:has(.proof-panel) #shell-proof {
+    flex-direction: column-reverse;
+  }
+
+  footer:has(.proof-panel) .proof-panel {
+    flex: none;
+    width: 100%;
+    max-height: calc(
+      100dvh - var(--header-height) - var(--safe-area-top) - var(--safe-area-bottom) -
+        var(--space-4) - var(--control-height) - var(--space-2) - var(--space-1)
+    );
+  }
+}
+
 /* The rail's height, and the thumbnail size that fits it, belong to chrome.css alone. */
 @media (min-width: 1200px) {
   body #looks {
