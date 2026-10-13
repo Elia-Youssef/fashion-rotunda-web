@@ -3,9 +3,15 @@ import { DataTexture, FloatType } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 
 let hdrImports = 0;
+let roomImports = 0;
 beforeEach(() => {
   vi.resetModules();
   hdrImports = 0;
+  roomImports = 0;
+  vi.doMock('three/addons/environments/RoomEnvironment.js', () => {
+    roomImports += 1;
+    return { RoomEnvironment: class { dispose() {} } };
+  });
   vi.doMock('three/webgpu', () => ({
     PMREMGenerator: class {
       dispose() {}
@@ -30,6 +36,27 @@ beforeEach(() => {
 afterEach(() => {
   vi.doUnmock('three/webgpu');
   vi.doUnmock('three/addons/loaders/HDRLoader.js');
+  vi.doUnmock('three/addons/environments/RoomEnvironment.js');
+});
+
+describe('room fallback loading', () => {
+  it('does not import on successful procedural or HDR paths', async () => {
+    const { createProceduralEnvironment, createHdrEnvironment } = await import('../../src/lighting/environment');
+    const environments = await Promise.all([
+      createProceduralEnvironment(renderer()), createHdrEnvironment(renderer(), '/sky.hdr'),
+    ]);
+    expect(roomImports).toBe(0);
+    environments.forEach((environment) => environment.dispose());
+  });
+
+  it('imports once when the fallback factory is requested repeatedly', async () => {
+    const { createRoomEnvironment } = await import('../../src/lighting/environment');
+    const environments = await Promise.all([
+      createRoomEnvironment(renderer()), createRoomEnvironment(renderer()),
+    ]);
+    expect(roomImports).toBe(1);
+    environments.forEach((environment) => environment.dispose());
+  });
 });
 
 function renderer(): WebGPURenderer {

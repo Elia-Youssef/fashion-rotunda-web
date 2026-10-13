@@ -27,7 +27,6 @@ import {
 import type { Scene, Texture } from 'three';
 import { PMREMGenerator } from 'three/webgpu';
 import type { WebGPURenderer } from 'three/webgpu';
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 import { createGradientSkyTexture, environmentSkyPalette, visibleSkyPalette } from './sky';
 
@@ -297,8 +296,11 @@ export function fromRenderTarget(
  * and loads the HDR only under ?sky=hdr; this keeps a failed environment build lit instead of
  * aborting the showroom.
  */
+let roomReady: Promise<typeof import('three/addons/environments/RoomEnvironment.js')> | null = null;
+
 export async function createRoomEnvironment(renderer: WebGPURenderer): Promise<Environment> {
   await renderer.init();
+  const { RoomEnvironment } = await (roomReady ??= import('three/addons/environments/RoomEnvironment.js'));
   const resources = environmentResources();
   try {
     const generator = resources.own(new PMREMGenerator(renderer));
