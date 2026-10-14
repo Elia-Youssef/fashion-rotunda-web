@@ -12,6 +12,8 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
     "exactOptionalPropertyTypes": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
