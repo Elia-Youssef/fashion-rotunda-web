@@ -176,10 +176,15 @@ export function mountOnboarding(options: OnboardingOptions): OnboardingHandle {
   }
 
   function positionNearAnchor(anchor: HTMLElement, stepId: OnboardingStep['id']): void {
+    const safeArea = readSafeAreaInsets();
+    // A shrink-to-fit fixed card wraps into the space right of its current left edge, so it is
+    // parked at the left inset before it is measured, as the tooltip does: measured where the
+    // previous step left it, a narrower box would be clamped too far right and then widen past
+    // the right inset at its new position.
+    card.style.setProperty('--onboarding-x', `${Math.round(safeArea.left + MARGIN_PX)}px`);
     const rect = anchor.getBoundingClientRect();
     const cardWidth = card.offsetWidth || 280;
     const cardHeight = card.offsetHeight || 120;
-    const safeArea = readSafeAreaInsets();
 
     let x = MARGIN_PX;
     let y = MARGIN_PX;
