@@ -117,17 +117,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function readManifestFiles(json: unknown, setName: string): Record<string, ManifestFile> | null {
-  if (!isRecord(json) || !isRecord(json.sets)) {
+  if (!isRecord(json) || !isRecord(json['sets'])) {
     return null;
   }
-  const set = json.sets[setName];
-  if (!isRecord(set) || !isRecord(set.files)) {
+  const set = json['sets'][setName];
+  if (!isRecord(set) || !isRecord(set['files'])) {
     return null;
   }
   const files: Record<string, ManifestFile> = {};
-  for (const [name, value] of Object.entries(set.files)) {
-    if (isRecord(value) && typeof value.bytes === 'number' && Number.isFinite(value.bytes)) {
-      files[name] = { bytes: value.bytes };
+  for (const [name, value] of Object.entries(set['files'])) {
+    if (isRecord(value) && typeof value['bytes'] === 'number' && Number.isFinite(value['bytes'])) {
+      files[name] = { bytes: value['bytes'] };
     }
   }
   return files;
@@ -276,7 +276,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
     lobbyElement.setAttribute('role', 'dialog');
     lobbyElement.setAttribute('aria-modal', 'true');
     lobbyElement.setAttribute('aria-labelledby', 'entry-lobby-title');
-    lobbyElement.dataset.state = 'idle';
+    lobbyElement.dataset['state'] = 'idle';
 
     lobbyElement.innerHTML = `
       <div class="entry-lobby__scrim" aria-hidden="true"></div>
@@ -400,7 +400,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
   const errorMessage = lobby.querySelector<HTMLElement>('.entry-lobby__error-message');
 
   let currentState: LobbyState = 'idle';
-  lobby.dataset.state = currentState;
+  lobby.dataset['state'] = currentState;
 
   // Music preference state resolution
   let currentMusicPreference = resolveMusicPreference(options.search, store);
@@ -410,7 +410,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       return;
     }
     const isPlaying = currentMusicPreference === 'on';
-    musicSwitchBtn.dataset.music = isPlaying ? 'armed' : 'off';
+    musicSwitchBtn.dataset['music'] = isPlaying ? 'armed' : 'off';
     musicSwitchBtn.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
     if (musicLabel !== null) {
       musicLabel.textContent = isPlaying ? 'Music on' : 'Music off';
@@ -500,7 +500,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       return;
     }
     currentState = 'loading';
-    lobby.dataset.state = currentState;
+    lobby.dataset['state'] = currentState;
 
     if (loadBtn !== null) {
       loadBtn.disabled = true;
@@ -514,7 +514,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       loadingPane.hidden = false;
     }
     if (cardElement !== null) {
-      cardElement.dataset.view = 'loading';
+      cardElement.dataset['view'] = 'loading';
     }
 
     if (loadRequestResolver !== null) {
@@ -676,7 +676,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
         stopProgressTrackingFn = null;
       }
       currentState = 'ready-hidden';
-      lobby.dataset.state = currentState;
+      lobby.dataset['state'] = currentState;
 
       if (statusElement !== null) {
         statusElement.textContent = 'Experience ready';
@@ -696,7 +696,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
         return;
       }
       currentState = 'cover-to-black';
-      lobby.dataset.state = currentState;
+      lobby.dataset['state'] = currentState;
     },
 
     setBlackHold(): void {
@@ -704,7 +704,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
         return;
       }
       currentState = 'black-hold';
-      lobby.dataset.state = currentState;
+      lobby.dataset['state'] = currentState;
     },
 
     setRevealing(): void {
@@ -712,7 +712,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
         return;
       }
       currentState = 'revealing';
-      lobby.dataset.state = currentState;
+      lobby.dataset['state'] = currentState;
     },
 
     setRevealed(): void {
@@ -721,7 +721,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       }
       inputListeners.abort();
       currentState = 'revealed';
-      lobby.dataset.state = currentState;
+      lobby.dataset['state'] = currentState;
       lobby.setAttribute('inert', '');
       lobby.setAttribute('aria-hidden', 'true');
       lobby.hidden = true;
@@ -738,7 +738,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
         stopProgressTrackingFn = null;
       }
       currentState = 'error';
-      lobby.dataset.state = currentState;
+      lobby.dataset['state'] = currentState;
 
       if (idlePane !== null) {
         idlePane.hidden = true;
@@ -750,7 +750,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
         errorPane.hidden = false;
       }
       if (cardElement !== null) {
-        cardElement.dataset.view = 'error';
+        cardElement.dataset['view'] = 'error';
       }
       if (errorMessage !== null) {
         errorMessage.textContent = message;
@@ -769,7 +769,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
         stopProgressTrackingFn = null;
       }
       currentState = 'error';
-      lobby.dataset.state = currentState;
+      lobby.dataset['state'] = currentState;
 
       if (idlePane !== null) {
         idlePane.hidden = true;
@@ -778,7 +778,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
         loadingPane.hidden = true;
       }
       if (cardElement !== null) {
-        cardElement.dataset.view = 'error';
+        cardElement.dataset['view'] = 'error';
       }
       applyUnsupportedSurface(message);
       // The retry is gone and Load is disabled, so the dialog itself takes focus and the alert

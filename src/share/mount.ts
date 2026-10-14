@@ -133,8 +133,8 @@ export function mountShare(options: ShareMountOptions): ShareMount {
   }
 
   function collectCurrentState(): ShareState {
-    const liveLook = options.showroom.currentLook ?? options.canvas.dataset.look ?? null;
-    const liveVariant = options.showroom.currentVariant ?? options.canvas.dataset.variant ?? null;
+    const liveLook = options.showroom.currentLook ?? options.canvas.dataset['look'] ?? null;
+    const liveVariant = options.showroom.currentVariant ?? options.canvas.dataset['variant'] ?? null;
     // The catalogue's first look and its own swatch are what a bare URL already means, so writing
     // them would hand a visitor who changed nothing a link carrying look= and variant=.
     const look = liveLook === options.defaultLook ? null : liveLook;

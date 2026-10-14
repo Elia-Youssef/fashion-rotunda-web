@@ -170,8 +170,8 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
   let publishedYaw = '';
   let publishedYawValue = Number.NaN;
   let currentMode: CameraMode = 'orbit';
-  canvas.dataset.camera = 'orbit';
-  canvas.dataset.attract = '0';
+  canvas.dataset['camera'] = 'orbit';
+  canvas.dataset['attract'] = '0';
 
   function writeYaw(yaw: number): void {
     appliedYaw = yaw;
@@ -188,7 +188,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     }
     const next = yaw.toFixed(YAW_DECIMALS);
     if (next !== publishedYaw) {
-      canvas.dataset.yaw = next;
+      canvas.dataset['yaw'] = next;
       publishedYaw = next;
       publishedYawValue = Number(next);
     }
@@ -445,7 +445,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
 
   function applyModeHandover(mode: CameraMode): void {
     currentMode = mode;
-    canvas.dataset.camera = mode;
+    canvas.dataset['camera'] = mode;
     if (mode === 'walk') {
       orbit.setEnabled(false);
       currentWalk.enable();
@@ -628,7 +628,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
       if (currentMode === 'orbit' && !turntable.running && !orbit.moving) {
         const tickResult = attract.tick();
         if (tickResult !== null) {
-          canvas.dataset.attract = '1';
+          canvas.dataset['attract'] = '1';
           // Apply only what moved since the last placement, and keep holding either way so the
           // hold still ends on time and any other animation keeps its frames.
           const pose = tickResult.pose;
@@ -644,11 +644,11 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
           }
           hold();
         } else {
-          canvas.dataset.attract = '0';
+          canvas.dataset['attract'] = '0';
           attractPoseApplied = false;
         }
       } else {
-        canvas.dataset.attract = '0';
+        canvas.dataset['attract'] = '0';
         attractPoseApplied = false;
       }
 
@@ -698,9 +698,9 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
       } else {
         canvas.setAttribute('tabindex', hadTabIndex);
       }
-      delete canvas.dataset.yaw;
-      delete canvas.dataset.camera;
-      delete canvas.dataset.attract;
+      delete canvas.dataset['yaw'];
+      delete canvas.dataset['camera'];
+      delete canvas.dataset['attract'];
       if (window.archvizCamera?.orbit === orbit) {
         delete window.archvizCamera;
       }

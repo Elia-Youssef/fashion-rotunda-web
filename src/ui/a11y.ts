@@ -94,8 +94,8 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
   }
 
   // Initial state tracking to avoid announcing defaults at boot.
-  let prevLook = canvas.dataset.look ?? null;
-  let prevVariant = canvas.dataset.variant ?? null;
+  let prevLook = canvas.dataset['look'] ?? null;
+  let prevVariant = canvas.dataset['variant'] ?? null;
 
   const rotateButton = aside.querySelector<HTMLButtonElement>('button[data-action="rotate"]');
   let prevRotate = rotateButton?.getAttribute('aria-pressed') ?? null;
@@ -104,7 +104,7 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
   let prevMusicPressed = musicButton?.getAttribute('aria-pressed') ?? null;
 
   const canvasObserver = new MutationObserver(() => {
-    const currentLook = canvas.dataset.look ?? null;
+    const currentLook = canvas.dataset['look'] ?? null;
     if (currentLook !== null && currentLook !== prevLook) {
       prevLook = currentLook;
       onboarding.complete('looks');
@@ -112,7 +112,7 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
       announcer.say(`Now showing: ${name}`);
     }
 
-    const currentVariant = canvas.dataset.variant ?? null;
+    const currentVariant = canvas.dataset['variant'] ?? null;
     if (currentVariant !== null && currentVariant !== prevVariant) {
       prevVariant = currentVariant;
       announcer.say(`Mannequin: ${currentVariant}`);

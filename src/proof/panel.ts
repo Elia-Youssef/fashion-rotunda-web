@@ -208,7 +208,7 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
     renderRow('orbit', orbitText);
     // Browser tests observe this completion counter, including refreshes with unchanged row text.
     refreshCount += 1;
-    dl.dataset.refresh = String(refreshCount);
+    dl.dataset['refresh'] = String(refreshCount);
   }
 
   button.addEventListener('click', async () => {

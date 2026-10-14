@@ -261,12 +261,12 @@ function createGovernorPublisher(dataset: DOMStringMap): (diagnostics: GovernorD
         historyText = JSON.stringify(diagnostics.events);
       }
     }
-    if (dataset.governor !== status) {
-      dataset.governor = status;
+    if (dataset['governor'] !== status) {
+      dataset['governor'] = status;
     }
     const log = diagnostics === null ? '[]' : historyText;
-    if (dataset.governorLog !== log) {
-      dataset.governorLog = log;
+    if (dataset['governorLog'] !== log) {
+      dataset['governorLog'] = log;
     }
   };
 }
@@ -303,8 +303,8 @@ function createPostStatePublisher(
             ]
               .filter((feature) => feature !== '')
               .join(',') || 'off';
-      if (dataset.post !== value) {
-        dataset.post = value;
+      if (dataset['post'] !== value) {
+        dataset['post'] = value;
       }
     }
     publishGovernor(diagnostics);
@@ -329,7 +329,7 @@ function createMemoryPublisher(
     }
     lastGeometries = geometries;
     lastTextures = textures;
-    dataset.memory = `${geometries}/${textures}`;
+    dataset['memory'] = `${geometries}/${textures}`;
   };
 }
 
@@ -493,7 +493,7 @@ async function main(): Promise<void> {
       const message = 'The graphics device was lost. Reload to restore the showroom.';
       recovery.setRendererError(true);
       updateRecoveryEligibility();
-      canvas.dataset.scene = 'error';
+      canvas.dataset['scene'] = 'error';
       if (revealCoordinator !== null) {
         revealCoordinator.fail(message);
       } else {
@@ -507,7 +507,7 @@ async function main(): Promise<void> {
       console.error('[archviz] renderer error', describeRendererError(error), error);
       recovery.setRendererError(true);
       updateRecoveryEligibility();
-      canvas.dataset.scene = 'error';
+      canvas.dataset['scene'] = 'error';
       const message = 'Renderer initialization failed. Please retry.';
       if (revealCoordinator !== null) {
         revealCoordinator.fail(message);
@@ -543,7 +543,7 @@ async function main(): Promise<void> {
     ...(audioEngine !== undefined ? { engine: audioEngine } : {}),
   });
 
-  canvas.dataset.scene = 'loading';
+  canvas.dataset['scene'] = 'loading';
 
   /** Null until the catalogue has arrived; the showroom owns the scene and the camera. */
   let showroom: Showroom | null = null;
@@ -588,7 +588,7 @@ async function main(): Promise<void> {
     frameCount += 1;
     // Readable from outside without exposing the renderer: the e2e tests watch this counter to prove
     // the loop draws when asked and stops when idle.
-    canvas.dataset.frames = String(frameCount);
+    canvas.dataset['frames'] = String(frameCount);
     // Active GPU resources as geometries/textures, the pair the e2e switch test compares before and
     // after ten look changes. Both counts are lifetime totals of live objects, not per frame, and
     // they only move when a resource is uploaded or disposed, so the string is built only then.
@@ -602,8 +602,8 @@ async function main(): Promise<void> {
       // The first frame is the first one with the scene on it: an empty warm-up frame is not what
       // the load number means. 'error' is terminal, so a later frame must not repaint it ready.
       markFirstFrame();
-      if (canvas.dataset.scene !== 'ready' && canvas.dataset.scene !== 'error') {
-        canvas.dataset.scene = 'ready';
+      if (canvas.dataset['scene'] !== 'ready' && canvas.dataset['scene'] !== 'error') {
+        canvas.dataset['scene'] = 'ready';
       }
     }
     if (frameWaiters.length > 0) {
@@ -689,8 +689,8 @@ async function main(): Promise<void> {
       cameraMount?.update(dtMs);
       showroom?.update(dtMs);
       const fade = showroom?.fading === true ? '1' : '0';
-      if (canvas.dataset.fade !== fade) {
-        canvas.dataset.fade = fade;
+      if (canvas.dataset['fade'] !== fade) {
+        canvas.dataset['fade'] = fade;
       }
       if (cameraMount?.moving === true) {
         chain?.notifyMotion();
@@ -781,9 +781,9 @@ async function main(): Promise<void> {
           frames,
           gpu: { p50: gpuSeries.p50(), p95: gpuSeries.p95(), available: gpuSeries.available },
           lookSwitchMs: latestLookSwitchMs(),
-          post: canvas.dataset.post ?? 'off',
-          governor: canvas.dataset.governor ?? 'off',
-          governorLog: canvas.dataset.governorLog ?? '',
+          post: canvas.dataset['post'] ?? 'off',
+          governor: canvas.dataset['governor'] ?? 'off',
+          governorLog: canvas.dataset['governorLog'] ?? '',
         }),
       measure: async (signal) => {
         if (cameraMount === null) {
@@ -841,10 +841,10 @@ async function main(): Promise<void> {
     const look = showroom?.currentLook ?? null;
     const variant = showroom?.currentVariant ?? null;
     if (look !== null) {
-      canvas.dataset.look = look;
+      canvas.dataset['look'] = look;
     }
     if (variant !== null) {
-      canvas.dataset.variant = variant;
+      canvas.dataset['variant'] = variant;
     }
   }
 
@@ -982,14 +982,14 @@ async function main(): Promise<void> {
       canvas,
       showroom,
       loop,
-      proofView: catalog.views.proof,
+      proofView: catalog.views['proof'],
       views: catalog.views,
       isTouch,
       collisionUrl: contentUrl(base, 'collision.glb'),
       search,
     });
     cameraMount = cameraHandle;
-    proofView = catalog.views.proof;
+    proofView = catalog.views['proof'];
     mountModeSwitch(shell.roots.header, cameraHandle, { hasPointerLock: !isTouch, canvas });
     const finishingPass = initializedChain;
     finishingPass.setDepthOfFieldAllowed(cameraHandle.mode === 'orbit');
@@ -1029,8 +1029,8 @@ async function main(): Promise<void> {
       lighting,
       camera: cameraHandle,
       music,
-      postFeatures: () => canvas.dataset.post ?? 'off',
-      proofTarget: catalog.views.proof.target,
+      postFeatures: () => canvas.dataset['post'] ?? 'off',
+      proofTarget: catalog.views['proof'].target,
       renderer,
       canvas,
       drawFrame,
@@ -1042,7 +1042,7 @@ async function main(): Promise<void> {
       await withCompilationDeadline(renderer.compileAsync(room.scene, room.camera));
       shadersCompiled = true;
     } catch (compileError) {
-      canvas.dataset.scene = 'error';
+      canvas.dataset['scene'] = 'error';
       console.error('[archviz] shader compilation failed or timed out', compileError);
       routing.fail();
       return;
@@ -1074,7 +1074,7 @@ async function main(): Promise<void> {
         lightingAttached: () => lighting !== null,
         postChainAssembled: () => chain !== null,
         shadersCompiled: () => shadersCompiled,
-        noError: () => canvas.dataset.scene !== 'error',
+        noError: () => canvas.dataset['scene'] !== 'error',
         realFrameCompleted: () => frameCount >= 1 && contentOnScreen,
       };
 
@@ -1117,7 +1117,7 @@ async function main(): Promise<void> {
           a11y.announcer.say('Experience ready');
         },
         onError: (err) => {
-          canvas.dataset.scene = 'error';
+          canvas.dataset['scene'] = 'error';
           console.error('[archviz] transition error', err);
         },
       });
@@ -1147,7 +1147,7 @@ async function main(): Promise<void> {
             frames: frameCount,
             moving,
             fading,
-            idle: canvas.dataset.scene === 'ready' && state.running && !state.scheduled &&
+            idle: canvas.dataset['scene'] === 'ready' && state.running && !state.scheduled &&
               !state.animating && !state.invalidated && !moving && !fading,
           };
         },
@@ -1260,7 +1260,7 @@ async function main(): Promise<void> {
       };
     }
   } catch (error) {
-    canvas.dataset.scene = 'error';
+    canvas.dataset['scene'] = 'error';
     console.error('[archviz] the showroom failed to load', error);
     routing.fail();
   }

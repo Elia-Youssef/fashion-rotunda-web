@@ -79,19 +79,19 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'product-card__action';
-    button.dataset.action = kind;
+    button.dataset['action'] = kind;
     button.textContent = label;
     actions.appendChild(button);
     return button;
   }
 
   const rotateButton = action('Rotate', 'rotate');
-  rotateButton.dataset.tooltip = 'Turn the look';
+  rotateButton.dataset['tooltip'] = 'Turn the look';
   const resetButton = action('Reset', 'reset');
-  resetButton.dataset.tooltip = 'Reset camera and mannequin';
+  resetButton.dataset['tooltip'] = 'Reset camera and mannequin';
   // Material toggles the swatch row; the row starts open, matching the Unreal reference.
   const materialButton = action('Material', 'material');
-  materialButton.dataset.tooltip = 'Show mannequin swatches';
+  materialButton.dataset['tooltip'] = 'Show mannequin swatches';
   materialButton.setAttribute('aria-controls', swatchesId);
 
   card.appendChild(actions);
@@ -174,7 +174,7 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
       button.className = `product-card__swatch product-card__swatch--${variant}`;
       button.setAttribute('role', 'radio');
       button.setAttribute('aria-label', variant);
-      button.dataset.tooltip = swatchTooltip(variant);
+      button.dataset['tooltip'] = swatchTooltip(variant);
       button.tabIndex = -1;
       button.addEventListener(
         'click',

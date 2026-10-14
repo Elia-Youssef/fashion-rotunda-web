@@ -236,7 +236,7 @@ export async function createRenderer(options: CreateRendererOptions): Promise<Re
 
   const backend: Backend = usesWebGPUBackend(renderer.backend) ? 'webgpu' : 'webgl2';
   // The smoke tests assert this attribute; keep the exact spelling.
-  options.canvas.dataset.backend = backend;
+  options.canvas.dataset['backend'] = backend;
 
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, options.pixelRatioCap));
   renderer.toneMapping = AgXToneMapping;

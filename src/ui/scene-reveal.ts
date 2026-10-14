@@ -212,7 +212,7 @@ export class SceneRevealCoordinator {
   private setVeilState(state: RevealState): void {
     this.veilElement.hidden = false;
     this.veilElement.style.removeProperty('display');
-    this.veilElement.dataset.state = state;
+    this.veilElement.dataset['state'] = state;
   }
 
   private setupTestSeam(): void {
@@ -534,7 +534,7 @@ export class SceneRevealCoordinator {
         // can advance while the test harness observes the new DOM state. Production never sets
         // this attribute, so its CSS animation and timing are unchanged.
         if (this.frozenState === 'revealing') {
-          this.veilElement.dataset.e2eFreeze = 'revealing';
+          this.veilElement.dataset['e2eFreeze'] = 'revealing';
         }
         this.currentState = 'revealing';
         this.timestamps.revealStart = performance.now();

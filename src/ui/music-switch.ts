@@ -59,7 +59,7 @@ export function mountMusicSwitch(root: HTMLElement, options: MusicSwitchOptions)
   root.appendChild(button);
 
   function render(state: MusicState, detail: string | null): void {
-    button.dataset.music = state;
+    button.dataset['music'] = state;
     button.setAttribute('aria-pressed', pressedState(state) ? 'true' : 'false');
     if (state === 'loading') {
       button.setAttribute('aria-busy', 'true');
@@ -73,15 +73,15 @@ export function mountMusicSwitch(root: HTMLElement, options: MusicSwitchOptions)
       state === 'off' ? 'Music off' : state === 'error' ? 'Music unavailable' : 'Music on';
     button.removeAttribute('title');
     if (state === 'armed') {
-      button.dataset.tooltip = ARMED_TITLE;
+      button.dataset['tooltip'] = ARMED_TITLE;
     } else if (state === 'error') {
-      button.dataset.tooltip = detail ?? 'Music unavailable';
+      button.dataset['tooltip'] = detail ?? 'Music unavailable';
     } else if (state === 'playing') {
-      button.dataset.tooltip = 'Turn music off';
+      button.dataset['tooltip'] = 'Turn music off';
     } else if (state === 'loading') {
-      button.dataset.tooltip = 'Loading music';
+      button.dataset['tooltip'] = 'Loading music';
     } else {
-      button.dataset.tooltip = 'Turn music on';
+      button.dataset['tooltip'] = 'Turn music on';
     }
   }
 

@@ -78,7 +78,7 @@ function layoutText(text: string, layout: 'sheet' | 'bar'): HTMLSpanElement {
 
 function addStudioRow(panel: HTMLElement, entry: RigLight, idPrefix: string): StudioRowControls {
   const row = element('fieldset', 'lightpanel__row');
-  row.dataset.light = entry.id;
+  row.dataset['light'] = entry.id;
 
   const legend = element('legend', 'lightpanel__name');
   legend.textContent = entry.label;
@@ -96,7 +96,7 @@ function addStudioRow(panel: HTMLElement, entry: RigLight, idPrefix: string): St
   on.type = 'checkbox';
   on.id = onId;
   on.checked = entry.on;
-  on.dataset.tooltip = `Toggle ${entry.label} on or off`;
+  on.dataset['tooltip'] = `Toggle ${entry.label} on or off`;
   onGroup.append(onLabel, on);
 
   // 2. Labelled Intensity Range with Candela Readout
@@ -112,7 +112,7 @@ function addStudioRow(panel: HTMLElement, entry: RigLight, idPrefix: string): St
   intensity.max = String(CANDELA_RANGE[1]);
   intensity.step = '0.5';
   intensity.value = String(entry.intensity);
-  intensity.dataset.tooltip = `Adjust ${entry.label} intensity in candela`;
+  intensity.dataset['tooltip'] = `Adjust ${entry.label} intensity in candela`;
 
   const intensityValue = element('output', 'lightpanel__value lightpanel__value--intensity');
   intensityValue.setAttribute('for', intensityId);
@@ -129,7 +129,7 @@ function addStudioRow(panel: HTMLElement, entry: RigLight, idPrefix: string): St
   color.type = 'color';
   color.id = colorId;
   color.value = entry.color;
-  color.dataset.tooltip = `Choose ${entry.label} color`;
+  color.dataset['tooltip'] = `Choose ${entry.label} color`;
 
   const colorValue = element('output', 'lightpanel__value lightpanel__value--color');
   colorValue.setAttribute('for', colorId);
@@ -152,7 +152,7 @@ function addStudioRow(panel: HTMLElement, entry: RigLight, idPrefix: string): St
 
 function addDaylightRow(panel: HTMLElement, daylight: number, idPrefix: string): DaylightControls {
   const row = element('fieldset', 'lightpanel__row lightpanel__row--daylight');
-  row.dataset.light = 'daylight';
+  row.dataset['light'] = 'daylight';
 
   const legend = element('legend', 'lightpanel__name');
   legend.textContent = 'Daylight';
@@ -176,7 +176,7 @@ function addDaylightRow(panel: HTMLElement, daylight: number, idPrefix: string):
   range.step = String(DAYLIGHT_STEP);
   range.value = String(daylight);
   range.setAttribute('list', listId);
-  range.dataset.tooltip = 'Continuous daylight atmosphere: Dawn to Day to Noon';
+  range.dataset['tooltip'] = 'Continuous daylight atmosphere: Dawn to Day to Noon';
 
   // Visible Dawn / Day / Noon guidance marks
   const guidance = element('div', 'lightpanel__guidance');

@@ -217,7 +217,7 @@ export function mountShell(doc: Document): ShellHandle {
   function apply(): void {
     roots.lightPanel.hidden = !lightOpen;
     lightToggle.setAttribute('aria-expanded', String(lightOpen));
-    row.dataset.open = String(lightOpen);
+    row.dataset['open'] = String(lightOpen);
     const sheetUp = sheetMode() && (lightOpen || cardSheetOpen);
     // A phone sheet is modal relative to the thumbnail rail. Leaving the rail merely painted
     // behind the sheet made it look available while the sheet launcher intercepted its hit
@@ -228,9 +228,9 @@ export function mountShell(doc: Document): ShellHandle {
     roots.rail.setAttribute('aria-hidden', String(sheetUp));
     doc.body.toggleAttribute('data-shell-sheet-open', sheetUp);
     if (sheetUp) {
-      roots.stage.dataset.sheet = 'true';
+      roots.stage.dataset['sheet'] = 'true';
     } else {
-      delete roots.stage.dataset.sheet;
+      delete roots.stage.dataset['sheet'];
     }
     roots.card.hidden = sheetMode() && !cardSheetOpen;
     lookPill.hidden = !sheetMode();
@@ -407,8 +407,8 @@ export function mountShell(doc: Document): ShellHandle {
       lookPill.remove();
       cardChrome.remove();
       lightChrome.remove();
-      delete row.dataset.open;
-      delete roots.stage.dataset.sheet;
+      delete row.dataset['open'];
+      delete roots.stage.dataset['sheet'];
       doc.body.removeAttribute('data-shell-sheet-open');
       roots.rail.hidden = false;
       roots.rail.inert = false;
