@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import { backendPath } from './support/backend';
 import { waitForLoopIdle } from './support/ready';
 
@@ -142,12 +142,6 @@ test('the turntable turns the look and the loop settles once it stops', async ({
 });
 
 test('walk mode stops at walls and stays above floor', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('console', (msg) => {
-    if (msg.type() === 'error') {
-      errors.push(msg.text());
-    }
-  });
   await page.goto(backendPath('/?e2e=1'));
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
@@ -215,7 +209,6 @@ test('walk mode stops at walls and stays above floor', async ({ page }) => {
   const distance = Math.hypot(foot[0], foot[2]);
   expect(distance, 'foot stays inside the rotunda walls').toBeLessThan(8.0);
   expect(foot[2], 'foot was stopped by the wall').toBeLessThan(7.5);
-  expect(errors).toEqual([]);
 });
 
 test('the real collision GLB blocks normal and sprint routes around the plinth and every wall', async ({ page }) => {
@@ -370,12 +363,6 @@ test.describe('touch walkthrough controls', () => {
 });
 
 test('two round trips orbit-walk-orbit end at starting orbit position within 1 mm', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('console', (msg) => {
-    if (msg.type() === 'error') {
-      errors.push(msg.text());
-    }
-  });
   await page.goto(backendPath('/?e2e=1'));
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
@@ -411,16 +398,9 @@ test('two round trips orbit-walk-orbit end at starting orbit position within 1 m
     finalPos[2] - initial[2],
   );
   expect(diff, 'ends at starting orbit position within 1 mm').toBeLessThan(0.001);
-  expect(errors).toEqual([]);
 });
 
 test('attract loop tours presets when idle and cancels on input', async ({ page }) => {
-  const errors: string[] = [];
-  page.on('console', (msg) => {
-    if (msg.type() === 'error') {
-      errors.push(msg.text());
-    }
-  });
   await page.goto(backendPath('/?e2e=1&attract=1&attractIdle=500'));
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
@@ -485,6 +465,4 @@ test('attract loop tours presets when idle and cancels on input', async ({ page 
       timeout: ATTRACT_INPUT_TIMEOUT_MS,
     })
     .toBe(false);
-
-  expect(errors).toEqual([]);
 });

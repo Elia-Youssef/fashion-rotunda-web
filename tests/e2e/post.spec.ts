@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import type { Locator, Page } from '@playwright/test';
 import { PNG } from 'pngjs';
@@ -133,15 +133,6 @@ function skipUnlessWebgl2(): void {
   );
 }
 
-/** Collects the text of every console error the page reports, for one assertion at the end. */
-function watchConsoleErrors(page: Page, into: string[]): void {
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      into.push(message.text());
-    }
-  });
-}
-
 /**
  * Opens a slice and returns the canvas once the chain has published what it turned on. The skip is
  * the delivery contract: a page whose data-post never appears is a page whose main.ts does not wire
@@ -231,8 +222,6 @@ test('ambient occlusion reaches the screen on webgl2', async ({ page }) => {
   // against, and a chain that silently fell back to pass-through would otherwise pass every
   // assertion in this file.
   test.setTimeout(120_000);
-  const errors: string[] = [];
-  watchConsoleErrors(page, errors);
 
   const passThrough = await openSlice(page, 'off');
   const controlBacking = await settledBacking(page);
@@ -252,26 +241,20 @@ test('ambient occlusion reaches the screen on webgl2', async ({ page }) => {
   expect(stats.nonBackgroundRatio, 'share of the frame that is not the background').toBeGreaterThan(
     0.1,
   );
-  expect(errors, 'no console messages of type error').toEqual([]);
 });
 
 test('anti-aliasing reaches the screen on webgl2', async ({ page }) => {
   skipUnlessWebgl2();
-  const errors: string[] = [];
-  watchConsoleErrors(page, errors);
   const canvas = await openSlice(page, 'aa');
 
   const stats = await canvasStats(canvas);
   expect(stats.nonBackgroundRatio, 'share of the frame that is not the background').toBeGreaterThan(
     0.1,
   );
-  expect(errors, 'no console messages of type error').toEqual([]);
 });
 
 test('max slice on webgl2 retains ao and traa without ssgi or ssr', async ({ page }) => {
   skipUnlessWebgl2();
-  const errors: string[] = [];
-  watchConsoleErrors(page, errors);
 
   await page.goto('/?webgl=1&gate=off&post=max');
   const canvas = page.locator('canvas#scene');
@@ -294,7 +277,6 @@ test('max slice on webgl2 retains ao and traa without ssgi or ssr', async ({ pag
   expect(dataPost, 'data-post contains traa').toContain('traa');
   expect(dataPost, 'data-post does not contain ssgi').not.toContain('ssgi');
   expect(dataPost, 'data-post does not contain ssr').not.toContain('ssr');
-  expect(errors, 'no console messages of type error').toEqual([]);
 });
 
 /**
@@ -319,8 +301,6 @@ test('diagnostic SSGI remains full resolution while the pointer drags on WebGPU'
     'SSGI exists on the WebGPU backend only; the webgl2 project publishes no ssgi token',
   );
   test.setTimeout(120_000);
-  const errors: string[] = [];
-  watchConsoleErrors(page, errors);
 
   await page.goto('/?e2e=1&tier=high&gate=off&post=gi');
   const canvas = page.locator('canvas#scene');
@@ -349,14 +329,10 @@ test('diagnostic SSGI remains full resolution while the pointer drags on WebGPU'
       message: 'data-post carries the full-resolution ssgi token again after the release',
     })
     .toBe(true);
-
-  expect(errors, 'no console messages of type error').toEqual([]);
 });
 
 test('finishing pass reaches the screen on webgl2 on max and is absent on off', async ({ page }) => {
   skipUnlessWebgl2();
-  const errors: string[] = [];
-  watchConsoleErrors(page, errors);
 
   await page.goto('/?webgl=1&gate=off&post=max');
   const canvas = page.locator('canvas#scene');
@@ -400,7 +376,6 @@ test('finishing pass reaches the screen on webgl2 on max and is absent on off', 
   expect(dataPostOff, 'data-post on off does not contain vignette').not.toContain('vignette');
   expect(dataPostOff, 'data-post on off does not contain bloom').not.toContain('bloom');
   expect(dataPostOff, 'data-post on off does not contain dof').not.toContain('dof');
-  expect(errors, 'no console messages of type error').toEqual([]);
 });
 
 test('depth of field follows camera rest and the walkthrough allowance on webgpu', async ({ page }) => {
@@ -409,8 +384,6 @@ test('depth of field follows camera rest and the walkthrough allowance on webgpu
     'depth of field is available on the high WebGPU tier only',
   );
   test.setTimeout(120_000);
-  const errors: string[] = [];
-  watchConsoleErrors(page, errors);
 
   await page.goto('/?e2e=1&post=finish&music=off');
   const canvas = page.locator('canvas#scene');
@@ -451,5 +424,4 @@ test('depth of field follows camera rest and the walkthrough allowance on webgpu
       message: 'depth of field turns back on after the rest window',
     })
     .toBe(true);
-  expect(errors, 'no console messages of type error').toEqual([]);
 });

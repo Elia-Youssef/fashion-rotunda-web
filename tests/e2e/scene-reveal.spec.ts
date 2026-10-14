@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test';
-import type { ConsoleMessage, Locator, Page } from '@playwright/test';
+import { expect, test, expectConsoleError } from './support/fixtures';
+import type { Locator, Page } from '@playwright/test';
 
 import { holdFirstRequest } from './support/held-request';
 import { assertDisruptionReset, assertFreshStableFrames } from './support/reveal-disruption';
@@ -127,13 +127,6 @@ async function expectParkedBehindBlack(page: Page): Promise<void> {
 
 test.describe('Scene Reveal Transition', () => {
   test('executes two-stage reveal lifecycle in exact order with stable frames', async ({ page }) => {
-    const consoleErrors: ConsoleMessage[] = [];
-    page.on('console', (msg) => {
-      if (msg.type() === 'error') {
-        consoleErrors.push(msg);
-      }
-    });
-
     const { backend, lobby, veil, canvas } = await openTransition(page);
 
     // The held rotunda request keeps the boot in loading, so the loading phase is observed while
@@ -186,8 +179,6 @@ test.describe('Scene Reveal Transition', () => {
       expect(ts.holdEnd!).toBeLessThanOrEqual(ts.revealStart!);
       expect(ts.revealStart!).toBeLessThanOrEqual(ts.revealEnd!);
     }
-
-    expect(consoleErrors, 'zero console errors').toHaveLength(0);
   });
 
   test('proves solid black veil opacity and readiness predicates during black-hold', async ({ page }) => {
@@ -407,6 +398,8 @@ test.describe('Scene Reveal Transition', () => {
     await enterExperience(lobby, canvas, backend);
     await expect(veil).toHaveAttribute('data-state', 'ready-hidden', { timeout: 60_000 });
 
+    expectConsoleError(page, /^\[archviz\] transition error Injected transition failure$/,
+      'the test deliberately fails the reveal to verify its retry surface');
     await page.evaluate(() => window.archvizReveal?.fail('Injected transition failure'));
     await expect(lobby).toHaveAttribute('data-state', 'error');
     await expect(veil).toBeHidden();

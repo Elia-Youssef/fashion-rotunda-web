@@ -1,4 +1,4 @@
-import { expect, test, type ConsoleMessage } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 
 import { holdFirstRequest } from './support/held-request';
 import { backendPath } from './support/backend';
@@ -11,8 +11,6 @@ import { backendPath } from './support/backend';
 const LOADING_HOLD_TIMEOUT_MS = 30_000;
 
 test('gates the experience until the visitor activates Load Experience', async ({ page }) => {
-  const messages: ConsoleMessage[] = [];
-  page.on('console', (message) => messages.push(message));
   // The default sky is generated in memory: the page must never fetch the diagnostic HDR, and the
   // bar reaching 1 below proves the byte total does not wait for it either.
   const hdrRequests: string[] = [];
@@ -75,8 +73,6 @@ test('gates the experience until the visitor activates Load Experience', async (
     timeout: 15_000,
   });
 
-  const errors = messages.filter((message) => message.type() === 'error');
-  expect(errors, 'no console messages of type error').toHaveLength(0);
   expect(hdrRequests, 'the default sky requests no .hdr file').toHaveLength(0);
 });
 
@@ -104,7 +100,6 @@ test('counts and fetches the HDR once under the ?sky=hdr diagnostic', async ({ p
 
 // Keyboard Enter activation on the focused Load button
 test('activates Load Experience on Enter from the keyboard', async ({ page }) => {
-
   // Hold the rotunda so the loading state after the Enter press is observed while held, instead of
   // raced against the content that ends it.
   const rotunda = await holdFirstRequest(page, '**/content/rotunda.glb', LOADING_HOLD_TIMEOUT_MS);

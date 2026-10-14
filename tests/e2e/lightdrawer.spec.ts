@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import { waitForTooltipInstallation } from './support/a11y-mount';
 import { assertCanvasPreserved, nextProofReading, stableDrawCalls } from './support/preservation';
@@ -43,27 +43,8 @@ interface DesktopBar {
   controls: BarControl[];
 }
 
-interface ErrorLog {
-  console: string[];
-  page: string[];
-}
-
 function skipUnlessWebgl2(): void {
   test.skip(test.info().project.name !== 'webgl2', 'DOM behavior is covered once on WebGL2');
-}
-
-function watchErrors(page: Page): ErrorLog {
-  const errors: ErrorLog = { console: [], page: [] };
-  page.on('console', (message) => {
-    if (message.type() === 'error') errors.console.push(message.text());
-  });
-  page.on('pageerror', (error) => errors.page.push(error.message));
-  return errors;
-}
-
-function expectNoErrors(errors: ErrorLog): void {
-  expect(errors.console, 'no console errors').toEqual([]);
-  expect(errors.page, 'no uncaught page errors').toEqual([]);
 }
 
 async function openScene(
@@ -227,7 +208,7 @@ test.describe('simplified Light Control drawer and rig', () => {
       page,
     }) => {
       skipUnlessWebgl2();
-      const errors = watchErrors(page);
+
       await page.setViewportSize(viewport);
       await openScene(page);
       const toggle = page.locator('#shell-light-toggle');
@@ -256,13 +237,13 @@ test.describe('simplified Light Control drawer and rig', () => {
       await expect(panel).toBeHidden();
       await expect(toggle).toHaveAttribute('aria-expanded', 'false');
       assertCanvasPreserved(before, (await nextProofReading(page)).canvas, 'closing');
-      expectNoErrors(errors);
+
     });
   }
 
   test('exact control census, labels, and removed-control absence', async ({ page }) => {
     skipUnlessWebgl2();
-    const errors = watchErrors(page);
+
     await page.setViewportSize({ width: 1440, height: 900 });
     await openScene(page);
     await page.locator('#shell-light-toggle').click();
@@ -309,7 +290,6 @@ test.describe('simplified Light Control drawer and rig', () => {
     ]) {
       await expect(panel.locator(selector), `${selector} is absent`).toHaveCount(0);
     }
-    expectNoErrors(errors);
   });
 
   // The 44 px rule holds wherever the drawer is a sheet or the tablet drawer. The desktop bar is
@@ -320,7 +300,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     }) => {
       skipUnlessWebgl2();
       test.setTimeout(120_000);
-      const errors = watchErrors(page);
+
       await page.setViewportSize(viewport);
       await openScene(page);
       await installSafeArea(page);
@@ -370,7 +350,7 @@ test.describe('simplified Light Control drawer and rig', () => {
         viewport,
         'last scrollable control',
       );
-      expectNoErrors(errors);
+
     });
   }
 
@@ -385,7 +365,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     }) => {
       skipUnlessWebgl2();
       test.setTimeout(120_000);
-      const errors = watchErrors(page);
+
       await page.setViewportSize(viewport);
       await openScene(page);
       expect(await page.evaluate(() => matchMedia('(pointer: fine)').matches), 'fine pointer').toBe(true);
@@ -423,11 +403,11 @@ test.describe('simplified Light Control drawer and rig', () => {
         expect(control.hit, `${control.id}: owns its centre; hit ${control.hitName}`).toBe(true);
         expect(control.bottom, `${control.id}: inside the viewport`).toBeLessThanOrEqual(viewport.height);
       }
-      expectNoErrors(errors);
+
     });
   }
 
-  test('desktop coarse-pointer bar keeps 44px targets with every column visible', async ({ browser }) => {
+  test('desktop coarse-pointer bar keeps 44px targets with every column visible', async ({ guardedBrowser: browser }) => {
     skipUnlessWebgl2();
     test.setTimeout(120_000);
     const context = await browser.newContext({
@@ -437,7 +417,7 @@ test.describe('simplified Light Control drawer and rig', () => {
       hasTouch: true,
     });
     const page = await context.newPage();
-    const errors = watchErrors(page);
+
     try {
       await openScene(page);
       expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), 'coarse pointer').toBe(true);
@@ -463,7 +443,7 @@ test.describe('simplified Light Control drawer and rig', () => {
         expect(control.height, `${control.id}: 44px tall`).toBeGreaterThanOrEqual(44);
         expect(control.hit, `${control.id}: owns its centre; hit ${control.hitName}`).toBe(true);
       }
-      expectNoErrors(errors);
+
     } finally {
       await context.close();
     }
@@ -472,7 +452,7 @@ test.describe('simplified Light Control drawer and rig', () => {
   test('desktop forced colours keep native controls at 24px with hit ownership', async ({ page }) => {
     skipUnlessWebgl2();
     test.setTimeout(120_000);
-    const errors = watchErrors(page);
+
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ forcedColors: 'active' });
     await openScene(page);
@@ -493,7 +473,6 @@ test.describe('simplified Light Control drawer and rig', () => {
       expect(control.height, `${control.id}: 24px tall`).toBeGreaterThanOrEqual(24);
       expect(control.hit, `${control.id}: owns its centre; hit ${control.hitName}`).toBe(true);
     }
-    expectNoErrors(errors);
   });
 
   // Opening the bar moves focus to its first control. Keyboard opening shows that control's
@@ -501,7 +480,7 @@ test.describe('simplified Light Control drawer and rig', () => {
   test('desktop bar shows the focus tooltip after keyboard opening only', async ({ page }) => {
     skipUnlessWebgl2();
     test.setTimeout(120_000);
-    const errors = watchErrors(page);
+
     await page.setViewportSize({ width: 1440, height: 900 });
     await openScene(page);
     // The tooltip module installs after the ready attribute; the mouse-open branch would pass without it.
@@ -529,7 +508,6 @@ test.describe('simplified Light Control drawer and rig', () => {
     expect(await keySwitch.getAttribute('aria-describedby')).toBe('a11y-tooltip');
     await page.keyboard.press('Escape');
     await expect(tooltip).toBeHidden();
-    expectNoErrors(errors);
   });
 
   for (const viewport of VIEWPORTS.filter((entry) => entry.sheet)) {
@@ -538,7 +516,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     }) => {
       skipUnlessWebgl2();
       test.setTimeout(120_000);
-      const errors = watchErrors(page);
+
       await page.setViewportSize(viewport);
       await openScene(page);
       await installSafeArea(page);
@@ -592,14 +570,14 @@ test.describe('simplified Light Control drawer and rig', () => {
       await expect(rail).toBeVisible();
       await assertHitAndSafe(firstRailControl, viewport, 'post-Escape rail first item');
       await waitForLoopIdle(page);
-      expectNoErrors(errors);
+
     });
   }
 
   test('keyboard, pointer, native inputs, persistence, share state, and idle', async ({ page }) => {
     skipUnlessWebgl2();
     test.setTimeout(120_000);
-    const errors = watchErrors(page);
+
     await page.setViewportSize({ width: 1440, height: 900 });
     await openScene(page);
     const toggle = page.locator('#shell-light-toggle');
@@ -664,12 +642,11 @@ test.describe('simplified Light Control drawer and rig', () => {
     await expect(panel).toBeHidden();
     await expect(toggle).toBeFocused();
     await waitForLoopIdle(page);
-    expectNoErrors(errors);
   });
 
   test('warm and cool colors round-trip exactly for every studio light on each backend', async ({ page }) => {
     test.setTimeout(120_000);
-    const errors = watchErrors(page);
+
     await page.setViewportSize({ width: 1440, height: 900 });
     const backend = test.info().project.name;
     const scenePath =
@@ -726,12 +703,11 @@ test.describe('simplified Light Control drawer and rig', () => {
     await assertPanelColors();
     await expectRigAndUrl(page, expectedRig());
     await waitForLoopIdle(page);
-    expectNoErrors(errors);
   });
 
   test('daylight drag serializes coordinated exposure exactly on each backend', async ({ page }) => {
     test.setTimeout(120_000);
-    const errors = watchErrors(page);
+
     await page.setViewportSize({ width: 1440, height: 900 });
     const backend = test.info().project.name;
     const canvas = await openScene(
@@ -764,14 +740,13 @@ test.describe('simplified Light Control drawer and rig', () => {
       'v2;key,1,15,ffffff;fill,0,7,ffffff;back,0,7,ffffff;day,0.85;e,0.93',
     );
     await waitForLoopIdle(page);
-    expectNoErrors(errors);
   });
 
   test('three-point states and intensity endpoints retain one draw-call census on each backend', async ({
     page,
   }) => {
     test.setTimeout(120_000);
-    const errors = watchErrors(page);
+
     await page.setViewportSize({ width: 1440, height: 900 });
     const backend = test.info().project.name;
     const scenePath =
@@ -851,7 +826,6 @@ test.describe('simplified Light Control drawer and rig', () => {
     enabled.back = false;
     await expectDefaultRigWithoutUrl(page, expectedRig());
     await waitForLoopIdle(page);
-    expectNoErrors(errors);
   });
 
   test('closed drawer preserves card, rail, Measure, music, and responsive focus continuity', async ({
@@ -859,7 +833,7 @@ test.describe('simplified Light Control drawer and rig', () => {
   }) => {
     skipUnlessWebgl2();
     test.setTimeout(120_000);
-    const errors = watchErrors(page);
+
     await page.setViewportSize({ width: 1440, height: 900 });
     await openScene(page);
     const toggle = page.locator('#shell-light-toggle');
@@ -888,13 +862,11 @@ test.describe('simplified Light Control drawer and rig', () => {
     await expect(toggle).toBeFocused();
     await page.setViewportSize({ width: 820, height: 1180 });
     await expect(panel).toBeHidden();
-    expectNoErrors(errors);
   });
 
-  test('touchscreen tap opens and closes the phone drawer', async ({ browser }) => {
+  test('touchscreen tap opens and closes the phone drawer', async ({ guardedBrowser: browser }) => {
     skipUnlessWebgl2();
     const touch = await newTouchPage(browser);
-    const errors = watchErrors(touch.page);
     try {
       await openScene(touch.page);
       const toggle = touch.page.locator('#shell-light-toggle');
@@ -912,7 +884,7 @@ test.describe('simplified Light Control drawer and rig', () => {
         closeBox.y + closeBox.height / 2,
       );
       await expect(touch.page.locator('#shell-light-panel')).toBeHidden();
-      expectNoErrors(errors);
+
     } finally {
       await touch.context.close();
     }
@@ -960,7 +932,7 @@ test.describe('simplified Light Control drawer and rig', () => {
 
   test('WebGPU smoke opens the drawer and updates serialized rig when available', async ({ page }) => {
     test.skip(test.info().project.name !== 'webgpu', 'WebGPU smoke belongs to the WebGPU project');
-    const errors = watchErrors(page);
+
     await page.setViewportSize({ width: 1440, height: 900 });
     const canvas = await openScene(page, '/?gate=off&e2e=1&proof=1&music=off');
     await expect(canvas).toHaveAttribute('data-backend', 'webgpu');
@@ -975,6 +947,5 @@ test.describe('simplified Light Control drawer and rig', () => {
     const before = await page.evaluate(() => window.archvizE2E?.rigState() ?? null);
     await key.click();
     await expect.poll(() => page.evaluate(() => window.archvizE2E?.rigState() ?? null)).not.toBe(before);
-    expectNoErrors(errors);
   });
 });

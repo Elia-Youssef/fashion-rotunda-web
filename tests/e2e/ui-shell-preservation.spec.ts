@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import { assertRendererPreserved, nextProofReading } from './support/preservation';
 import type { Page } from '@playwright/test';

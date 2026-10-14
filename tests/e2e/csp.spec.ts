@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, browserReports } from './support/fixtures';
 import { PNG } from 'pngjs';
 import { CONTENT_SECURITY_POLICY } from '../../src/content-security-policy';
 import { waitForSceneInitialization } from './support/ready';
@@ -25,13 +25,6 @@ const MUSIC_START_TIMEOUT = 15_000;
 const POLICY_CONSOLE_MESSAGE = /content security policy|violates.*directive|refused to (?:load|connect|execute|evaluate|create|apply)/i;
 
 test('production policy permits loading, interaction, music and screenshot without violations', async ({ page }) => {
-  const consoleRefusals: string[] = [];
-  page.on('console', (message) => {
-    if (POLICY_CONSOLE_MESSAGE.test(message.text())) {
-      const source = message.location();
-      consoleRefusals.push(`${message.text()} [${source.url}:${source.lineNumber}]`);
-    }
-  });
   await page.addInitScript(() => {
     const violations: PolicyViolation[] = [];
     window.cspViolations = violations;
@@ -129,6 +122,9 @@ test('production policy permits loading, interaction, music and screenshot witho
       await new Promise<void>((resolve) => setTimeout(resolve));
       return window.cspViolations ?? [];
     });
+    const consoleRefusals = browserReports(page).filter((message) =>
+      message.kind === 'console' && POLICY_CONSOLE_MESSAGE.test(message.text))
+      .map((message) => `${message.text} [${message.location}]`);
     const details = [
       ...violations.map((entry) =>
         `${entry.directive}: blocked ${entry.blockedURI} at ${entry.sourceFile}:${entry.lineNumber}`),

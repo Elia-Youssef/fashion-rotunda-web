@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test';
+import { expect } from './fixtures';
 import type { Page } from '@playwright/test';
 
 /** Holds one matching request until the test has sent its competing intent. */

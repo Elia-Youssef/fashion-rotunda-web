@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from './support/fixtures';
+import type { Page } from '@playwright/test';
 
 const SCENE_READY_TIMEOUT = 60_000;
 // Onboarding mounts with the a11y module after the ready attribute is published, so the card

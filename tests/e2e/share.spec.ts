@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import { waitForLoopIdle } from './support/ready';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { PNG } from 'pngjs';
@@ -28,19 +28,6 @@ async function readCatalog(request: APIRequestContext): Promise<Catalog> {
   return parseCatalog(json);
 }
 
-function recordConsoleErrors(page: Page): string[] {
-  const errors: string[] = [];
-  page.on('console', (msg) => {
-    if (msg.type() === 'error') {
-      errors.push(msg.text());
-    }
-  });
-  page.on('pageerror', (err) => {
-    errors.push(err.message);
-  });
-  return errors;
-}
-
 /** Reads the capture source buffer after the shared idle/frame-delivery proof. */
 async function settledDrawingBufferSize(page: Page): Promise<{ width: number; height: number }> {
   await waitForLoopIdle(page);
@@ -52,7 +39,6 @@ async function settledDrawingBufferSize(page: Page): Promise<{ width: number; he
 
 test('updates the address bar when changing look and swatch', async ({ page, request }) => {
   skipUnlessWebgl2();
-  const errors = recordConsoleErrors(page);
   const catalog = await readCatalog(request);
   const third = catalog.looks[2];
 
@@ -78,8 +64,6 @@ test('updates the address bar when changing look and swatch', async ({ page, req
 
   const entriesAfter = await page.evaluate(() => history.length);
   expect(entriesAfter, 'the state writes add no history entries').toBe(entriesBefore);
-
-  expect(errors).toEqual([]);
 });
 
 test('restores look, variant, camera pose, yaw and turntable from deep link', async ({
@@ -87,7 +71,6 @@ test('restores look, variant, camera pose, yaw and turntable from deep link', as
   request,
 }) => {
   skipUnlessWebgl2();
-  const errors = recordConsoleErrors(page);
   const catalog = await readCatalog(request);
   const third = catalog.looks[2];
 
@@ -124,13 +107,10 @@ test('restores look, variant, camera pose, yaw and turntable from deep link', as
     expect(Math.abs(pos[1] - 2.0)).toBeLessThanOrEqual(0.01);
     expect(Math.abs(pos[2] - 3.0)).toBeLessThanOrEqual(0.01);
   }
-
-  expect(errors).toEqual([]);
 });
 
 test('captures and downloads a still at twice the canvas dimensions', async ({ page }) => {
   skipUnlessWebgl2();
-  const errors = recordConsoleErrors(page);
 
   await page.goto('/?webgl=1&e2e=1');
   const canvas = page.locator('canvas#scene');
@@ -188,6 +168,4 @@ test('captures and downloads a still at twice the canvas dimensions', async ({ p
   expect(restoredCanvasSize.height, 'the height is no longer doubled').toBeLessThan(
     captureBufferSize.height * 1.5,
   );
-
-  expect(errors).toEqual([]);
 });

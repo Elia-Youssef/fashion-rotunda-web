@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import type { Locator, Page } from '@playwright/test';
 
 // Product-card and narration cleanup E2E verification.

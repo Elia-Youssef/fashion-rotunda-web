@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, expectConsoleError } from './support/fixtures';
 
 // The loss notice is the page's answer to a GPU that disappears mid-session. WEBGL_lose_context exists
 // on WebGL only, so this check runs in the webgl2 project. It deliberately loses the device while the
@@ -6,9 +6,6 @@ import { expect, test } from '@playwright/test';
 // Reload recovery must remain operable without exposing an unready scene.
 test('fails closed and keeps reload recovery operable when WebGL is lost during black-hold', async ({ page }) => {
   test.skip(test.info().project.name !== 'webgl2', 'WEBGL_lose_context is a WebGL extension');
-
-  const pageErrors: string[] = [];
-  page.on('pageerror', (error) => pageErrors.push(error.message));
 
   await page.goto('/?webgl=1&e2e=1&gate=on&freeze=black-hold');
   const lobby = page.locator('#entry-lobby');
@@ -18,6 +15,10 @@ test('fails closed and keeps reload recovery operable when WebGL is lost during 
   await expect(canvas).toHaveAttribute('data-backend', 'webgl2', { timeout: 60_000 });
   await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
 
+  expectConsoleError(page, /^THREE\.WebGPURenderer: WebGL Device Lost:/,
+    'WEBGL_lose_context deliberately loses the renderer while the reveal is black');
+  expectConsoleError(page, /^\[archviz\] transition error The graphics device was lost\. Reload to restore the showroom\.$/,
+    'the frozen reveal reports the deliberately lost device while showing recovery');
   await page.evaluate(() => {
     const scene = document.querySelector('canvas#scene');
     const context = scene instanceof HTMLCanvasElement ? scene.getContext('webgl2') : null;
@@ -43,5 +44,4 @@ test('fails closed and keeps reload recovery operable when WebGL is lost during 
   await reload.click();
   await navigated;
   await expect(page.locator('#entry-lobby')).toHaveAttribute('data-state', 'idle');
-  expect(pageErrors, 'no uncaught page errors during the loss').toHaveLength(0);
 });

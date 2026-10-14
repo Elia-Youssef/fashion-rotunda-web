@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test';
-import type { ConsoleMessage, Page } from '@playwright/test';
+import { expect, test } from './support/fixtures';
+import type { Page } from '@playwright/test';
 import { waitForTooltipInstallation } from './support/a11y-mount';
 
 // Onboarding, tooltips and accessibility pass.
@@ -63,13 +63,6 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
   skipUnlessWebgl2();
   // Six steps on a software-rendered page: the suite's default minute ran out under load.
   test.setTimeout(120_000);
-
-  const consoleErrors: ConsoleMessage[] = [];
-  page.on('console', (msg) => {
-    if (msg.type() === 'error') {
-      consoleErrors.push(msg);
-    }
-  });
 
   await page.goto('/?webgl=1&gate=off&onboarding=reset');
   const canvas = page.locator('canvas#scene');
@@ -212,9 +205,6 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
     await focusMatches(page, '.product-card__swatch[aria-checked="true"][tabindex="0"]'),
     'the arrow key moved the check, the tab stop and the focus together',
   ).toBe(true);
-
-  // 8. No console message of type error
-  expect(consoleErrors, 'no console messages of type error').toHaveLength(0);
 });
 
 test('the onboarding card stays away under e2e without the flag', async ({ page }) => {

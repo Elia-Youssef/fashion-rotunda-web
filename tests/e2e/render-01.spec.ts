@@ -1,5 +1,5 @@
-import { expect, test } from '@playwright/test';
-import type { ConsoleMessage, Page } from '@playwright/test';
+import { expect, test, browserReports, settleBrowserReports } from './support/fixtures';
+import type { Page } from '@playwright/test';
 
 import { canvasGrowths, recordTextureCopies } from './support/texture-copy-recorder';
 import type { TextureCopyRecord, TextureCopyWindow } from './support/texture-copy-recorder';
@@ -25,47 +25,6 @@ const COLORS = ['#ff9a3c', '#3c9aff', '#ffffff'] as const;
 const COPY_ERROR = /GPUValidationError|Texture copy range/;
 
 test.use({ viewport: VIEWPORT, deviceScaleFactor: 1 });
-
-interface ErrorWatch {
-  reports: string[];
-  settled(): Promise<void>;
-}
-
-/** Read object arguments too: the renderer's WebGPU error message can be truncated in text(). */
-async function describeConsoleMessage(message: ConsoleMessage): Promise<string> {
-  const parts = await Promise.all(message.args().map((handle) => handle.evaluate((value: unknown) => {
-    if (typeof value === 'object' && value !== null && 'message' in value) {
-      const kind = 'type' in value && typeof value.type === 'string' ? `${value.type}: ` : '';
-      return `${kind}${String(value.message)}`;
-    }
-    return String(value);
-  }).catch(() => '')));
-  return `${message.text()} | ${parts.join(' | ')}`;
-}
-
-/** Extra diagnostics for the whole run; the native copy recorder is the primary check. */
-function watchErrors(page: Page): ErrorWatch {
-  const reports: string[] = [];
-  const pending: Promise<void>[] = [];
-  const note = (text: string): void => {
-    if (COPY_ERROR.test(text)) {
-      reports.push(text);
-    }
-  };
-  page.on('console', (message) => {
-    const type = message.type();
-    if (type !== 'error' && type !== 'warning') {
-      return;
-    }
-    if (reports.length > 0) {
-      note(message.text());
-      return;
-    }
-    pending.push(describeConsoleMessage(message).then((text) => note(`console ${type}: ${text}`)));
-  });
-  page.on('pageerror', (error) => note(`page error: ${error.name}: ${error.message}`));
-  return { reports, settled: async () => { await Promise.all(pending); } };
-}
 
 async function readRecord(page: Page): Promise<TextureCopyRecord> {
   return page.evaluate(() => {
@@ -95,7 +54,6 @@ async function drawLightFrame(page: Page, round: number): Promise<void> {
 test('scaler growth at rest leaves no out-of-range WebGPU texture copies', async ({ page }) => {
   test.skip(test.info().project.name !== 'webgpu', 'native texture-copy validation needs the WebGPU project');
   test.setTimeout(TEST_TIMEOUT_MS);
-  const watch = watchErrors(page);
   await page.addInitScript(recordTextureCopies);
   await page.goto(SCENE_PATH, { timeout: SCENE_READY_TIMEOUT_MS });
   const canvas = page.locator('canvas#scene');
@@ -156,12 +114,13 @@ test('scaler growth at rest leaves no out-of-range WebGPU texture copies', async
   for (let round = 0; round < LIGHT_CHANGE_COUNT; round += 1) {
     await drawLightFrame(page, round + 2);
   }
-  await watch.settled();
+  await settleBrowserReports(page);
+  const copyReports = browserReports(page).filter((report) => COPY_ERROR.test(report.detail));
   const record = await readRecord(page);
   const grownScaler = await page.evaluate(() => window.archvizE2E?.scaler.diagnostics());
   await test.info().attach('texture-copy-record', {
     body: JSON.stringify({ record, rebuildWidth, rebuiltScaler, grownScaler,
-      consoleAndPageErrors: watch.reports }, null, 2),
+      consoleAndPageErrors: copyReports }, null, 2),
     contentType: 'application/json',
   });
 
@@ -182,5 +141,5 @@ test('scaler growth at rest leaves no out-of-range WebGPU texture copies', async
     record.copies.length,
     `${record.copies.length} out-of-range texture copies; first: ${JSON.stringify(record.copies[0] ?? null)}`,
   ).toBe(0);
-  expect(watch.reports, `extra WebGPU error check; first: ${watch.reports[0] ?? 'none'}`).toEqual([]);
+  expect(copyReports, `extra WebGPU error check; first: ${copyReports[0] ?? 'none'}`).toEqual([]);
 });

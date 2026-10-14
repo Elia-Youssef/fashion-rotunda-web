@@ -1,4 +1,5 @@
-import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
+import { expect, test, browserReports } from './support/fixtures';
+import type { Page } from '@playwright/test';
 import { canvasStats } from './support/pixels';
 
 type Backend = 'webgpu' | 'webgl2';
@@ -37,8 +38,6 @@ async function skipWhenWebGPUUnavailable(page: Page, backend: Backend): Promise<
 
 test('renders on the expected backend', async ({ page }) => {
   const backend = expectedBackend();
-  const messages: ConsoleMessage[] = [];
-  page.on('console', (message) => messages.push(message));
 
   await page.goto(targetPath(backend));
   await skipWhenWebGPUUnavailable(page, backend);
@@ -51,10 +50,8 @@ test('renders on the expected backend', async ({ page }) => {
   // The badge is the on-screen twin of the attribute: the same backend, upper case, in the side panel.
   await expect(page.locator('aside .badge')).toContainText(backend.toUpperCase());
 
-  const backendLines = messages.filter((message) => message.text().startsWith(BACKEND_LOG_PREFIX));
+  const backendLines = browserReports(page).filter((message) => message.kind === 'console' && message.text.startsWith(BACKEND_LOG_PREFIX));
   expect(backendLines, 'exactly one renderer backend console line').toHaveLength(1);
-  const errors = messages.filter((message) => message.type() === 'error');
-  expect(errors, 'no console messages of type error').toHaveLength(0);
 });
 
 test('draws something', async ({ page }) => {

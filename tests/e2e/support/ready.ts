@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test';
+import { expect } from './fixtures';
 import type { Page } from '@playwright/test';
 
 /** The final hook is installed after shader compilation and the initialization draw. */

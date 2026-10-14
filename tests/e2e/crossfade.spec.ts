@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import { waitForSceneInitialization } from './support/ready';
-import type { ConsoleMessage, Locator, Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { CROSSFADE_MS, MAX_FADE_STEP_MS } from '../../src/scene/crossfade';
 import { parseCatalog } from '../../src/catalog/catalog';
 import { holdFirstRequest } from './support/held-request';
@@ -70,12 +70,6 @@ async function openScene(page: Page, path: string): Promise<Locator> {
 
 test('cross-fades to the third look and measures the switch', async ({ page }) => {
   skipUnlessWebgl2();
-  const errors: ConsoleMessage[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message);
-    }
-  });
 
   const canvas = await openScene(page, '/?webgl=1&e2e=1');
   // The strip mounts after the tier benchmark, which runs for up to two seconds after ready.
@@ -121,10 +115,6 @@ test('cross-fades to the third look and measures the switch', async ({ page }) =
   );
 
   await expect(canvas).toHaveAttribute('data-look', String(thirdId));
-  expect(
-    errors.map((message) => message.text()),
-    'no console errors during the switch',
-  ).toEqual([]);
 });
 
 test('two clicks in a row end on the second look and stack nothing on the plinth', async ({
@@ -133,12 +123,6 @@ test('two clicks in a row end on the second look and stack nothing on the plinth
 }) => {
   skipUnlessWebgl2();
   test.setTimeout(RAPID_RUN_TIMEOUT);
-  const errors: ConsoleMessage[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(message);
-    }
-  });
 
   const canvas = await openScene(page, '/?webgl=1&e2e=1');
   const thumbnails = page.locator('nav#looks button');
@@ -189,9 +173,4 @@ test('two clicks in a row end on the second look and stack nothing on the plinth
   await expect(canvas).toHaveAttribute('data-memory', String(memoryBefore), {
     timeout: FADE_TIMEOUT,
   });
-
-  expect(
-    errors.map((message) => message.text()),
-    'no console errors during the rapid pair',
-  ).toEqual([]);
 });

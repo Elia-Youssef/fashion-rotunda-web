@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
 import { ResizeHandshake } from './support/resize-handshake';
 import { BEFORE_RESIZE, RESIZE_VIEWPORT, STALE_BUFFER } from './support/resize-snapshots';
@@ -49,17 +49,6 @@ interface GovernorDiagnosticsJson {
     atMs: number;
     reason: string;
   }[];
-}
-
-function watchPageErrors(page: Page, errors: string[]): void {
-  page.on('pageerror', (error) => {
-    errors.push(`pageerror: ${error.message}`);
-  });
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.push(`console.error: ${message.text()}`);
-    }
-  });
 }
 
 async function diagnostics(page: Page): Promise<GovernorDiagnosticsJson | null> {
@@ -157,8 +146,6 @@ test('the governor degrades, holds its cooldown, and recovers on webgpu', async 
   // Replaying a delayed buffer guards the handshake even when a browser delivers resize atomically.
   const replay = new ResizeHandshake(BEFORE_RESIZE, RESIZE_VIEWPORT).poll(STALE_BUFFER);
   expect(replay.sizeReady, 'the resize predicate rejects a stale buffer after the CSS box changes').toBe(false);
-  const errors: string[] = [];
-  watchPageErrors(page, errors);
 
   // 1. Actual WebGPU or the run is a failure, never a silent WebGL2 substitute.
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -443,9 +430,6 @@ test('the governor degrades, holds its cooldown, and recovers on webgpu', async 
       2,
     ),
   );
-
-  // 12. Zero page errors and zero console errors.
-  expect(errors, 'no page errors and no console errors').toEqual([]);
 });
 
 test('no governor exists on the webgl2 backend or forced post slices', async ({ page }) => {
@@ -453,8 +437,6 @@ test('no governor exists on the webgl2 backend or forced post slices', async ({ 
     test.info().project.name !== 'webgl2',
     'this absence check asserts the WebGL 2 chain has no enhanced-tier governor',
   );
-  const errors: string[] = [];
-  watchPageErrors(page, errors);
 
   await page.goto('/?e2e=1&gate=off');
   const canvas = page.locator('canvas#scene');
@@ -474,5 +456,4 @@ test('no governor exists on the webgl2 backend or forced post slices', async ({ 
   await expect
     .poll(async () => (await canvas.getAttribute('data-governor')) ?? '', { timeout: POLL_TIMEOUT })
     .toBe('off');
-  expect(errors, 'no page errors and no console errors').toEqual([]);
 });

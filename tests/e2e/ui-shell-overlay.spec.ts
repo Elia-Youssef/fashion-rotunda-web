@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
 
 // The overlay shell contract. The canvas is the full scene field beneath the chrome, so

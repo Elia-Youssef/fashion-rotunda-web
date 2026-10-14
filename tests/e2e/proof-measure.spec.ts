@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
 
 const SCENE_READY_TIMEOUT_MS = 60_000;

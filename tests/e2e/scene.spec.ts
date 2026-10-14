@@ -1,6 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, browserReports } from './support/fixtures';
 import { waitForSceneInitialization } from './support/ready';
-import type { APIRequestContext, ConsoleMessage, Locator, Page } from '@playwright/test';
+import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import { canvasStats } from './support/pixels';
 import { backendPath, projectBackend } from './support/backend';
 import { parseCatalog } from '../../src/catalog/catalog';
@@ -76,18 +76,13 @@ test('falls back to the defaults, with a warning, on a url that names neither', 
   skipUnlessWebgl2();
   const catalog = await readCatalog(request);
   const first = catalog.looks[0];
-  const warnings: ConsoleMessage[] = [];
-  page.on('console', (message) => {
-    if (message.type() === 'warning' && message.text().startsWith('[archviz]')) {
-      warnings.push(message);
-    }
-  });
 
   const canvas = await openScene(page, '/?webgl=1&gate=off&look=doublet&variant=chrome');
 
   await expect(canvas).toHaveAttribute('data-look', first.id);
   await expect(canvas).toHaveAttribute('data-variant', first.defaultVariant);
-  expect(warnings.map((message) => message.text())).toEqual([
+  expect(browserReports(page).filter((message) => message.type === 'warning' &&
+    message.text.startsWith('[archviz]')).map((message) => message.text)).toEqual([
     expect.stringContaining('doublet'),
     expect.stringContaining('chrome'),
   ]);

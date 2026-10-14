@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 
 const SCENE_TIMEOUT_MS = 60_000;
 

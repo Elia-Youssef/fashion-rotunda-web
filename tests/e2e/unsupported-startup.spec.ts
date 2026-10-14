@@ -1,4 +1,4 @@
-import { chromium, expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
 
 // Startup with no startable backend: Chromium launched with its graphics APIs disabled still
@@ -53,9 +53,9 @@ async function readSurface(page: Page): Promise<{
   });
 }
 
-test('flags: unsupported surface after Load, no retry drawn, no content request', async ({ baseURL }) => {
+test('flags: unsupported surface after Load, no retry drawn, no content request', async ({ baseURL, launchBrowser }) => {
   skipUnlessWebgl2();
-  const browser = await chromium.launch({ headless: true, args: DISABLED_GRAPHICS_FLAGS });
+  const browser = await launchBrowser({ headless: true, args: DISABLED_GRAPHICS_FLAGS });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     const contentUrls = watchContentRequests(page);
@@ -93,9 +93,9 @@ test('flags: unsupported surface after Load, no retry drawn, no content request'
   }
 });
 
-test('deleted APIs: unsupported surface at mount, retry button not drawn', async ({ baseURL }) => {
+test('deleted APIs: unsupported surface at mount, retry button not drawn', async ({ baseURL, launchBrowser }) => {
   skipUnlessWebgl2();
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchBrowser({ headless: true });
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     const contentUrls = watchContentRequests(page);

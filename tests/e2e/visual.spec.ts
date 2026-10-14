@@ -1,6 +1,6 @@
 // Renderer-only WebGL 2 visual baselines at the catalogue proof pose.
 
-import { expect, test } from '@playwright/test';
+import { expect, test, browserReports, settleBrowserReports } from './support/fixtures';
 import { waitForLoopIdle } from './support/ready';
 import type { Locator, Page } from '@playwright/test';
 
@@ -345,13 +345,6 @@ async function expectRendererOnlyScreenshot(
 test('visual baselines for the first look and the New Look Dress', async ({ page }) => {
   skipUnlessWebgl2();
   test.setTimeout(TEST_TIMEOUT);
-  const errors = { console: [] as string[], page: [] as string[] };
-  page.on('console', (message) => {
-    if (message.type() === 'error') {
-      errors.console.push(message.text());
-    }
-  });
-  page.on('pageerror', (error) => errors.page.push(error.message));
 
   await page.setViewportSize(EXPECTED_VIEWPORT);
   await page.goto(`/${VISUAL_QUERY}`);
@@ -363,6 +356,7 @@ test('visual baselines for the first look and the New Look Dress', async ({ page
   const firstProfile = await resetAndExpectProofPose(page, canvas);
   expectExactRendererProfile(firstProfile, EXPECTED_LOOKS.first);
 
+  await settleBrowserReports(page);
   await test.info().attach('renderer-visual-protocol.json', {
     body: JSON.stringify(
       {
@@ -371,7 +365,7 @@ test('visual baselines for the first look and the New Look Dress', async ({ page
         proof: { position: PROOF_POSITION, target: PROOF_TARGET, fovDegrees: PROOF_FOV_DEGREES },
         stabilization,
         firstProfile,
-        errors,
+        errors: browserReports(page),
       },
       null,
       2,
@@ -404,6 +398,4 @@ test('visual baselines for the first look and the New Look Dress', async ({ page
 
   // Baseline 2: The New Look Dress after the switch.
   await expectRendererOnlyScreenshot(page, canvas, 'new-look-dress.png');
-  expect(errors.console, 'the controlled visual run has no console errors').toEqual([]);
-  expect(errors.page, 'the controlled visual run has no uncaught page errors').toEqual([]);
 });

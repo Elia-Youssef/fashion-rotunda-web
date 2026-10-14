@@ -1,4 +1,4 @@
-import { test } from '@playwright/test';
+import { test } from './fixtures';
 
 /** The renderer backend each configured project is expected to exercise. */
 export function projectBackend(): 'webgpu' | 'webgl2' {

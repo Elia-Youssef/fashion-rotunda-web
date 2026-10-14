@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './support/fixtures';
 import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import { parseCatalog } from '../../src/catalog/catalog';
 import type { Catalog } from '../../src/catalog/catalog';

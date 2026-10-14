@@ -1,4 +1,5 @@
-import { expect, test, type ConsoleMessage, type Page } from '@playwright/test';
+import { expect, test } from './support/fixtures';
+import type { Page } from '@playwright/test';
 import { backendPath } from './support/backend';
 
 // The music switch in the header on both backends. Both projects default to headless and muted
@@ -31,16 +32,6 @@ async function openWithScene(page: Page, path: string) {
   return canvas;
 }
 
-/** Every test ends on a clean console: no message of type error, the smoke suite's rule. */
-function watchConsole(page: Page): () => void {
-  const messages: ConsoleMessage[] = [];
-  page.on('console', (message) => messages.push(message));
-  return () => {
-    const errors = messages.filter((message) => message.type() === 'error');
-    expect(errors, 'no console messages of type error').toHaveLength(0);
-  };
-}
-
 /**
  * Every request the page made for a music file or the manifest. "Music off" has to be free: not a
  * quiet page that fetched 1.2 MB of Opus anyway, which is what a switch wired to the gain alone
@@ -65,7 +56,6 @@ function watchMusicRequests(page: Page): { seen: () => string[]; clear: () => vo
 test('starts on the switch, stops on it, and remembers the stop', async ({ page }) => {
   // Two scene loads in one test, the second one warm: the file's own budget, not the config's.
   test.setTimeout(90_000);
-  const expectClean = watchConsole(page);
   const musicRequests = watchMusicRequests(page);
   await openWithScene(page, backendPath('/?e2e=1&music=off'));
   const button = switchButton(page);
@@ -98,8 +88,6 @@ test('starts on the switch, stops on it, and remembers the stop', async ({ page 
   await expect(button).toHaveAttribute('data-music', 'off');
   await expect(button).toHaveAttribute('aria-pressed', 'false');
   expect(musicRequests.seen(), 'the remembered stop fetches nothing either').toEqual([]);
-
-  expectClean();
 });
 
 test('arms until the first gesture anywhere on the page', async ({ page }) => {
@@ -107,7 +95,6 @@ test('arms until the first gesture anywhere on the page', async ({ page }) => {
     test.info().project.name !== 'webgl2',
     'bundled Chromium blocks autoplay without a gesture; installed Chrome may allow it',
   );
-  const expectClean = watchConsole(page);
   const musicRequests = watchMusicRequests(page);
   await page.goto(backendPath('/?e2e=1'));
   const button = switchButton(page);
@@ -129,11 +116,9 @@ test('arms until the first gesture anywhere on the page', async ({ page }) => {
   // starts once the scene is ready.
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
   await expect(button).toHaveAttribute('data-music', 'playing', { timeout: PLAYING_TIMEOUT });
-  expectClean();
 });
 
 test('keeps the position across a pause and a resume', async ({ page }) => {
-  const expectClean = watchConsole(page);
   await openWithScene(page, backendPath('/?e2e=1&music=off'));
   const button = switchButton(page);
   await button.click();
@@ -201,5 +186,4 @@ test('keeps the position across a pause and a resume', async ({ page }) => {
       timeout: PROGRESS_TIMEOUT,
     })
     .toBeGreaterThan(p2);
-  expectClean();
 });
