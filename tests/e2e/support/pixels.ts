@@ -1,7 +1,7 @@
 import type { Locator } from '@playwright/test';
 import { PNG } from 'pngjs';
 
-export interface CanvasStats {
+interface CanvasStats {
   width: number;
   height: number;
   distinctColours: number;

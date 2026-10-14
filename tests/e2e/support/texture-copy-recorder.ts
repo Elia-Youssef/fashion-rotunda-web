@@ -1,4 +1,4 @@
-export interface CanvasAssignment {
+interface CanvasAssignment {
   atMs: number;
   axis: 'width' | 'height';
   from: number;
@@ -14,7 +14,7 @@ interface CopyTexture {
   format: string;
 }
 
-export interface OutOfRangeCopy {
+interface OutOfRangeCopy {
   atMs: number;
   encoder: string;
   extent: number[];

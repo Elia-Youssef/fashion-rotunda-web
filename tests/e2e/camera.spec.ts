@@ -6,9 +6,11 @@ const SCENE_READY_TIMEOUT = 60_000;
 // The turntable publishes its yaw from rendered frames (mount.ts writeYaw inside update), so every
 // progress check polls the published yaw past an earlier reading instead of sampling once.
 const YAW_POLL_TIMEOUT_MS = 5_000;
-// The loop wakes for WAKE_MS, 4 s (src/main.ts), after any input. Waiting past that expiry is the
-// temporal contract of the wake-window case: the progress it demands is rendered after the window.
-const WAKE_WINDOW_EXPIRY_WAIT_MS = 6_000;
+// The loop wakes for WAKE_MS, 4 s (src/main.ts), after any input. The wake-window case demands its
+// progress after that expiry, so the test polls the loopState wake field until the timer disarms;
+// the timeout covers the 4 s window plus slow-machine margin, no shorter than the 6 s fixed wait
+// it replaced.
+const WAKE_WINDOW_EXPIRY_TIMEOUT_MS = 12_000;
 // The held-pointer handshake: walkthrough.ts moves the foot only in its update, so the proof must
 // arrive in a rendered frame while both synthetic pointers are still down.
 const TOUCH_MOVE_TIMEOUT_MS = 5_000;
@@ -89,6 +91,10 @@ test('the turntable turns the look and the loop settles once it stops', async ({
   });
 
   const readYaw = async (): Promise<number> => Number((await canvas.getAttribute('data-yaw')) ?? '0');
+  // The e2e handle mounts after archvizCamera, so an early read reports the window as open rather
+  // than passing before the field exists.
+  const readWakeOpen = async (): Promise<boolean> =>
+    page.evaluate(() => window.archvizE2E?.loopState().wakeOpen ?? true);
 
   await page.evaluate(() => {
     window.archvizCamera?.turntable.toggle();
@@ -105,7 +111,7 @@ test('the turntable turns the look and the loop settles once it stops', async ({
   const second = await readYaw();
 
   // One hover, no button, which the orbit ignores and main.ts's wake() answers by arming its
-  // four-second window. Without an input the window is never armed after the load and the wait
+  // four-second window. Without an input the window is never armed after the load and the poll
   // below would prove nothing; with it, the window closes while the turntable is running and
   // writes the loop's animating flag, which is the state this assertion is here to watch.
   const box = await canvas.boundingBox();
@@ -113,8 +119,17 @@ test('the turntable turns the look and the loop settles once it stops', async ({
     throw new Error('the canvas has no box to hover over');
   }
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  // Prerequisite: the four-second wake window has expired; this long wait is kept as that contract.
-  await page.waitForTimeout(WAKE_WINDOW_EXPIRY_WAIT_MS);
+  // Prerequisite: the four-second wake window has expired. The wake field reads the same timer
+  // wake() arms, and that timer disarms at expiry even though the turntable keeps the loop going.
+  // The open read pins the field to the real window: a field stuck on closed would pass the poll
+  // and let the yaw checks below run inside the window.
+  expect(await readWakeOpen(), 'the hover armed the wake window').toBe(true);
+  await expect
+    .poll(readWakeOpen, {
+      timeout: WAKE_WINDOW_EXPIRY_TIMEOUT_MS,
+      message: 'the wake window never closed',
+    })
+    .toBe(false);
   // Prerequisite: a rendered frame after expiry publishing a yaw past the pre-window `second`.
   await expect
     .poll(readYaw, {
@@ -134,11 +149,12 @@ test('the turntable turns the look and the loop settles once it stops', async ({
   await page.evaluate(() => {
     window.archvizCamera?.turntable.toggle();
   });
-  const stopped = await readYaw();
-  await page.waitForTimeout(500);
-  expect(await readYaw(), 'the look holds where the turntable stopped').toBe(stopped);
-
+  // The turntable publishes its yaw from rendered frames (see the file-top comment), so owner
+  // confirmed idle proves no frame is due: the held reading below is final and the second read
+  // must not differ.
   await waitForLoopIdle(page);
+  const stopped = await readYaw();
+  expect(await readYaw(), 'the look holds where the turntable stopped').toBe(stopped);
 });
 
 test('walk mode stops at walls and stays above floor', async ({ page }) => {

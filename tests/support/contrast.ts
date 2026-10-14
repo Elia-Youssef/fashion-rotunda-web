@@ -8,7 +8,7 @@ export function over(foreground: Color, background: Color): Color {
   return [channels[0], channels[1], channels[2], 1];
 }
 
-export function luminance(rgb: Color): number {
+function luminance(rgb: Color): number {
   const channels = rgb.slice(0, 3).map((value) => {
     const channel = value / 255;
     return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;

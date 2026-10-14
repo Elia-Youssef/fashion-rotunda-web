@@ -31,12 +31,6 @@
   word-break: break-word;
 }
 
-.proof-panel__orbit {
-  margin-top: 0.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid #2a3038;
-}
-
 .proof-panel__actions {
   margin-top: 0.5rem;
   display: flex;

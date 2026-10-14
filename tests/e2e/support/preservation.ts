@@ -8,7 +8,7 @@ const BACKING_ROUNDING_PX = 1;
 const PIXEL_RATIO_DECIMALS = 2;
 const PROOF_REFRESH_TIMEOUT_MS = 5_000;
 
-export interface CanvasReading {
+interface CanvasReading {
   box: { x: number; y: number; width: number; height: number };
   backing: { width: number; height: number };
   devicePixelRatio: number;
@@ -104,7 +104,7 @@ export async function nextProofReading(page: Page) {
   });
 }
 
-export function assertResolution(reading: CanvasReading, label: string): void {
+function assertResolution(reading: CanvasReading, label: string): void {
   const ratio = Math.min(reading.devicePixelRatio, reading.pixelRatioCap) * reading.renderScale;
   for (const [name, value] of Object.entries({
     devicePixelRatio: reading.devicePixelRatio, pixelRatioCap: reading.pixelRatioCap,

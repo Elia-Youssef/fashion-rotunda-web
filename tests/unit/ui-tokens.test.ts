@@ -47,7 +47,7 @@ const FROZEN_SHEET_HASHES: Readonly<Record<string, string>> = {
   // 2026-10-14: the panel's three exact matches became the --border, --text-muted and --text
   // tokens; the literals left in it are near misses that share no token value, so the sheet
   // freezes at its tokenised bytes and a reintroduced literal fails the hash.
-  'proof/panel.css': '5df704f9610cefe2025689b8af2b349a8e047d07c328101ac14a5b0a4b6b97fe',
+  'proof/panel.css': '10a5eba8b2f4f27464da307d5ddb9bc194f2dd26f530974a434854f82e7dcc16',
   // Fixed-size touch controls with translucent fills, white borders and shadows of their own;
   // no token matches those values. Frozen bytes keep them from drifting.
   'camera/joystick.css': 'f4770d13697af60904f86b3d169e2b9034de09c3824bbe1148ed46e7b99851f9',

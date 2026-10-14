@@ -71,6 +71,8 @@ declare global {
         frames: number;
         moving: boolean;
         fading: boolean;
+        /** The wake() window is still open: its WAKE_MS timer is armed, whoever owns the loop. */
+        wakeOpen: boolean;
         idle: boolean;
       };
       /** Owes one loop frame without opening the continuous wake window. Returns the baseline. */
@@ -1147,6 +1149,9 @@ async function main(): Promise<void> {
             frames: frameCount,
             moving,
             fading,
+            // wake() clears the timer at expiry before it defers to camera-owned motion, so this
+            // field separates the wake window from the animating flag the camera keeps set.
+            wakeOpen: sleepTimer !== null,
             idle: canvas.dataset['scene'] === 'ready' && state.running && !state.scheduled &&
               !state.animating && !state.invalidated && !moving && !fading,
           };

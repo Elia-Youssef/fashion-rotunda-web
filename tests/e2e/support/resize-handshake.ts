@@ -18,12 +18,12 @@ export interface ResizeSnapshot {
   } | null;
 }
 
-export interface ResizeViewport {
+interface ResizeViewport {
   width: number;
   height: number;
 }
 
-export interface ResizePoll {
+interface ResizePoll {
   snapshot: ResizeSnapshot;
   checks: {
     viewport: boolean;
