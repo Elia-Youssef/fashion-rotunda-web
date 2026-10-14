@@ -124,3 +124,15 @@ test('draws something', async ({ page }) => {
     'share of the frame that is not the background colour',
   ).toBeGreaterThanOrEqual(0.02);
 });
+
+// Headless Chrome never requests the tab icon, so a broken icon link would pass every other check:
+// read the link the page declares and fetch it the way a browser tab would.
+test('links a tab icon the server delivers as the brass SVG mark', async ({ page, request }) => {
+  await page.goto('/?gate=off&e2e=1&music=off&attract=0');
+  const href = await page.locator('link[rel="icon"]').getAttribute('href');
+  expect(href, 'the page links its tab icon').toBe('/brand/fashion-rotunda-icon.svg');
+  const response = await request.get(href ?? '');
+  expect(response.status(), 'the icon is served').toBe(200);
+  expect(response.headers()['content-type'] ?? '', 'the icon is served as SVG').toContain('image/svg+xml');
+  expect(await response.text(), 'the icon is the brass copy of the mark').toContain('#c8a97e');
+});
