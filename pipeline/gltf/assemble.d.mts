@@ -9,4 +9,6 @@ export declare function resolveExportFile(exportRoot: string, recordedPath: unkn
 export declare function assemble(options?: {
   out?: string;
   log?: (message: string) => void;
+  only?: string | null;
+  exportRoot?: string;
 }): Promise<{ out: string; catalog: unknown; source: unknown }>;

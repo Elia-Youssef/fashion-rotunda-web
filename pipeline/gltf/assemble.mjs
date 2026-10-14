@@ -154,11 +154,15 @@ async function assembleLook(io, look, out, exportRoot) {
   await io.write(resolve(out, file), document);
   const thumbnail = look.thumbnail ? `thumbs/${look.slug}.png` : null;
   if (thumbnail) copyFileSync(resolveExportFile(exportRoot, look.thumbnail.file), resolve(out, thumbnail));
+  return lookEntry(look, garmentNames, variantNames);
+}
+
+function lookEntry(look, garmentNames, variantNames) {
   return {
     id: look.slug,
     name: look.name,
-    thumbnail,
-    file,
+    thumbnail: look.thumbnail ? `thumbs/${look.slug}.png` : null,
+    file: `looks/${look.slug}.glb`,
     variants: variantNames,
     defaultVariant: 'base',
     mannequinNode: 'mannequin',
@@ -173,19 +177,30 @@ async function assembleLook(io, look, out, exportRoot) {
  * @param log a one-line progress sink.
  * @returns `{ out, catalog, source }` so stage two can reuse the parsed export description.
  */
-export async function assemble({ out = assembledDir, log = console.log } = {}) {
-  const src = resolve(sourceDir, 'unreal');
+export async function assemble({ out = assembledDir, log = console.log, only = null,
+  exportRoot = resolve(sourceDir, 'unreal') } = {}) {
+  const src = resolve(exportRoot);
   const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
   const source = JSON.parse(readFileSync(resolve(src, 'catalog-source.json'), 'utf8'));
   validateLookText(source.looks.map((look) => ({ id: look.slug })));
+  if (only !== null && !source.looks.some((look) => look.slug === only)) {
+    throw new Error(`Unknown look selection ${only}`);
+  }
 
   mkdirSync(resolve(out, 'looks'), { recursive: true });
   mkdirSync(resolve(out, 'thumbs'), { recursive: true });
 
-  copyFileSync(resolveExportFile(src, source.rotunda.file), resolve(out, 'rotunda.glb'));
-  copyFileSync(resolveExportFile(src, source.plinth.file), resolve(out, 'plinth.glb'));
+  if (only === null) {
+    copyFileSync(resolveExportFile(src, source.rotunda.file), resolve(out, 'rotunda.glb'));
+    copyFileSync(resolveExportFile(src, source.plinth.file), resolve(out, 'plinth.glb'));
+  }
   const looks = [];
   for (const look of source.looks) {
+    if (only !== null && look.slug !== only) {
+      looks.push(lookEntry(look, look.garments.map((_, i) => i === 0 ? 'garment' : `garment-${i}`),
+        ['base', 'light', 'dark'].filter((name) => name === 'base' || look.swatches[name])));
+      continue;
+    }
     looks.push(await assembleLook(io, look, out, src));
     const last = looks.at(-1);
     log(

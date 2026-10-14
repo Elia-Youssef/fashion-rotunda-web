@@ -47,6 +47,8 @@ import { buildManifest, fileEntry, shippedJson, textureEntry } from './lib/manif
 import { ktx2Format } from './lib/naming.mjs';
 import { validateOutputContract } from './lib/output-contract.mjs';
 import { planFactorResets, planRepairs } from './lib/repairs.mjs';
+import { applyLookFit, validateFitOutput } from './lib/garment-fit.mjs';
+import { selectLook, updateSelectedCatalog, updateSelectedManifest } from './lib/selected-output.mjs';
 import { shouldPreserveSpecular } from './lib/specular.mjs';
 import { canonicalizeSourceTextures, getOrCreateSourceTexture } from './lib/texture-authority.mjs';
 
@@ -92,6 +94,18 @@ async function main() {
   const onlyIndex = args.indexOf('--only');
   const only = onlyIndex >= 0 ? args[onlyIndex + 1] : null;
   const skipAssemble = args.includes('--skip-assemble');
+  const sourceIndex = args.indexOf('--source');
+  const exportRoot = sourceIndex >= 0 ? resolve(args[sourceIndex + 1]) : resolve(sourceDir, 'unreal');
+  const methodIndex = args.indexOf('--fit-method');
+  const fitMethod = methodIndex >= 0 ? args[methodIndex + 1] : null;
+  if (fitMethod !== null && (only === null || !['body-inward', 'garment-outward'].includes(fitMethod))) {
+    throw new Error('An alternate fit method requires a selected look and a known method');
+  }
+  const previousManifest = only === null ? null : JSON.parse(readFileSync(resolve(out, 'manifest.json'), 'utf8'));
+  const previousCatalogs = only === null ? null : {
+    full: JSON.parse(readFileSync(resolve(out, 'catalog.json'), 'utf8')),
+    half: JSON.parse(readFileSync(resolve(out, 'half/catalog.json'), 'utf8')),
+  };
 
   // toktx spawns the KTX-Software "ktx" executable by bare name (@gltf-transform/cli
   // dist/cli.mjs:679, guarded by checkKTXSoftware at :748). It is installed off PATH on purpose,
@@ -105,18 +119,20 @@ async function main() {
   const started = performance.now();
   const catalog = skipAssemble
     ? JSON.parse(readFileSync(resolve(assembledDir, 'catalog.json'), 'utf8'))
-    : (await assemble({ out: assembledDir })).catalog;
+    : (await assemble({ out: assembledDir, only, exportRoot })).catalog;
 
   const io = new NodeIO()
     .registerExtensions(ALL_EXTENSIONS)
     .registerDependencies({ 'meshopt.encoder': MeshoptEncoder, 'meshopt.decoder': MeshoptDecoder });
 
-  for (const name of OWNED_OUTPUTS) rmSync(resolve(out, name), { recursive: true, force: true });
+  if (only === null) {
+    for (const name of OWNED_OUTPUTS) rmSync(resolve(out, name), { recursive: true, force: true });
+  }
   for (const dir of ['looks', 'thumbs', 'half/looks', 'half/thumbs', 'basis']) {
     mkdirSync(resolve(out, dir), { recursive: true });
   }
 
-  const plan = [
+  const allItems = [
     { file: 'rotunda.glb', textures: 'rotunda/textures', instanced: true },
     { file: 'plinth.glb', textures: null, instanced: false },
     ...catalog.looks.map((look) => ({
@@ -125,7 +141,8 @@ async function main() {
       instanced: false,
       look,
     })),
-  ].filter((item) => only === null || item.file.includes(only));
+  ];
+  const plan = only === null ? allItems : selectLook(allItems, only);
 
   const sets = { full: {}, half: {} };
   const errors = [];
@@ -133,15 +150,27 @@ async function main() {
   const resetsMade = [];
 
   for (const item of plan) {
-    const prepared = await prepare(io, item);
+    const prepared = await prepare(io, item, exportRoot, fitMethod);
     repairsMade.push(...prepared.repairs);
     resetsMade.push(...prepared.resets);
     // The half set branches before resize: everything above it is shared, everything below differs.
     const half = cloneDocument(prepared.document);
-    sets.full[item.file] = await finish(io, prepared.document, item, 'full', out, errors);
-    sets.half[item.file] = await finish(io, half, item, 'half', out, errors);
+    sets.full[item.file] = await finish(io, prepared.document, item, 'full', out, errors, prepared.fit);
+    sets.half[item.file] = await finish(io, half, item, 'half', out, errors, prepared.fit);
   }
 
+  const shipped = shippedCatalog(catalog);
+  let manifest;
+  if (only !== null) {
+    const file = plan[0].file;
+    manifest = updateSelectedManifest(previousManifest, file, { full: sets.full[file], half: sets.half[file] }, errors);
+    for (const set of ['full', 'half']) {
+      const next = updateSelectedCatalog(previousCatalogs[set], shipped, only);
+      if (JSON.stringify(next) !== JSON.stringify(previousCatalogs[set])) {
+        writeFileSync(resolve(out, set === 'full' ? 'catalog.json' : 'half/catalog.json'), shippedJson(next));
+      }
+    }
+  } else {
   const environmentPath = resolve(out, ENVIRONMENT_FILE);
   const environmentBytes = statSync(environmentPath).size;
   const environmentEntry = fileEntry({
@@ -161,12 +190,12 @@ async function main() {
   await writeCollision(out);
 
   await writeThumbnails(catalog, out);
-  const shipped = shippedCatalog(catalog);
   writeFileSync(resolve(out, 'catalog.json'), shippedJson(shipped));
   writeFileSync(resolve(out, 'half', 'catalog.json'), shippedJson(shipped));
   copyBasisTranscoder(out);
 
-  const manifest = buildManifest(new Date().toISOString().replace(/\.\d+Z$/, 'Z'), sets, errors);
+  manifest = buildManifest(new Date().toISOString().replace(/\.\d+Z$/, 'Z'), sets, errors);
+  }
   writeFileSync(resolve(out, 'manifest.json'), shippedJson(manifest));
 
   console.log('');
@@ -209,7 +238,7 @@ async function main() {
  * Everything both sets share: dedup, instancing, weld, the repairs, default specular stripping, and a
  * texture-only prune so nothing orphaned by a repair is paid for twice in the encoder.
  */
-async function prepare(io, item) {
+async function prepare(io, item, exportRoot, fitMethod) {
   const document = await io.read(resolve(assembledDir, item.file));
   // The default logger prints an info line per transform, and there are hundreds of transforms in
   // a run. Warnings and errors still come through.
@@ -217,7 +246,10 @@ async function prepare(io, item) {
   await document.transform(dedup());
   if (item.instanced) await document.transform(instance({ min: INSTANCE_MIN }));
   await document.transform(weld());
-  const { repairs, resets, canonicalized } = applyRepairs(document, item);
+  const fit = applyLookFit(document, item.look?.id, fitMethod);
+  if (fit.applied) console.log(`fit ${item.file}: ${fit.method}, ${fit.movedVertices} moved vertices, ` +
+    `${fit.maxDisplacementMm.toFixed(3)} mm maximum displacement, ${JSON.stringify(fit.history)}`);
+  const { repairs, resets, canonicalized } = applyRepairs(document, item, exportRoot);
   stripDefaultSpecular(document);
   // Textures orphaned by a repair, and solid-colour textures, go now: both would otherwise cost an
   // encoder pass, and the solid-colour check has to read pixels, which it can only do while the
@@ -228,7 +260,7 @@ async function prepare(io, item) {
       `${document.getRoot().listTextures().length} textures, ${repairs.length} repair(s), ` +
       `${canonicalized.length} canonical source texture(s)`,
   );
-  return { document, repairs, resets };
+  return { document, repairs, resets, fit };
 }
 
 /**
@@ -255,7 +287,7 @@ function stripDefaultSpecular(document) {
 }
 
 /** Everything that differs per set: clearcoat, decimation, resize, encode, meshopt, prune, write. */
-async function finish(io, document, item, set, out, errors) {
+async function finish(io, document, item, set, out, errors, fit) {
   if (set === 'half') {
     // Clearcoat is a second specular lobe on the marble. It is the first thing to go on a phone,
     // and dropping it also drops its own normal map from the payload.
@@ -275,7 +307,10 @@ async function finish(io, document, item, set, out, errors) {
   await io.write(path, document);
   // Re-read serialized bytes instead of trusting the in-memory graph. A missing KTX image or a
   // pruned slot must stop this run before its manifest can claim the asset passed.
-  validateOutputContract(await io.read(path), { set, file: item.file });
+  const serialized = await io.read(path);
+  validateOutputContract(serialized, { set, file: item.file });
+  const geometry = validateFitOutput(serialized, fit);
+  if (geometry.checked) console.log(`validated fit ${set}/${item.file}: ${geometry.outsideSamples} outside samples`);
   const bytes = statSync(path).size;
   const entry = fileEntry({
     bytes,
@@ -298,9 +333,9 @@ async function finish(io, document, item, set, out, errors) {
  * the glTF exporter can embed a black or placeholder image under the correct Unreal texture name.
  * Canonicalizing those matching names before slot repair also fixes maps in slots that need no repair.
  */
-function applyRepairs(document, item) {
+function applyRepairs(document, item, exportRoot) {
   if (!item.textures) return { repairs: [], resets: [], canonicalized: [] };
-  const dir = resolve(sourceDir, 'unreal', item.textures);
+  const dir = resolve(exportRoot, item.textures);
   const available = new Set(
     readdirSync(dir)
       .filter((name) => name.toLowerCase().endsWith('.png'))
