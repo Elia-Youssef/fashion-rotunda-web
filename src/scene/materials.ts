@@ -6,13 +6,24 @@
 // material-family visual review against Unreal references before acceptance.
 
 import { Mesh, MeshPhysicalMaterial, MeshStandardMaterial } from 'three/webgpu';
-import type { Material, Object3D } from 'three/webgpu';
+import type { Material, Node, Object3D } from 'three/webgpu';
+import { luminance, materialColor, mix, vec4 } from 'three/tsl';
 
 export const DOME_GLASS_MATERIAL = 'M_Glass_Flat_SM_Dome_A';
 
 // Owner's 2026-10-14 choice: the half-clearcoat option raised measured floor RMS contrast
 // about 45 / 32 percent. Keep the separate Nero Vert inlay choice at 0.3.
 const MARBLE_CLEARCOAT = 0.5;
+
+// Exported base colour mean HSV saturation is 0.58791; mean linear luminance is 0.01073.
+// At unit exposure a matching blue swatch gains 0.11818 saturation under ACES versus AgX.
+// Mix 20 percent toward luminance, flatten contrast 10 percent about middle grey, then lift
+// reflectance 10 percent: the owner chose this of five reviewed variants on 2026-10-14.
+const BLUE_SILK_BASE_SATURATION = 0.8;
+const BLUE_SILK_BASE_BRIGHTNESS = 1.1;
+const BLUE_SILK_BASE_CONTRAST = 0.9;
+// Contrast pivots around middle grey in the linear working colour space.
+const BASE_CONTRAST_PIVOT = 0.18;
 
 export interface MaterialTuning {
   transmission?: number;
@@ -28,10 +39,19 @@ export interface MaterialTuning {
   sheenRoughness?: number;
   sheenColor?: [number, number, number];
   envMapIntensity?: number;
+  /** Linear base colour: 1 leaves saturation, brightness or contrast unchanged. */
+  baseSaturation?: number;
+  baseBrightness?: number;
+  baseContrast?: number;
 }
 
 /** Pure tuning dictionary indexed by material name as exported in glTF. */
 const TUNING_TABLE: Readonly<Record<string, MaterialTuning>> = {
+  M_BlueSilk: {
+    baseSaturation: BLUE_SILK_BASE_SATURATION,
+    baseBrightness: BLUE_SILK_BASE_BRIGHTNESS,
+    baseContrast: BLUE_SILK_BASE_CONTRAST,
+  },
   // The exported glass has metalness=1, which reflects the HDR's field/trees across the dome.
   // Transmission needs dielectric metalness=0 so the visible sky can actually show through.
   [DOME_GLASS_MATERIAL]: {
@@ -262,6 +282,30 @@ export function applyTuning(mesh: Mesh, tuning: MaterialTuning, acquire?: Tuning
 
   if (tuning.envMapIntensity !== undefined) {
     material.envMapIntensity = tuning.envMapIntensity;
+  }
+
+  if (
+    tuning.baseSaturation !== undefined ||
+    tuning.baseBrightness !== undefined ||
+    tuning.baseContrast !== undefined
+  ) {
+    // materialColor resolves the current map (including glTF UV transforms) times its factor.
+    // Rebuild from that source on each variant application so repeated tuning never compounds.
+    // The declaration says vec3; MaterialNode.COLOR actually returns RGBA for a mapped material.
+    // Convert to vec4 so an unmapped factor gains alpha 1 and a mapped factor keeps texture alpha.
+    const base = vec4(materialColor as unknown as Node<'vec4'>);
+    let rgb = base.rgb;
+    if (tuning.baseSaturation !== undefined) {
+      rgb = mix(luminance(rgb), rgb, tuning.baseSaturation);
+    }
+    if (tuning.baseContrast !== undefined) {
+      rgb = rgb.sub(BASE_CONTRAST_PIVOT).mul(tuning.baseContrast).add(BASE_CONTRAST_PIVOT);
+    }
+    if (tuning.baseBrightness !== undefined) {
+      rgb = rgb.mul(tuning.baseBrightness);
+    }
+    // Keep texture alpha separate from RGB and leave opacity/alpha-test nodes to the fade.
+    material.colorNode = vec4(rgb.max(0), base.a);
   }
 
   material.needsUpdate = true;

@@ -138,6 +138,7 @@ describe('materials tuning table', () => {
       MI_WallisDressA: ['sheen', 'sheenRoughness', 'sheenColor'],
       MI_WallisDressB: ['sheen', 'sheenRoughness', 'sheenColor'],
       MI_NewLook_Dress: ['sheen', 'sheenRoughness', 'sheenColor'],
+      M_BlueSilk: ['baseSaturation', 'baseBrightness', 'baseContrast'],
     };
 
     for (const name of tunedMaterialNames()) {
