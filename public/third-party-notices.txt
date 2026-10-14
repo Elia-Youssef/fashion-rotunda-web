@@ -24,7 +24,7 @@ CONTENTS
 ==============================================================================
 
 Project:     https://threejs.org/ (https://github.com/mrdoob/three.js)
-Version:     0.186.0
+Version:     0.186.1
 Licence:     MIT
 Copyright:   Copyright (c) 2010-2026 three.js authors
 Used for:    3D rendering (WebGPU and WebGL 2 renderers, node materials, glTF,
@@ -95,7 +95,7 @@ SOFTWARE.
 ==============================================================================
 
 Project:     https://github.com/zeux/meshoptimizer
-Version:     Built from meshoptimizer 1.1, as included in three.js 0.186.0
+Version:     Built from meshoptimizer 1.1, as included in three.js 0.186.1
              (examples/jsm/libs/meshopt_decoder.module.js)
 Licence:     MIT
 Copyright:   Copyright (C) 2016-2026, by Arseny Kapoulkine
@@ -130,7 +130,7 @@ SOFTWARE.
 ==============================================================================
 
 Project:     https://github.com/donmccurdy/ktx-parse
-Version:     As included in three.js 0.186.0
+Version:     As included in three.js 0.186.1
              (examples/jsm/libs/ktx-parse.module.js)
 Licence:     MIT
 Copyright:   Copyright (c) 2020 Don McCurdy
@@ -165,7 +165,7 @@ SOFTWARE.
 
 Project:     https://github.com/donmccurdy/zstddec (wrapper),
              https://github.com/facebook/zstd (Zstandard)
-Version:     As included in three.js 0.186.0
+Version:     As included in three.js 0.186.1
              (examples/jsm/libs/zstddec.module.js)
 Licence:     MIT (JavaScript wrapper); BSD 3-Clause (Zstandard decoder compiled
              to WebAssembly)
@@ -237,7 +237,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ==============================================================================
 
 Project:     https://github.com/BinomialLLC/basis_universal
-Version:     As included in three.js 0.186.0 (examples/jsm/libs/basis), served
+Version:     As included in three.js 0.186.1 (examples/jsm/libs/basis), served
              as /content/basis/basis_transcoder.js and basis_transcoder.wasm
 Licence:     Apache License 2.0 (full text at the end of this file)
 Copyright:   Copyright (c) 2016-2026 Binomial LLC (upstream NOTICE file)
@@ -281,7 +281,7 @@ the end of this file.
 ==============================================================================
 
 Project:     https://github.com/selfshadow/ltc_code
-Version:     Tables and shading code as included in three.js 0.186.0
+Version:     Tables and shading code as included in three.js 0.186.1
              (examples/jsm/lights/RectAreaLightTexturesLib.js and the area-light
              shading code in the three.js build)
 Licence:     BSD-style licence (reproduced below)
@@ -329,7 +329,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 Project:     https://github.com/google/model-viewer
              (packages/model-viewer/src/three-components/EnvironmentScene.ts)
 Version:     The three.js RoomEnvironment add-on
-             (examples/jsm/environments/RoomEnvironment.js) in three.js 0.186.0
+             (examples/jsm/environments/RoomEnvironment.js) in three.js 0.186.1
              is based on this component
 Licence:     Apache License 2.0 (full text at the end of this file)
 Copyright:   Copyright 2021 Google LLC. All Rights Reserved.
@@ -344,7 +344,7 @@ text is at the end of this file.
 ==============================================================================
 
 Project:     https://github.com/gkjohnson/three-gpu-pathtracer
-Version:     Adapted code as included in three.js 0.186.0
+Version:     Adapted code as included in three.js 0.186.1
              (examples/jsm/tsl/display/ImportanceSampledEnvironment.js and
              examples/jsm/tsl/utils/SpecularHelpers.js)
 Licence:     MIT
