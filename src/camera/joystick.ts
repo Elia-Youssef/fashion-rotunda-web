@@ -3,6 +3,7 @@
 // (x: strafe left/right, y: forward/back), and resets to center on touch release.
 
 import './joystick.css';
+import { capturePointer, releasePointer } from './pointer-capture';
 
 export interface JoystickHandle {
   readonly visible: boolean;
@@ -49,9 +50,7 @@ export function mountJoystick(
     const rect = base.getBoundingClientRect();
     originX = rect.left + rect.width / 2;
     originY = rect.top + rect.height / 2;
-    if (typeof base.setPointerCapture === 'function') {
-      base.setPointerCapture(event.pointerId);
-    }
+    capturePointer(base, event.pointerId);
     update(event.clientX, event.clientY);
   }
 
@@ -83,9 +82,7 @@ export function mountJoystick(
     if (event.pointerId !== activePointerId) {
       return;
     }
-    if (typeof base.releasePointerCapture === 'function') {
-      base.releasePointerCapture(event.pointerId);
-    }
+    releasePointer(base, event.pointerId);
     reset();
   }
 

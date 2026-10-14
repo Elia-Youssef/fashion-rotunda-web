@@ -7,6 +7,7 @@
 
 import { MathUtils, Spherical, Vector3 } from 'three/webgpu';
 import type { PerspectiveCamera } from 'three/webgpu';
+import { capturePointer, releasePointer } from './pointer-capture';
 
 export interface OrbitLimits {
   minDistance: number; // metres from the target
@@ -242,8 +243,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
   function capture(pointerId: number): void {
     // A drag that leaves the canvas must keep delivering moves to it; jsdom has no pointer
     // capture, and the unit tests dispatch their events on the element directly anyway.
-    if (typeof element.setPointerCapture === 'function') {
-      element.setPointerCapture(pointerId);
+    if (capturePointer(element, pointerId)) {
       capturedPointer = pointerId;
     }
   }
@@ -253,9 +253,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
       return;
     }
     capturedPointer = null;
-    if (typeof element.releasePointerCapture === 'function') {
-      element.releasePointerCapture(pointerId);
-    }
+    releasePointer(element, pointerId);
   }
 
   /** The first two tracked pointers define the pinch, including when more fingers arrive. */

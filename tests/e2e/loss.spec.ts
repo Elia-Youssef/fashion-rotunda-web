@@ -15,7 +15,7 @@ test('fails closed and keeps reload recovery operable when WebGL is lost during 
   await expect(canvas).toHaveAttribute('data-backend', 'webgl2', { timeout: 60_000 });
   await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
 
-  expectConsoleError(page, /^THREE\.WebGPURenderer: WebGL Device Lost:/,
+  expectConsoleError(page, /^THREE\.THREE\.WebGPURenderer: WebGL Device Lost:/,
     'WEBGL_lose_context deliberately loses the renderer while the reveal is black');
   expectConsoleError(page, /^\[archviz\] transition error The graphics device was lost\. Reload to restore the showroom\.$/,
     'the frozen reveal reports the deliberately lost device while showing recovery');

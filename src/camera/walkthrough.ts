@@ -9,6 +9,7 @@ import type { BufferGeometry, PerspectiveCamera } from 'three';
 
 import { createCapsuleResolver } from './collide';
 import type { CapsuleResolver } from './collide';
+import { capturePointer, releasePointer } from './pointer-capture';
 
 export interface WalkthroughOptions {
   camera: PerspectiveCamera;
@@ -178,9 +179,7 @@ export function createWalkthrough(options: WalkthroughOptions): WalkthroughHandl
       lastTouchX = event.clientX;
       lastTouchY = event.clientY;
       lastInputMs = now();
-      if (typeof element.setPointerCapture === 'function') {
-        element.setPointerCapture(event.pointerId);
-      }
+      capturePointer(element, event.pointerId);
     }
   }
 
@@ -205,9 +204,7 @@ export function createWalkthrough(options: WalkthroughOptions): WalkthroughHandl
       return;
     }
     touchLookPointerId = null;
-    if (typeof element.releasePointerCapture === 'function') {
-      element.releasePointerCapture(event.pointerId);
-    }
+    releasePointer(element, event.pointerId);
   }
 
   function onPointerLockChange(): void {
