@@ -24,7 +24,7 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   {
     id: 'looks',
     title: 'Select a look',
-    text: 'Choose from the collection of garments along the left edge.',
+    text: 'Choose a garment from the collection of looks.',
     anchor: '#looks',
   },
   {

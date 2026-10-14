@@ -59,9 +59,9 @@ test('the swatches switch the mannequin and Reset returns the default', async ({
 
   const canvas = await openScene(page, '/?webgl=1&gate=off');
 
-  await page.getByRole('radio', { name: 'dark' }).click();
+  await page.getByRole('radio', { name: 'Dark charcoal' }).click();
   await expect(canvas).toHaveAttribute('data-variant', 'dark', { timeout: SWITCH_TIMEOUT });
-  await expect(page.getByRole('radio', { name: 'dark' })).toHaveAttribute(
+  await expect(page.getByRole('radio', { name: 'Dark charcoal' })).toHaveAttribute(
     'aria-checked',
     'true',
   );
@@ -70,7 +70,7 @@ test('the swatches switch the mannequin and Reset returns the default', async ({
   await expect(canvas).toHaveAttribute('data-variant', first.defaultVariant, {
     timeout: SWITCH_TIMEOUT,
   });
-  await expect(page.getByRole('radio', { name: first.defaultVariant })).toHaveAttribute(
+  await expect(page.getByRole('radio', { name: 'Default' })).toHaveAttribute(
     'aria-checked',
     'true',
   );

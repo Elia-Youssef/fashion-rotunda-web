@@ -174,21 +174,21 @@ test.describe('Product-Card Parity and Narration Cleanup', () => {
 
     // ArrowRight moves to next swatch and checks it
     await page.keyboard.press('ArrowRight');
-    const lightSwatch = swatches.locator('.product-card__swatch[aria-label="light"]');
+    const lightSwatch = swatches.locator('.product-card__swatch[aria-label="Light"]');
     await expect(lightSwatch).toBeFocused();
     await expect(lightSwatch).toHaveAttribute('aria-checked', 'true');
     await expect(canvas).toHaveAttribute('data-variant', 'light', { timeout: SWITCH_TIMEOUT });
 
     // End moves to last swatch (dark)
     await page.keyboard.press('End');
-    const darkSwatch = swatches.locator('.product-card__swatch[aria-label="dark"]');
+    const darkSwatch = swatches.locator('.product-card__swatch[aria-label="Dark charcoal"]');
     await expect(darkSwatch).toBeFocused();
     await expect(darkSwatch).toHaveAttribute('aria-checked', 'true');
     await expect(canvas).toHaveAttribute('data-variant', 'dark', { timeout: SWITCH_TIMEOUT });
 
     // Home moves to first swatch (base)
     await page.keyboard.press('Home');
-    const baseSwatch = swatches.locator('.product-card__swatch[aria-label="base"]');
+    const baseSwatch = swatches.locator('.product-card__swatch[aria-label="Default"]');
     await expect(baseSwatch).toBeFocused();
     await expect(baseSwatch).toHaveAttribute('aria-checked', 'true');
     await expect(canvas).toHaveAttribute('data-variant', 'base', { timeout: SWITCH_TIMEOUT });
@@ -204,8 +204,8 @@ test.describe('Product-Card Parity and Narration Cleanup', () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     const canvas = await openScene(page);
 
-    const dark = page.locator('.product-card__swatch[aria-label="dark"]');
-    const base = page.locator('.product-card__swatch[aria-label="base"]');
+    const dark = page.locator('.product-card__swatch[aria-label="Dark charcoal"]');
+    const base = page.locator('.product-card__swatch[aria-label="Default"]');
     const reset = page.locator('.product-card__action[data-action="reset"]');
 
     await dark.click();

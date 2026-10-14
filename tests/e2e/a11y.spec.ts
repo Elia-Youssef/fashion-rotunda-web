@@ -120,7 +120,7 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
   await rotate.focus();
   const tooltip = page.locator('#a11y-tooltip[role="tooltip"]');
   await expect(tooltip).toBeVisible();
-  await expect(tooltip).toHaveText('Turn the look');
+  await expect(tooltip).toHaveText('Rotate the look');
   expect(await rotate.getAttribute('aria-describedby'), 'the button points at the tooltip').toBe(
     'a11y-tooltip',
   );
@@ -179,7 +179,7 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
   await page.keyboard.press('ArrowRight');
 
   await expect(canvas).toHaveAttribute('data-variant', 'light', { timeout: SWITCH_TIMEOUT });
-  const nextChecked = page.locator('.product-card__swatch[aria-label="light"]');
+  const nextChecked = page.locator('.product-card__swatch[aria-label="Light"]');
   await expect(nextChecked).toHaveAttribute('aria-checked', 'true');
 
   // 6. After clicking the third thumbnail the live region text contains the third look's name

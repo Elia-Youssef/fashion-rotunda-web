@@ -62,15 +62,15 @@ describe('mountAnnouncer', () => {
       throw new Error('the live region is missing');
     }
 
-    announcer.say('Mannequin: dark');
-    expect(region.textContent).toBe('Mannequin: dark');
+    announcer.say('Mannequin: Dark charcoal');
+    expect(region.textContent).toBe('Mannequin: Dark charcoal');
     const firstTextNode = region.firstChild;
 
     // The window has to close before a second message is spoken at all.
     vi.advanceTimersByTime(500);
-    announcer.say('Mannequin: dark');
+    announcer.say('Mannequin: Dark charcoal');
 
-    expect(region.textContent).toBe('Mannequin: dark');
+    expect(region.textContent).toBe('Mannequin: Dark charcoal');
     // Clearing before the write replaces the text node, which is the mutation a reader watches
     // for. Writing the identical string onto the same node would announce nothing.
     expect(region.firstChild).not.toBe(firstTextNode);

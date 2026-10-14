@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { markFirstFrame } from '../../src/proof/marks';
 import type { CatalogLook } from '../../src/catalog/catalog';
-import { mountProductCard } from '../../src/ui/product-card';
+import { mountProductCard, variantDisplayName } from '../../src/ui/product-card';
 import type { ProductCardActions, ProductCardHandle } from '../../src/ui/product-card';
 
 function makeLook(id: string, name: string, variants: string[]): CatalogLook {
@@ -71,7 +71,7 @@ function button(label: string): HTMLButtonElement {
 
 function swatch(variant: string): HTMLButtonElement {
   const found = root.querySelector<HTMLButtonElement>(
-    `.product-card__swatch[aria-label="${variant}"]`,
+    `.product-card__swatch[aria-label="${variantDisplayName(variant)}"]`,
   );
   if (!found) throw new Error(`no swatch for ${variant}`);
   return found;
@@ -153,7 +153,7 @@ describe('mountProductCard', () => {
     const group = root.querySelector('.product-card__swatches');
     expect(group?.getAttribute('role')).toBe('radiogroup');
     expect(group?.getAttribute('aria-label')).toBe('Mannequin material');
-    expect(swatchNames()).toEqual(['base', 'light', 'dark']);
+    expect(swatchNames()).toEqual(['Default', 'Light', 'Dark charcoal']);
     expect(swatch('light').getAttribute('aria-checked')).toBe('true');
     expect(swatch('base').getAttribute('aria-checked')).toBe('false');
     expect(swatch('light').className).toContain('product-card__swatch--light');
@@ -165,12 +165,12 @@ describe('mountProductCard', () => {
 
   it('sets data-tooltip on actions and swatches, omitting title on swatches', () => {
     mount();
-    expect(button('Rotate').dataset.tooltip).toBe('Turn the look');
+    expect(button('Rotate').dataset.tooltip).toBe('Rotate the look');
     expect(button('Reset').dataset.tooltip).toBe('Reset camera and mannequin');
     expect(button('Material').dataset.tooltip).toBe('Show mannequin swatches');
 
     expect(swatch('base').dataset.tooltip).toBe('Mannequin in default tone');
-    expect(swatch('light').dataset.tooltip).toBe('Copy of the mannequin in a lighter tone');
+    expect(swatch('light').dataset.tooltip).toBe('Mannequin in light tone');
     expect(swatch('dark').dataset.tooltip).toBe('Mannequin in dark charcoal tone');
     expect(swatch('base').hasAttribute('title')).toBe(false);
   });

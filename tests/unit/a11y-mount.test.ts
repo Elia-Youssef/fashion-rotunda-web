@@ -172,7 +172,7 @@ describe('mountA11y', () => {
     await Promise.resolve();
     vi.advanceTimersByTime(500);
 
-    expect(liveRegion?.textContent).toBe('Mannequin: dark');
+    expect(liveRegion?.textContent).toBe('Mannequin: Dark charcoal');
   });
 
   it('speaks turntable and music switch toggles', async () => {
@@ -184,7 +184,7 @@ describe('mountA11y', () => {
 
     await Promise.resolve();
     vi.advanceTimersByTime(500);
-    expect(liveRegion?.textContent).toBe('Turntable on');
+    expect(liveRegion?.textContent).toBe('Rotate on');
 
     const musicBtn = header.querySelector('button.music-switch');
     musicBtn?.setAttribute('aria-pressed', 'true');

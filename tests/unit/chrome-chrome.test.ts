@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Catalog, CatalogLook } from '../../src/catalog/catalog';
 import { mountChrome } from '../../src/ui/chrome';
 import type { ChromeHandle } from '../../src/ui/chrome';
+import { variantDisplayName } from '../../src/ui/product-card';
 
 function makeLook(id: string, name: string): CatalogLook {
   return {
@@ -166,7 +167,7 @@ function cardText(selector: string): string {
 
 function swatch(variant: string): HTMLButtonElement {
   const found = cardRoot.querySelector<HTMLButtonElement>(
-    `.product-card__swatch[aria-label="${variant}"]`,
+    `.product-card__swatch[aria-label="${variantDisplayName(variant)}"]`,
   );
   if (!found) throw new Error(`no swatch for ${variant}`);
   return found;

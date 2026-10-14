@@ -36,6 +36,19 @@ export interface ProductCardHandle {
 /** Ids must be unique per document, so two cards on one page cannot collide on aria-controls. */
 let cardSerial = 0;
 
+// The swatches keep the catalogue's variant ids in URLs and data attributes, but name themselves
+// in prose. One map, so the radios and the live-region announcement read the same words.
+const VARIANT_DISPLAY_NAMES = new Map<string, string>([
+  ['base', 'Default'],
+  ['light', 'Light'],
+  ['dark', 'Dark charcoal'],
+]);
+
+/** The swatch's accessible name for a variant id; an id the map does not know keeps its id. */
+export function variantDisplayName(variant: string): string {
+  return VARIANT_DISPLAY_NAMES.get(variant) ?? variant;
+}
+
 export function mountProductCard(root: HTMLElement, options: ProductCardOptions): ProductCardHandle {
   cardSerial += 1;
   const swatchesId = `product-card-${cardSerial}-swatches`;
@@ -86,7 +99,7 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
   }
 
   const rotateButton = action('Rotate', 'rotate');
-  rotateButton.dataset['tooltip'] = 'Turn the look';
+  rotateButton.dataset['tooltip'] = 'Rotate the look';
   const resetButton = action('Reset', 'reset');
   resetButton.dataset['tooltip'] = 'Reset camera and mannequin';
   // Material toggles the swatch row; the row starts open, matching the Unreal reference.
@@ -146,7 +159,7 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
 
   function swatchTooltip(variant: string): string {
     if (variant === 'light') {
-      return 'Copy of the mannequin in a lighter tone';
+      return 'Mannequin in light tone';
     }
     if (variant === 'dark') {
       return 'Mannequin in dark charcoal tone';
@@ -173,7 +186,7 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
       button.type = 'button';
       button.className = `product-card__swatch product-card__swatch--${variant}`;
       button.setAttribute('role', 'radio');
-      button.setAttribute('aria-label', variant);
+      button.setAttribute('aria-label', variantDisplayName(variant));
       button.dataset['tooltip'] = swatchTooltip(variant);
       button.tabIndex = -1;
       button.addEventListener(

@@ -6,6 +6,7 @@ import { mountAnnouncer } from './announce';
 import type { Announcer } from './announce';
 import { ONBOARDING_STORAGE_KEY, mountOnboarding } from './onboarding';
 import type { OnboardingHandle } from './onboarding';
+import { variantDisplayName } from './product-card';
 import { installTooltips } from './tooltip';
 
 export interface A11yMountOptions {
@@ -115,7 +116,7 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
     const currentVariant = canvas.dataset['variant'] ?? null;
     if (currentVariant !== null && currentVariant !== prevVariant) {
       prevVariant = currentVariant;
-      announcer.say(`Mannequin: ${currentVariant}`);
+      announcer.say(`Mannequin: ${variantDisplayName(currentVariant)}`);
     }
   });
   canvasObserver.observe(canvas, { attributes: true, attributeFilter: ['data-look', 'data-variant'] });
@@ -126,7 +127,7 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
       const pressed = btn.getAttribute('aria-pressed');
       if (pressed !== null && pressed !== prevRotate) {
         prevRotate = pressed;
-        announcer.say(pressed === 'true' ? 'Turntable on' : 'Turntable off');
+        announcer.say(pressed === 'true' ? 'Rotate on' : 'Rotate off');
       }
     }
   });

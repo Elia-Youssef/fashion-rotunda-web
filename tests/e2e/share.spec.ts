@@ -59,7 +59,7 @@ test('updates the address bar when changing look and swatch', async ({ page, req
 
   await expect(canvas).toHaveAttribute('data-look', third.id, { timeout: SWITCH_TIMEOUT_MS });
 
-  await page.getByRole('radio', { name: 'dark' }).click();
+  await page.getByRole('radio', { name: 'Dark charcoal' }).click();
   await expect(canvas).toHaveAttribute('data-variant', 'dark', { timeout: SWITCH_TIMEOUT_MS });
 
   await expect.poll(() => page.url(), { timeout: 5_000 }).toContain(`look=${third.id}`);
