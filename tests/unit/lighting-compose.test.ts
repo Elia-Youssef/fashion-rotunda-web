@@ -13,6 +13,7 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { enableShadows } from '../../src/lighting/compose';
+import { daylightParameters } from '../../src/lighting/rig';
 
 describe('enableShadows', () => {
   it('lets a transmission-only material receive the sun without casting a black pane shadow', () => {
@@ -147,11 +148,13 @@ describe('procedural sky calibration', () => {
     width: number,
     height: number,
     rowZeroIsZenith: boolean,
-  ): { up: number; side: number } {
+    normal: [number, number, number] = [0, 1, 0],
+  ): { up: number; side: number; directional: number } {
     const luma = (i: number): number =>
       0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
     let up = 0;
     let side = 0;
+    let directional = 0;
     for (let y = 0; y < height; y += 1) {
       const row = rowZeroIsZenith ? y : height - 1 - y;
       const theta = ((row + 0.5) / height) * Math.PI;
@@ -161,23 +164,20 @@ describe('procedural sky calibration', () => {
         const dx = Math.sin(theta) * Math.cos(phi);
         const dz = Math.sin(theta) * Math.sin(phi);
         const value = luma(4 * (y * width + x)) * dOmega;
+        // EquirectUV's world azimuth is phi - pi, whereas the four-side mean is invariant to this shift.
+        directional += value * Math.max(0, -dx * normal[0] + Math.cos(theta) * normal[1] - dz * normal[2]);
         up += value * Math.max(0, Math.cos(theta));
         const facing = Math.max(0, dx) + Math.max(0, -dx) + Math.max(0, dz) + Math.max(0, -dz);
         side += (value * facing) / 4;
       }
     }
-    return { up, side };
+    return { up, side, directional };
   }
 
-  it('matches the upright, clamped School Field HDR fill within 10 percent, up and sideways', async () => {
+  async function referenceHdr() {
     const { readFileSync } = await import('node:fs');
     const { FloatType: Float } = await import('three');
     const { HDRLoader } = await import('three/addons/loaders/HDRLoader.js');
-    const { HDR_ENVIRONMENT_SCALE, PROCEDURAL_ENVIRONMENT_SCALE } = await import(
-      '../../src/lighting/compose'
-    );
-    const sky = await import('../../src/lighting/sky');
-
     const file = readFileSync(
       new URL('../../public/content/env/school-field-cloudy-1k.hdr', import.meta.url),
     );
@@ -188,9 +188,16 @@ describe('procedural sky calibration', () => {
     if (width === undefined || height === undefined) throw new Error('the HDR parsed without a size');
     // The runtime loads half floats, and HDRLoader clamps each channel to the float16 maximum.
     const received = Float32Array.from(hdr.data as Float32Array, (value) => Math.min(value, 65504));
+    return { received, width, height };
+  }
+
+  it('matches the upright, clamped School Field HDR fill within 10 percent, up and sideways', async () => {
+    const { HDR_ENVIRONMENT_SCALE, PROCEDURAL_ENVIRONMENT_SCALE } = await import('../../src/lighting/compose');
+    const sky = await import('../../src/lighting/sky');
+    const { received, width, height } = await referenceHdr();
     const before = irradiance(received, width, height, true);
     const after = irradiance(
-      sky.gradientSkyPixels(sky.environmentSkyPalette()),
+      sky.gradientSkyPixels(sky.baseEnvironmentSkyPalette()),
       sky.SKY_WIDTH,
       sky.SKY_HEIGHT,
       false,
@@ -222,10 +229,37 @@ describe('procedural sky calibration', () => {
       }
       return sum / weight;
     };
-    const skyPixels = sky.gradientSkyPixels(sky.environmentSkyPalette());
+    const skyPixels = sky.gradientSkyPixels(sky.baseEnvironmentSkyPalette());
     const bandRatio =
       (bandMean(skyPixels, sky.SKY_WIDTH, sky.SKY_HEIGHT, false) * PROCEDURAL_ENVIRONMENT_SCALE) /
       (bandMean(received, width, height, true) * HDR_ENVIRONMENT_SCALE);
     expect(bandRatio).toBeCloseTo(1.4, 1);
+  });
+
+  it("pins the owner's 2026-10-14 C3 bounce choice separately from the base calibration", async () => {
+    const { HDR_ENVIRONMENT_SCALE, PROCEDURAL_ENVIRONMENT_SCALE } = await import('../../src/lighting/compose');
+    const sky = await import('../../src/lighting/sky');
+    const { received, width, height } = await referenceHdr();
+    const hdr = irradiance(received, width, height, true);
+    const basePixels = sky.gradientSkyPixels(sky.baseEnvironmentSkyPalette());
+    const shippedPixels = sky.gradientSkyPixels(sky.environmentSkyPalette());
+    const base = irradiance(basePixels, sky.SKY_WIDTH, sky.SKY_HEIGHT, false);
+    const shipped = irradiance(shippedPixels, sky.SKY_WIDTH, sky.SKY_HEIGHT, false);
+    const sideRatio = shipped.side * PROCEDURAL_ENVIRONMENT_SCALE / (hdr.side * HDR_ENVIRONMENT_SCALE);
+    const upRatio = shipped.up * PROCEDURAL_ENVIRONMENT_SCALE / (hdr.up * HDR_ENVIRONMENT_SCALE);
+    expect(sideRatio).toBeCloseTo(1.1132086754, 8);
+    expect(shipped.side).toBeGreaterThan(base.side);
+
+    // A wall normal toward the sun's antipode must receive more added fill than its opposite.
+    const [x, , z] = daylightParameters(0.5).direction;
+    const horizontal = Math.hypot(x, z);
+    const away: [number, number, number] = [x / horizontal, 0, z / horizontal];
+    const toward: [number, number, number] = [-away[0], 0, -away[2]];
+    const increase = (normal: [number, number, number]): number =>
+      irradiance(shippedPixels, sky.SKY_WIDTH, sky.SKY_HEIGHT, false, normal).directional -
+      irradiance(basePixels, sky.SKY_WIDTH, sky.SKY_HEIGHT, false, normal).directional;
+    expect(increase(away)).toBeGreaterThan(increase(toward));
+    expect(increase(away)).toBeGreaterThan(0);
+    expect(Math.abs(upRatio - 1)).toBeLessThan(0.1);
   });
 });

@@ -43,7 +43,9 @@ const TUNING_TABLE: Readonly<Record<string, MaterialTuning>> = {
     clearcoatRoughness: 0.1,
   },
   MI_Marble_Nero_Vert: {
-    clearcoat: 1.0,
+    // Owner's 2026-10-14 C3 choice: reducing the reflected sky darkened measured inlay lines
+    // 22 to 29 percent while the light marble field changed at most 0.1 percent.
+    clearcoat: 0.3,
     clearcoatRoughness: 0.1,
   },
   // Stills show polished blue fusion floor accents; KHR_materials_clearcoat

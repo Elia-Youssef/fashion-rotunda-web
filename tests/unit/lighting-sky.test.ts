@@ -2,6 +2,7 @@
 // yellow, its nadir is row 0 (three's upload convention, see sky.ts), and ?sky=hdr is the only way
 // back to the HDR.
 
+import { Buffer } from 'node:buffer';
 import { DataUtils, EquirectangularReflectionMapping, HalfFloatType, LinearSRGBColorSpace } from 'three';
 import { describe, expect, it } from 'vitest';
 
@@ -23,10 +24,16 @@ import {
   withSaturation,
 } from '../../src/lighting/sky';
 import type { Rgb, SkyPalette } from '../../src/lighting/sky';
+import { daylightParameters } from '../../src/lighting/rig';
 
 function pixel(pixels: Float32Array, width: number, x: number, y: number): Rgb {
   const index = 4 * (y * width + x);
   return [pixels[index], pixels[index + 1], pixels[index + 2]];
+}
+
+function sameBytes(actual: Float32Array | Uint16Array, expected: Float32Array | Uint16Array): boolean {
+  return Buffer.from(actual.buffer, actual.byteOffset, actual.byteLength)
+    .equals(Buffer.from(expected.buffer, expected.byteOffset, expected.byteLength));
 }
 
 /** Green or yellow shows as green above the red-blue mean, or as blue below both red and green. */
@@ -112,6 +119,99 @@ describe('skyRadiance', () => {
 });
 
 describe('gradientSkyPixels', () => {
+  // Freeze the pre-choice gradient independently of the production palette and sampler.
+  function previousPixels(visible: boolean): Float32Array {
+    const levels = visible ? [2, 2.6, 0.55] : [1, 0.03, 0.09];
+    const colors = [0x4a7fc4, 0xc6d8ec, 0x808080].map((hex, i) =>
+      withSaturation(linearAtLuminance(hex, levels[i]), visible ? 1 : 0.09));
+    const result = new Float32Array(SKY_WIDTH * SKY_HEIGHT * 4);
+    for (let y = 0; y < SKY_HEIGHT; y += 1) {
+      const sine = Math.sin(((y + 0.5) / SKY_HEIGHT - 0.5) * Math.PI);
+      const target = sine >= 0 ? colors[0] : colors[2];
+      const blend = Math.abs(sine) ** (sine >= 0 ? (visible ? 0.55 : 1) : 0.3);
+      for (let x = 0; x < SKY_WIDTH; x += 1) {
+        const index = 4 * (y * SKY_WIDTH + x);
+        for (let c = 0; c < 3; c += 1) {
+          result[index + c] = colors[1][c] + (target[c] - colors[1][c]) * blend;
+        }
+        result[index + 3] = 1;
+      }
+    }
+    return result;
+  }
+
+  it('keeps every visible pixel and half-float texel identical to the previous sky', () => {
+    const previous = previousPixels(true);
+    expect(sameBytes(gradientSkyPixels(visibleSkyPalette()), previous)).toBe(true);
+    const texture = createGradientSkyTexture(visibleSkyPalette(), 'visible');
+    expect(sameBytes(texture.image.data as Uint16Array, Uint16Array.from(previous, DataUtils.toHalfFloat))).toBe(true);
+    texture.dispose();
+  });
+
+  it('adds only the specified cosine squared lobe to every previous lighting texel', () => {
+    const previous = previousPixels(false);
+    const expected = new Float32Array(previous.length);
+    const [bx, by, bz] = daylightParameters(0.5).direction;
+    const zenith = withSaturation(linearAtLuminance(0x4a7fc4, 1), 0.09);
+    // Reconstruct the old gradient in double precision before the final Float32 rounding.
+    const horizon = withSaturation(linearAtLuminance(0xc6d8ec, 0.03), 0.09);
+    const ground: Rgb = [0.09, 0.09, 0.09];
+    let unchangedHemisphere = true;
+    for (let y = 0; y < SKY_HEIGHT; y += 1) {
+      const elevation = ((y + 0.5) / SKY_HEIGHT - 0.5) * Math.PI;
+      const sine = Math.sin(elevation);
+      const target = sine >= 0 ? zenith : ground;
+      const blend = Math.abs(sine) ** (sine >= 0 ? 1 : 0.3);
+      for (let x = 0; x < SKY_WIDTH; x += 1) {
+        const azimuth = ((x + 0.5) / SKY_WIDTH - 0.5) * 2 * Math.PI;
+        const cosine = Math.cos(elevation) * (Math.cos(azimuth) * bx + Math.sin(azimuth) * bz) + sine * by;
+        const weight = 0.35 * Math.max(0, cosine) ** 2;
+        const index = 4 * (y * SKY_WIDTH + x);
+        for (let c = 0; c < 3; c += 1) {
+          expected[index + c] = horizon[c] + (target[c] - horizon[c]) * blend + zenith[c] * weight;
+        }
+        expected[index + 3] = 1;
+        if (cosine <= 0) {
+          for (let c = 0; c < 4; c += 1) {
+            unchangedHemisphere &&= expected[index + c] === previous[index + c];
+          }
+        }
+      }
+    }
+    expect(unchangedHemisphere).toBe(true);
+    expect(sameBytes(gradientSkyPixels(environmentSkyPalette()), expected)).toBe(true);
+    const texture = createGradientSkyTexture(environmentSkyPalette(), 'lighting');
+    expect(sameBytes(texture.image.data as Uint16Array, Uint16Array.from(expected, DataUtils.toHalfFloat))).toBe(true);
+    texture.dispose();
+  });
+
+  it('peaks opposite the sun at 0.35 of zenith and adds nothing on the sun-facing hemisphere', () => {
+    const palette = environmentSkyPalette();
+    const pixels = gradientSkyPixels(palette);
+    const [sx, sy, sz] = daylightParameters(0.5).direction.map((v) => -v);
+    let peak = -Infinity;
+    let peakCosineToSun = 1;
+    let sunFacingMaxError = 0;
+    for (let y = 0; y < SKY_HEIGHT; y += 1) {
+      const elevation = ((y + 0.5) / SKY_HEIGHT - 0.5) * Math.PI;
+      const base = skyRadiance(palette, Math.sin(elevation));
+      for (let x = 0; x < SKY_WIDTH; x += 1) {
+        const azimuth = ((x + 0.5) / SKY_WIDTH - 0.5) * 2 * Math.PI;
+        const cosineToSun = Math.cos(elevation) * (Math.cos(azimuth) * sx + Math.sin(azimuth) * sz) +
+          Math.sin(elevation) * sy;
+        const added = luminance(pixel(pixels, SKY_WIDTH, x, y)) - luminance(base);
+        if (cosineToSun >= 0) sunFacingMaxError = Math.max(sunFacingMaxError, Math.abs(added));
+        if (added > peak) {
+          peak = added;
+          peakCosineToSun = cosineToSun;
+        }
+      }
+    }
+    expect(peak).toBeCloseTo(0.35 * luminance(palette.zenith), 4);
+    expect(peakCosineToSun).toBeLessThan(-0.9999);
+    expect(sunFacingMaxError).toBeLessThan(1e-7);
+  });
+
   it('puts the ground in row 0 and the zenith in the last row, with no azimuth change', () => {
     const palette = visibleSkyPalette();
     const width = 8;

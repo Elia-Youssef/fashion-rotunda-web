@@ -171,12 +171,31 @@ describe('materials tuning table', () => {
     expect(fullClearcoat).toEqual(authoredNero);
     expect(halfClearcoat).toEqual([]);
     for (const name of authoredNero) {
-      expect(requireTuning(name)).toMatchObject({ clearcoat: 1.0, clearcoatRoughness: 0.1 });
+      expect(requireTuning(name)).toMatchObject({
+        clearcoat: name === 'MI_Marble_Nero_Vert' ? 0.3 : 1.0,
+        clearcoatRoughness: 0.1,
+      });
     }
   });
 });
 
 describe('applyTuning', () => {
+  it('applies the chosen inlay clearcoat to full and half materials without changing roughness', () => {
+    for (const material of [
+      new MeshPhysicalMaterial({ clearcoat: 1, roughness: 0.42 }),
+      new MeshStandardMaterial({ roughness: 0.42 }),
+    ]) {
+      material.name = 'MI_Marble_Nero_Vert';
+      const applied = applyTuning(new Mesh(undefined, material), requireTuning(material.name));
+      const physical = applied as MeshPhysicalMaterial;
+      expect(physical.clearcoat).toBe(0.3);
+      expect(physical.clearcoatRoughness).toBe(0.1);
+      expect(physical.roughness).toBe(0.42);
+      physical.dispose();
+      if (applied !== material) material.dispose();
+    }
+  });
+
   it('upgrades MeshStandardMaterial to MeshPhysicalMaterial when clearcoat is tuned', () => {
     const standard = new MeshStandardMaterial({ roughness: 0.5 });
     standard.name = 'MI_Marble_Nero_Base';

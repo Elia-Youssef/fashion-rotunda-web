@@ -27,6 +27,8 @@ import {
   LinearSRGBColorSpace,
 } from 'three';
 
+import { daylightParameters } from './rig';
+
 /** Straight up: a clear midday blue, the Rayleigh sky seen through the dome. sRGB hex. */
 const SKY_ZENITH_HEX = 0x4a7fc4;
 /**
@@ -66,6 +68,11 @@ const ENVIRONMENT_ZENITH_LUMINANCE = 1;
 const ENVIRONMENT_HORIZON_LUMINANCE = 0.03;
 const ENVIRONMENT_GROUND_LUMINANCE = 0.09;
 const ENVIRONMENT_SKY_FALLOFF = 1.0;
+
+// Owner's 2026-10-14 C3 choice: the soft option lifted the measured wall crop about 12 percent.
+const ENVIRONMENT_BOUNCE_PEAK_RATIO = 0.35;
+// A cosine squared lobe keeps the chosen fill soft across its facing hemisphere.
+const ENVIRONMENT_BOUNCE_FALLOFF = 2;
 
 /**
  * The lighting copy keeps this share of each colour's saturation. The visible sky wants a clear blue;
@@ -108,12 +115,22 @@ export function withSaturation(rgb: Rgb, saturation: number): Rgb {
   ];
 }
 
+export interface SkyBounce {
+  /** Unit direction from the room toward the lobe centre, in three.js world axes. */
+  direction: Rgb;
+  /** Peak added luminance relative to the palette zenith. */
+  peakRatio: number;
+  falloff: number;
+}
+
 export interface SkyPalette {
   zenith: Rgb;
   horizon: Rgb;
   ground: Rgb;
   /** Exponent on sin(elevation) above the horizon. */
   skyFalloff: number;
+  /** Directional fill belongs only to the lighting copy. */
+  bounce?: SkyBounce;
 }
 
 /** The visible sky: the three colours at full saturation and the visible luminances. */
@@ -127,7 +144,7 @@ export function visibleSkyPalette(): SkyPalette {
 }
 
 /** The lighting sky: the same hues desaturated by ENVIRONMENT_SATURATION, at the calibrated shape. */
-export function environmentSkyPalette(): SkyPalette {
+export function baseEnvironmentSkyPalette(): SkyPalette {
   const color = (hex: number, level: number): Rgb =>
     withSaturation(linearAtLuminance(hex, level), ENVIRONMENT_SATURATION);
   return {
@@ -135,6 +152,20 @@ export function environmentSkyPalette(): SkyPalette {
     horizon: color(SKY_HORIZON_HEX, ENVIRONMENT_HORIZON_LUMINANCE),
     ground: color(SKY_GROUND_HEX, ENVIRONMENT_GROUND_LUMINANCE),
     skyFalloff: ENVIRONMENT_SKY_FALLOFF,
+  };
+}
+
+/** The shipped lighting copy adds the owner's soft wall bounce to the calibrated base gradient. */
+export function environmentSkyPalette(): SkyPalette {
+  return {
+    ...baseEnvironmentSkyPalette(),
+    bounce: {
+      // The rig reports the sunlight travel direction, the antipode of the direction TO the sun.
+      // Derive it once during environment construction; Daylight does not move the rig's sun.
+      direction: daylightParameters(0.5).direction,
+      peakRatio: ENVIRONMENT_BOUNCE_PEAK_RATIO,
+      falloff: ENVIRONMENT_BOUNCE_FALLOFF,
+    },
   };
 }
 
@@ -154,7 +185,7 @@ export function skyRadiance(palette: SkyPalette, sinElevation: number): Rgb {
 /**
  * The equirectangular pixels as linear RGBA floats, row 0 at the nadir and the last row at the zenith
  * (see the orientation note above). Each row samples its centre, so no row lands exactly on a pole or
- * on the horizon. The gradient has no azimuth term.
+ * on the horizon. Only a palette with a bounce adds an azimuth-dependent lobe to the gradient.
  */
 export function gradientSkyPixels(palette: SkyPalette, width = SKY_WIDTH, height = SKY_HEIGHT): Float32Array {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 2) {
@@ -165,10 +196,18 @@ export function gradientSkyPixels(palette: SkyPalette, width = SKY_WIDTH, height
     const elevation = ((y + 0.5) / height - 0.5) * Math.PI;
     const rgb = skyRadiance(palette, Math.sin(elevation));
     for (let x = 0; x < width; x += 1) {
+      let weight = 0;
+      if (palette.bounce !== undefined) {
+        const azimuth = ((x + 0.5) / width - 0.5) * Math.PI * 2;
+        const [bx, by, bz] = palette.bounce.direction;
+        const cosine = Math.cos(elevation) * (Math.cos(azimuth) * bx + Math.sin(azimuth) * bz) +
+          Math.sin(elevation) * by;
+        weight = palette.bounce.peakRatio * Math.max(0, cosine) ** palette.bounce.falloff;
+      }
       const index = 4 * (y * width + x);
-      pixels[index] = rgb[0];
-      pixels[index + 1] = rgb[1];
-      pixels[index + 2] = rgb[2];
+      pixels[index] = rgb[0] + palette.zenith[0] * weight;
+      pixels[index + 1] = rgb[1] + palette.zenith[1] * weight;
+      pixels[index + 2] = rgb[2] + palette.zenith[2] * weight;
       pixels[index + 3] = 1;
     }
   }
