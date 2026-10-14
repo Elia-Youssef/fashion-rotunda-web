@@ -21,6 +21,8 @@
     "pipeline:env": "node pipeline/env.mjs",
     "pipeline:optimize": "node pipeline/gltf/optimize.mjs",
     "pipeline:music": "node pipeline/audio/music.mjs",
+    "r2:manifest": "node pipeline/r2/manifest.mjs",
+    "r2:plan": "node pipeline/r2/plan.mjs",
     "report": "node pipeline/gltf/report.mjs"
   },
   "keywords": [],
