@@ -2,8 +2,9 @@
    Positioned fixed relative to the viewport to prevent clipping by scrolling ancestors. The box
    wraps inside a viewport-bounded width, and the position clamp in tooltip.ts keeps the measured
    box inside the same inset rectangle. Excess height scrolls inside the bounded border box.
-   The gate layer is the highest the page paints, and the tooltip mounts after the gate, so a
-   tooltip never hides behind the entry scrim. */
+   The tooltip paints at the gate layer: above the chrome, sheet and overlay controls it
+   describes, below the full-viewport lobby, scene-reveal veil and loss notice, which cover
+   those controls while they are up. */
 
 .a11y-tooltip {
   box-sizing: border-box;

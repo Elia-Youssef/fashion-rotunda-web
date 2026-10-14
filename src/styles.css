@@ -218,8 +218,6 @@
   --dur-scene-reveal-e2e-sample-delay: -150ms;
   --ease-architectural: cubic-bezier(0.16, 1, 0.3, 1);
   /* Paint order, low to high. */
-  --z-canvas: 0;
-  --z-stage: 0;
   --z-chrome: 10;
   --z-sheet: 20;
   --z-overlay: 30;

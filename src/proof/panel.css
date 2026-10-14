@@ -4,14 +4,14 @@
   max-width: 24rem;
   margin: 0.5rem 0.75rem;
   padding: 0.5rem;
-  border: 1px solid #3a4048;
+  border: 1px solid var(--border);
   border-radius: 4px;
   /* Opaque chrome keeps small text readable over even the brightest scene pixels. */
   background: var(--surface);
   font-family: ui-monospace, monospace;
   font-size: 0.7rem;
   line-height: 1.4;
-  color: #9aa2ab;
+  color: var(--text-muted);
 }
 
 .proof-panel__list {
@@ -47,8 +47,8 @@
 .proof-panel__measure {
   padding: 0.3rem 0.8rem;
   background: #20242a;
-  color: #e6e8ea;
-  border: 1px solid #3a4048;
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 3px;
   font: inherit;
   cursor: pointer;

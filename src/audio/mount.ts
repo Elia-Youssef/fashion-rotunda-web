@@ -166,7 +166,8 @@ export function mountMusic(options: MusicMountOptions): MusicMount {
 
   if (preference === 'on') {
     if (options.deferPlay) {
-      switchHandle?.setState('armed', 'Starts when experience is ready');
+      // The switch draws the armed state from the state alone; no detail reaches its title.
+      switchHandle?.setState('armed', null);
     } else {
       listenForGesture();
       // Arms until the first gesture; no context exists yet and nothing is fetched.

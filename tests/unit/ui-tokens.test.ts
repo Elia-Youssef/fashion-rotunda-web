@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // The token contract: every component stylesheet draws its values from the :root block in
-// src/styles.css and carries no literal of its own.
+// src/styles.css and carries no literal of its own. Stylesheets outside src/ui (the proof
+// panel, the camera controls) are scanned by the same rule.
 //
 // What counts as a literal, per the token rules: a hex colour, an rgb(/hsl( colour function, or a
 // number with a px, rem, ms or s unit. What is allowed anywhere: bare 0; 1px (borders and the
@@ -16,26 +17,41 @@ import { describe, expect, it } from 'vitest';
 // a media query, so the 768px/1200px breakpoints are the one place a number must stay literal.
 // The numbers are pinned to the shell's BREAKPOINTS by tests/unit/chrome-shell.test.ts instead.
 
-const UI_DIR = join(process.cwd(), 'src', 'ui');
+/** The folders under src that hold component stylesheets; each one is scanned in full. */
+const COMPONENT_DIRS = ['ui', 'proof', 'camera'] as const;
 const PAGE_SHEET = join(process.cwd(), 'src', 'styles.css');
+
+interface Sheet {
+  /** Path relative to src, and the key in the frozen-hash map. */
+  readonly id: string;
+  readonly path: string;
+}
 
 const HEX_COLOR = /#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})(?![\w-])/g;
 const COLOR_FUNCTION = /(?:rgba?|hsla?)\(/g;
 const BANNED_UNIT = /-?\d+(?:\.\d+)?(?:px|rem|ms|s)\b/g;
 
-// These component stylesheets contain existing literals and are outside the token allowlist.
-// Pin their complete bytes instead of broadly exempting individual literals: frozen stylesheets
-// must not change or weaken the token contract for any editable stylesheet.
-const FROZEN_PREDECESSOR_SHEET_HASHES: Readonly<Record<string, string>> = {
+// These component stylesheets carry literals of their own (the notes on each entry say why).
+// Pin their complete bytes instead of broadly exempting individual literals: a frozen sheet
+// cannot change at all, so it can never weaken the token contract for an editable stylesheet.
+const FROZEN_SHEET_HASHES: Readonly<Record<string, string>> = {
   // 2026-09-23: re-pinned after the client asked for every look to show in the desktop rail; the
   // desktop thumbnails now read their size from the rail's --rail-thumb token instead of 48px.
   // 2026-10-09: re-pinned after the focus ring of the horizontal band's last thumbnail was cut at
   // the scroll edge; below 1200px the last item now carries the ring's extent as end padding and
   // each thumbnail a matching scroll margin.
-  'catalog-strip.css': '61cb0e0985cc9b54e333d4671cd389981ac4e05eada7c03aa1934d1e813fe02e',
+  'ui/catalog-strip.css': '61cb0e0985cc9b54e333d4671cd389981ac4e05eada7c03aa1934d1e813fe02e',
   // 2026-10-12: the Source link uses the existing muted text and focus tokens.
-  'product-card.css': '4586de02d5b823d001d9e0aa4d10e02056b992bc90e797bba52657d293613659',
-  'share.css': 'dc7722407941d032ebab9b78b426eae29ccb5e083fc215046956042c7a104cca',
+  'ui/product-card.css': '4586de02d5b823d001d9e0aa4d10e02056b992bc90e797bba52657d293613659',
+  'ui/share.css': 'dc7722407941d032ebab9b78b426eae29ccb5e083fc215046956042c7a104cca',
+  // 2026-10-14: the panel's three exact matches became the --border, --text-muted and --text
+  // tokens; the literals left in it are near misses that share no token value, so the sheet
+  // freezes at its tokenised bytes and a reintroduced literal fails the hash.
+  'proof/panel.css': '5df704f9610cefe2025689b8af2b349a8e047d07c328101ac14a5b0a4b6b97fe',
+  // Fixed-size touch controls with translucent fills, white borders and shadows of their own;
+  // no token matches those values. Frozen bytes keep them from drifting.
+  'camera/joystick.css': 'f4770d13697af60904f86b3d169e2b9034de09c3824bbe1148ed46e7b99851f9',
+  'camera/mode-switch.css': '729446028a64cb148b67965972252953e586fbe30e11f5a8efee984509ca462f',
 };
 
 function stripComments(css: string): string {
@@ -116,10 +132,13 @@ function literalsIn(css: string): string[] {
   return found;
 }
 
-function componentSheets(): string[] {
-  return readdirSync(UI_DIR)
-    .filter((name) => name.endsWith('.css'))
-    .sort();
+function componentSheets(): Sheet[] {
+  return COMPONENT_DIRS.flatMap((dir) =>
+    readdirSync(join(process.cwd(), 'src', dir))
+      .filter((name) => name.endsWith('.css'))
+      .sort()
+      .map((name) => ({ id: `${dir}/${name}`, path: join(process.cwd(), 'src', dir, name) })),
+  ).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
 function sha256(value: string): string {
@@ -127,23 +146,26 @@ function sha256(value: string): string {
 }
 
 describe('the token contract on the component stylesheets', () => {
-  it('scans every src/ui stylesheet on disk, shell.css included', () => {
-    const sheets = componentSheets();
-    expect(sheets.length).toBeGreaterThan(5);
-    expect(sheets).toContain('shell.css');
+  it('scans every component stylesheet on disk in the three folders', () => {
+    const ids = componentSheets().map((sheet) => sheet.id);
+    expect(ids.length).toBeGreaterThan(10);
+    expect(ids).toContain('ui/shell.css');
+    expect(ids).toContain('proof/panel.css');
+    expect(ids).toContain('camera/joystick.css');
+    expect(ids).toContain('camera/mode-switch.css');
   });
 
   for (const sheet of componentSheets()) {
-    const frozenHash = FROZEN_PREDECESSOR_SHEET_HASHES[sheet];
+    const frozenHash = FROZEN_SHEET_HASHES[sheet.id];
     if (frozenHash !== undefined) {
-      it(`${sheet} remains byte-identical frozen CSS`, () => {
-        const css = readFileSync(join(UI_DIR, sheet), 'utf8');
-        expect(sha256(css), `${sheet} keeps its approved bytes`).toBe(frozenHash);
+      it(`${sheet.id} remains byte-identical frozen CSS`, () => {
+        const css = readFileSync(sheet.path, 'utf8');
+        expect(sha256(css), `${sheet.id} keeps its approved bytes`).toBe(frozenHash);
       });
     } else {
-      it(`${sheet} carries no literal outside the token sheet`, () => {
-        const css = stripComments(readFileSync(join(UI_DIR, sheet), 'utf8'));
-        expect(literalsIn(css), `${sheet} must use var(--...) values only`).toEqual([]);
+      it(`${sheet.id} carries no literal outside the token sheet`, () => {
+        const css = stripComments(readFileSync(sheet.path, 'utf8'));
+        expect(literalsIn(css), `${sheet.id} must use var(--...) values only`).toEqual([]);
       });
     }
   }
@@ -166,9 +188,14 @@ describe('the token contract on the component stylesheets', () => {
     // these two pairs as inline styles; they are coordinates, not design tokens.
     const runtimePositioned = new Set(['tooltip-x', 'tooltip-y', 'onboarding-x', 'onboarding-y']);
     const used = new Set<string>();
+    // The camera sheets stay out of this one check: mode-switch.css keeps fallback-only
+    // references (var(--shadow-card, ...) renders its fallback), and naming those fallbacks as
+    // tokens is a product change. The proof panel uses only defined tokens and joins in.
     const sheets = [
       stripRootBlocks(pageCss),
-      ...componentSheets().map((name) => stripComments(readFileSync(join(UI_DIR, name), 'utf8'))),
+      ...componentSheets()
+        .filter((sheet) => !sheet.id.startsWith('camera/'))
+        .map((sheet) => stripComments(readFileSync(sheet.path, 'utf8'))),
     ];
     for (const css of sheets) {
       for (const match of css.matchAll(/var\(--([\w-]+)/g)) {
