@@ -1,4 +1,4 @@
-import { AgXToneMapping, BufferGeometry, Mesh, MeshStandardMaterial, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, Texture } from 'three/webgpu';
+import { ACESFilmicToneMapping, BufferGeometry, Mesh, MeshStandardMaterial, PerspectiveCamera, RenderPipeline, Scene, SRGBColorSpace, Texture } from 'three/webgpu';
 import type { WebGPURenderer } from 'three/webgpu';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createPostChain } from '../../src/post/chain';
@@ -21,7 +21,7 @@ vi.mock('../../src/post/settings', async (importOriginal) => {
 
 function fixture(backend: Backend, tier: 'base' | 'mid' | 'high', requestFrame: () => void) {
   const renderer = {
-    toneMapping: AgXToneMapping,
+    toneMapping: ACESFilmicToneMapping,
     outputColorSpace: SRGBColorSpace,
     backend: { isWebGPUBackend: backend === 'webgpu' },
     getPixelRatio: () => 1,

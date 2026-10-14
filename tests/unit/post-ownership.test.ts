@@ -1,5 +1,5 @@
 import {
-  AgXToneMapping,
+  ACESFilmicToneMapping,
   BufferGeometry,
   HalfFloatType,
   Mesh,
@@ -146,7 +146,7 @@ function observeGraph(pipeline: RenderPipeline) {
 
 function fixture(backend: Backend, tier: 'base' | 'mid' | 'high', isTouch = false) {
   const renderer = {
-    toneMapping: AgXToneMapping,
+    toneMapping: ACESFilmicToneMapping,
     outputColorSpace: SRGBColorSpace,
     backend: { isWebGPUBackend: backend === 'webgpu' },
     getPixelRatio: () => 1,

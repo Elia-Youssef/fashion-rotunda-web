@@ -10,6 +10,10 @@ import type { Material, Object3D } from 'three/webgpu';
 
 export const DOME_GLASS_MATERIAL = 'M_Glass_Flat_SM_Dome_A';
 
+// Owner's 2026-10-14 choice: the half-clearcoat option raised measured floor RMS contrast
+// about 45 / 32 percent. Keep the separate Nero Vert inlay choice at 0.3.
+const MARBLE_CLEARCOAT = 0.5;
+
 export interface MaterialTuning {
   transmission?: number;
   thickness?: number;
@@ -39,7 +43,7 @@ const TUNING_TABLE: Readonly<Record<string, MaterialTuning>> = {
   },
   // Unreal Nero Base and Vert use clearcoat; restore its scalar lobe when the half GLB strips it.
   MI_Marble_Nero_Base: {
-    clearcoat: 1.0,
+    clearcoat: MARBLE_CLEARCOAT,
     clearcoatRoughness: 0.1,
   },
   MI_Marble_Nero_Vert: {
@@ -50,12 +54,12 @@ const TUNING_TABLE: Readonly<Record<string, MaterialTuning>> = {
   },
   // Stills show polished blue fusion floor accents; KHR_materials_clearcoat
   MI_Quartzite_BlueFusion: {
-    clearcoat: 1.0,
+    clearcoat: MARBLE_CLEARCOAT,
     clearcoatRoughness: 0.1,
   },
   // Stills show polished silver wave marble floor accents; KHR_materials_clearcoat
   MI_Marble_SilverWave: {
-    clearcoat: 1.0,
+    clearcoat: MARBLE_CLEARCOAT,
     clearcoatRoughness: 0.1,
   },
   // Stills show brushed brass inlays with directional specular reflection; KHR_materials_anisotropy

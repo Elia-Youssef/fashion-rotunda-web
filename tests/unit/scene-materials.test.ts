@@ -172,7 +172,7 @@ describe('materials tuning table', () => {
     expect(halfClearcoat).toEqual([]);
     for (const name of authoredNero) {
       expect(requireTuning(name)).toMatchObject({
-        clearcoat: name === 'MI_Marble_Nero_Vert' ? 0.3 : 1.0,
+        clearcoat: name === 'MI_Marble_Nero_Vert' ? 0.3 : 0.5,
         clearcoatRoughness: 0.1,
       });
     }
@@ -180,6 +180,24 @@ describe('materials tuning table', () => {
 });
 
 describe('applyTuning', () => {
+  it.each(['MI_Marble_Nero_Base', 'MI_Quartzite_BlueFusion', 'MI_Marble_SilverWave'])(
+    '%s applies the chosen 0.5 clearcoat to full and half materials without changing roughness', (name) => {
+      expect(requireTuning(name).clearcoat).toBe(0.5);
+      for (const material of [
+        new MeshPhysicalMaterial({ clearcoat: 1, roughness: 0.42 }),
+        new MeshStandardMaterial({ roughness: 0.42 }),
+      ]) {
+        material.name = name;
+        const applied = applyTuning(new Mesh(undefined, material), requireTuning(name)) as MeshPhysicalMaterial;
+        expect(applied.clearcoat).toBe(0.5);
+        expect(applied.clearcoatRoughness).toBe(0.1);
+        expect(applied.roughness).toBe(0.42);
+        applied.dispose();
+        if (applied !== material) material.dispose();
+      }
+    },
+  );
+
   it('applies the chosen inlay clearcoat to full and half materials without changing roughness', () => {
     for (const material of [
       new MeshPhysicalMaterial({ clearcoat: 1, roughness: 0.42 }),
@@ -205,7 +223,7 @@ describe('applyTuning', () => {
     expect(mesh.material).toBe(applied);
     expect(applied).toBeInstanceOf(MeshPhysicalMaterial);
     const physical = applied as MeshPhysicalMaterial;
-    expect(physical.clearcoat).toBe(1.0);
+    expect(physical.clearcoat).toBe(0.5);
     expect(physical.clearcoatRoughness).toBe(0.1);
   });
 

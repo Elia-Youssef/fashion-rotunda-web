@@ -4,7 +4,7 @@
 // Source references below are to the installed three.js 0.186.0 sources under
 // node_modules/three/src/renderers/ and are quoted with file and line.
 
-import { AgXToneMapping, WebGPURenderer } from 'three/webgpu';
+import { ACESFilmicToneMapping, WebGPURenderer } from 'three/webgpu';
 
 import { separateViewportTextureSizes } from './viewport-texture';
 
@@ -239,7 +239,9 @@ export async function createRenderer(options: CreateRendererOptions): Promise<Re
   options.canvas.dataset['backend'] = backend;
 
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, options.pixelRatioCap));
-  renderer.toneMapping = AgXToneMapping;
+  // Owner's 2026-10-14 choice: ACES raised measured RMS contrast about 18 percent in the frame
+  // and 32 percent on walls; the combined marble choice awaits per-view review.
+  renderer.toneMapping = ACESFilmicToneMapping;
   // outputColorSpace stays at the default SRGBColorSpace (Renderer.js line 184).
 
   const restoreLossHandlers = installLossHandlers(renderer, backend, options);

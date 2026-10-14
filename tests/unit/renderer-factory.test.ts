@@ -1,4 +1,4 @@
-import { AgXToneMapping, WebGPURenderer } from 'three/webgpu';
+import { ACESFilmicToneMapping, WebGPURenderer } from 'three/webgpu';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createRenderer } from '../../src/renderer/create';
@@ -106,9 +106,10 @@ describe('createRenderer', () => {
     expect(double.instances[0].setPixelRatio).toHaveBeenCalledExactlyOnceWith(expected);
   });
 
-  it('sets AgX tone mapping', async () => {
-    await createRenderer(options());
-    expect(double.instances[0].toneMapping).toBe(AgXToneMapping);
+  it.each([false, true])('sets the chosen ACES operator with forceWebGL=%s', async (forceWebGL) => {
+    double.state.finalWebGPU = !forceWebGL;
+    await createRenderer(options({ forceWebGL }));
+    expect(double.instances[0].toneMapping).toBe(ACESFilmicToneMapping);
   });
 
   it.each([
