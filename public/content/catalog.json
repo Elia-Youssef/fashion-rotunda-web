@@ -65,7 +65,6 @@
     {
       "id": "mondrian-dress",
       "name": "Mondrian Dress",
-      "description": "Yves Saint Laurent showed his Mondrian dresses in his fall/winter 1965-66 collection, after reading a book about the painter Piet Mondrian that year. Each wool jersey shift is pieced from separate blocks of color, and all of its shaping is hidden in the seams of the grid. The dresses brought wide attention to both designer and painter, and mass manufacturers soon copied them.",
       "thumbnail": "thumbs/mondrian-dress.jpg",
       "file": "looks/mondrian-dress.glb",
       "variants": [
@@ -78,6 +77,7 @@
       "garmentNodes": [
         "garment"
       ],
+      "description": "Yves Saint Laurent showed his Mondrian dresses in his fall/winter 1965-66 collection, after reading a book about the painter Piet Mondrian that year. Each wool jersey shift is pieced from separate blocks of color, and all of its shaping is hidden in the seams of the grid. The dresses brought wide attention to both designer and painter, and mass manufacturers soon copied them.",
       "sourceUrl": "https://www.metmuseum.org/art/collection/search/83442"
     },
     {
