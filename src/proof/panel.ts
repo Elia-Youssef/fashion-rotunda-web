@@ -134,7 +134,8 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
   for (const term of [
     'load', 'scene files', 'all requests up to first frame', 'all requests so far',
     'draw calls', 'triangles', 'backend', 'tier',
-    'pixel ratio', 'render scale', 'gpu', 'frame p50', 'frame p95', 'gpu p50', 'gpu p95',
+    'pixel ratio', 'render scale', 'gpu', 'frame work p50 (cpu)', 'frame work p95 (cpu)',
+    'gpu p50', 'gpu p95',
     'data-post', 'governor', 'governor log', 'cache', 'look switch', 'orbit',
   ]) {
     const dt = document.createElement('dt');
@@ -173,8 +174,8 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
     renderRow('pixel ratio', snap.pixelRatio.toFixed(2));
     renderRow('render scale', String(snap.renderScale));
     renderRow('gpu', snap.gpuName);
-    renderRow('frame p50', formatMs(snap.frameP50Ms));
-    renderRow('frame p95', formatMs(snap.frameP95Ms));
+    renderRow('frame work p50 (cpu)', formatMs(snap.frameP50Ms));
+    renderRow('frame work p95 (cpu)', formatMs(snap.frameP95Ms));
 
     // `available` is the series' own answer to "did this backend ever give a reading", which a
     // pair of nulls cannot tell apart from a window that has just been cleared for a Measure run.

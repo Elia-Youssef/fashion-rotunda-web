@@ -158,7 +158,7 @@ describe('mountProofPanel', () => {
       'load', '1234.5 ms', 'scene files', '9.47 MB / 10.00 MB (inside)', 'all requests up to first frame', '3500 bytes', 'all requests so far', '9100 bytes',
       'draw calls', '42 calls', 'triangles', '123456 triangles', 'backend', 'webgpu',
       'tier', 'high', 'pixel ratio', '2.00', 'render scale', '1', 'gpu', 'NVIDIA GeForce RTX 4090',
-      'frame p50', '8.2 ms', 'frame p95', '14.5 ms',
+      'frame work p50 (cpu)', '8.2 ms', 'frame work p95 (cpu)', '14.5 ms',
     ];
     const suffix = [
       'data-post', 'ao,traa', 'governor', 'off', 'governor log', 'no changes yet',
