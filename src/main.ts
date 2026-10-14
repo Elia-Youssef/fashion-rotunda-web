@@ -821,7 +821,7 @@ async function main(): Promise<void> {
     }
     renderer.setPixelRatio(1);
     resize();
-    const benchmarkP95Ms = await runBenchmark({ renderFrame: drawFrame, durationMs: BENCHMARK_MS });
+    const benchmarkP95Ms = await runBenchmark({ renderFrame: drawFrame, durationMs: BENCHMARK_MS, loop });
     console.info(`[archviz] benchmark p95: ${benchmarkP95Ms.toFixed(2)} ms`);
     const settled = decideTier({ ...tierInput, benchmarkP95Ms });
     if (settled !== tier) {

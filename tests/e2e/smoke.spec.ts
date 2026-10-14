@@ -15,6 +15,54 @@ const BACKEND_ATTRIBUTE_TIMEOUT = 30_000;
 // is generous; it is a wait on a state, not a sleep.
 const SCENE_READY_TIMEOUT = 60_000;
 
+interface CalibrationDraws {
+  provisionalHigh: boolean;
+  complete: boolean;
+  draws: Record<string, number>;
+}
+type CalibrationWindow = Window & { calibrationDraws?: CalibrationDraws };
+
+test('draws once per display frame during the native tier benchmark', async ({ page }) => {
+  test.skip(test.info().project.name !== 'webgpu', 'native High calibration requires WebGPU');
+  await page.addInitScript(() => {
+    const state: CalibrationDraws = { provisionalHigh: false, complete: false, draws: {} };
+    (window as CalibrationWindow).calibrationDraws = state;
+    const info = console.info.bind(console);
+    console.info = (...args: unknown[]): void => {
+      const message = String(args[0]);
+      if (message === '[archviz] tier: high') state.provisionalHigh = true;
+      if (message.startsWith('[archviz] benchmark p95:')) state.complete = true;
+      info(...args);
+    };
+    const raf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (callback: FrameRequestCallback): number => raf((timestamp) => {
+      const canvas = document.querySelector<HTMLCanvasElement>('canvas#scene');
+      const before = Number(canvas?.dataset['frames'] ?? 0);
+      callback(timestamp);
+      // Count actual submissions using the existing canvas frame counter, grouped by the shared
+      // display timestamp. This observes both drawers without adding a runtime diagnostic.
+      const after = Number(canvas?.dataset['frames'] ?? 0);
+      if (state.provisionalHigh && !state.complete && canvas?.dataset['scene'] === 'ready') {
+        const key = String(timestamp);
+        state.draws[key] = (state.draws[key] ?? 0) + after - before;
+      }
+    });
+  });
+  await page.goto('/?gate=off&e2e=1&music=off&attract=0');
+  const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute('data-backend', 'webgpu', { timeout: BACKEND_ATTRIBUTE_TIMEOUT });
+  await expect.poll(() => page.evaluate(() =>
+    (window as CalibrationWindow).calibrationDraws?.provisionalHigh),
+  { timeout: SCENE_READY_TIMEOUT, message: 'native provisional High calibration must run' }).toBe(true);
+  await expect.poll(() => page.evaluate(() =>
+    (window as CalibrationWindow).calibrationDraws?.complete),
+  { timeout: SCENE_READY_TIMEOUT, message: 'benchmark p95 log acknowledges completion' }).toBe(true);
+  const counts = await page.evaluate(() => Object.values((window as CalibrationWindow).calibrationDraws!.draws)
+    .filter((count) => count > 0));
+  expect(counts.length, 'real room frames observed during calibration').toBeGreaterThan(0);
+  expect(Math.max(...counts), 'submissions in a single calibration display frame').toBe(1);
+});
+
 function expectedBackend(): Backend {
   return test.info().project.name === 'webgpu' ? 'webgpu' : 'webgl2';
 }

@@ -1,6 +1,7 @@
 // The calibration benchmark that decides whether a discrete GPU earns the high tier.
 
 import { FrameTimes } from '../proof/frametime';
+import type { Loop } from '../loop/loop';
 
 const DEFAULT_DURATION_MS = 2000;
 const WARMUP_FRAMES = 3;
@@ -11,6 +12,8 @@ export interface BenchmarkOptions {
   durationMs?: number;
   now?: () => number;
   raf?: (cb: (t: number) => void) => number;
+  /** Suspends the regular drawer until calibration resolves or rejects. */
+  loop?: Pick<Loop, 'running' | 'start' | 'stop'>;
 }
 
 /**
@@ -25,6 +28,8 @@ export function runBenchmark(options: BenchmarkOptions): Promise<number> {
   const durationMs = options.durationMs ?? DEFAULT_DURATION_MS;
   const now = options.now ?? ((): number => performance.now());
   const raf = options.raf ?? ((cb: (t: number) => void): number => requestAnimationFrame(cb));
+  const resumeLoop = options.loop?.running === true;
+  if (resumeLoop) options.loop?.stop();
 
   return new Promise<number>((resolve, reject) => {
     const frames = new FrameTimes();
@@ -52,5 +57,8 @@ export function runBenchmark(options: BenchmarkOptions): Promise<number> {
     }
 
     raf(tick);
+  }).finally(() => {
+    // stop() preserves animation and invalidation, including input received during calibration.
+    if (resumeLoop) options.loop?.start();
   });
 }

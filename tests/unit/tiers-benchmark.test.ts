@@ -1,5 +1,116 @@
 import { describe, expect, it, vi } from 'vitest';
 import { runBenchmark } from '../../src/tiers/benchmark';
+import { createLoop } from '../../src/loop/loop';
+
+// All callbacks in a display frame share one timestamp; newly requested callbacks wait for the next.
+function sharedFrames() {
+  let clock = 0;
+  let nextId = 0;
+  const callbacks = new Map<number, (t: number) => void>();
+  const draws: string[] = [];
+  const raf = (callback: (t: number) => void): number => {
+    nextId += 1;
+    callbacks.set(nextId, callback);
+    return nextId;
+  };
+  const draw = (owner: string): void => {
+    draws.push(owner);
+    clock += 1;
+  };
+  const loop = createLoop({
+    render: () => draw('loop'), frameCap: null, diagnostics: true,
+    raf, caf: (id) => { callbacks.delete(id); }, now: () => clock,
+  });
+  return {
+    loop, raf, now: () => clock, draws,
+    drawBenchmark: () => draw('benchmark'),
+    pump(): string[] {
+      clock += 16;
+      const timestamp = clock;
+      const pending = [...callbacks.keys()];
+      const before = draws.length;
+      for (const id of pending) {
+        const callback = callbacks.get(id);
+        callbacks.delete(id);
+        callback?.(timestamp);
+      }
+      return draws.slice(before);
+    },
+  };
+}
+
+describe('benchmark render ownership', () => {
+  it('reproduces duplicate draws with the startup order and an unheld loop', async () => {
+    const h = sharedFrames();
+    h.loop.start();
+    h.loop.setAnimating(true);
+    h.loop.invalidate();
+    const benchmark = runBenchmark({
+      renderFrame: h.drawBenchmark, durationMs: 1, now: h.now, raf: h.raf,
+    });
+    expect(h.pump()).toEqual(['loop', 'benchmark']);
+    await benchmark;
+    h.loop.stop();
+  });
+
+  it.each([true, false])('is the only drawer after startup with animating=%s', async (animating) => {
+    const h = sharedFrames();
+    h.loop.start();
+    h.loop.setAnimating(true); // Startup wake, followed by a possible expired wake window.
+    h.loop.setAnimating(animating);
+    h.loop.invalidate(); // Content is ready immediately before settleTier.
+    const benchmark = runBenchmark({
+      renderFrame: h.drawBenchmark, now: h.now, raf: h.raf, loop: h.loop,
+    });
+    // Keep a complete two-second calibration, even when input and resize owe more frames.
+    while (h.now() < 2000) {
+      h.loop.invalidate();
+      h.loop.setAnimating(true);
+      expect(h.pump()).toEqual(['benchmark']);
+    }
+    expect(await benchmark).toBe(1);
+    expect(h.loop.diagnostics?.()).toMatchObject({
+      running: true, scheduled: true, animating: true, invalidated: true,
+    });
+    expect(h.pump()).toEqual(['loop']);
+    // The wake timer can still end animation and the loop can still idle after calibration.
+    h.loop.setAnimating(false);
+    expect(h.pump()).toEqual([]);
+  });
+
+  it('restores the loop and pending work when the benchmark render rejects', async () => {
+    const h = sharedFrames();
+    h.loop.start();
+    h.loop.invalidate();
+    const error = new Error('calibration failed');
+    const benchmark = runBenchmark({
+      renderFrame: () => { throw error; }, now: h.now, raf: h.raf, loop: h.loop,
+    });
+    const rejected = expect(benchmark).rejects.toBe(error);
+    const delivered = h.pump();
+    await rejected;
+    expect(delivered).toEqual([]);
+    expect(h.loop.running).toBe(true);
+    expect(h.pump()).toEqual(['loop']);
+    expect(h.pump()).toEqual([]);
+  });
+
+  it('preserves a stopped loop and input owed during calibration', async () => {
+    const h = sharedFrames();
+    const benchmark = runBenchmark({
+      renderFrame: h.drawBenchmark, durationMs: 1, now: h.now, raf: h.raf, loop: h.loop,
+    });
+    h.loop.invalidate();
+    expect(h.pump()).toEqual(['benchmark']);
+    await benchmark;
+    expect(h.loop.diagnostics?.()).toMatchObject({
+      running: false, scheduled: false, invalidated: true,
+    });
+    expect(h.pump()).toEqual([]);
+    h.loop.start();
+    expect(h.pump()).toEqual(['loop']);
+  });
+});
 
 describe('runBenchmark', () => {
   it.each([
