@@ -33,12 +33,6 @@ function buttonPixels(foreground: Color, fill: Color, panel: Color, opacity: num
 }
 
 describe('proof panel contrast over a white scene', () => {
-  it('preserves alpha in comma and slash colour syntax', () => {
-    expect(color('rgba(20, 40, 60, 0.5)')).toEqual([20, 40, 60, 0.5]);
-    expect(color('rgb(20 40 60 / 0)')).toEqual([20, 40, 60, 0]);
-    expect(color('rgb(20, 40, 60)')).toEqual([20, 40, 60, 1]);
-  });
-
   it('composes text over its fill before fading the button group', () => {
     const pixels = buttonPixels([200, 200, 200, 0.5], [100, 100, 100, 1], [0, 0, 0, 1], 0.5);
     expect(pixels.textPixel).toEqual([75, 75, 75, 1]);

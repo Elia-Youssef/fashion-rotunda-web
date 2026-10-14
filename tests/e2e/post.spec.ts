@@ -4,10 +4,11 @@ import type { Locator, Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 import { canvasStats } from './support/pixels';
 
-// The post chain's development slices on the WebGL 2 backend. The chain is
-// wired into main.ts in a later step; until then the canvas carries no
-// data-post and both tests skip with the reason below. On this backend the tier decision is always
-// mid (decide.ts lines 54-56), so the aa slice is TRAA and the ao slice is GTAO, deterministically.
+// The post chain's development slices on the WebGL 2 backend. main.ts creates the chain once the
+// tier settles and publishes its features string as data-post from the frame loop, so a canvas
+// whose data-post never appears is a defect: the waits below fail instead of skipping. On this
+// backend the tier decision is always mid (decide.ts lines 54-56), so the aa slice is TRAA and the
+// ao slice is GTAO, deterministically.
 
 const SCENE_READY_TIMEOUT = 60_000;
 /**
@@ -19,6 +20,20 @@ const SCENE_READY_TIMEOUT = 60_000;
  * 30-second stall inside the test timeout.
  */
 const POST_ATTRIBUTE_TIMEOUT = 10_000;
+
+/**
+ * The chain is created unconditionally once the tier settles (main.ts rebuildPostChain throws if it
+ * cannot be built), and the post-state publisher writes the features string within a frame or two
+ * of data-scene="ready". A canvas that never carries data-post is a wiring defect, so this wait
+ * fails the test instead of skipping it.
+ */
+async function expectPublishedPostState(canvas: Locator): Promise<void> {
+  await expect(canvas, 'the wired post chain publishes data-post on the canvas').toHaveAttribute(
+    'data-post',
+    /./,
+    { timeout: POST_ATTRIBUTE_TIMEOUT },
+  );
+}
 
 /** A drag must change the actual camera and draw its moving post state before release. */
 async function expectDrawnDrag(
@@ -134,9 +149,9 @@ function skipUnlessWebgl2(): void {
 }
 
 /**
- * Opens a slice and returns the canvas once the chain has published what it turned on. The skip is
- * the delivery contract: a page whose data-post never appears is a page whose main.ts does not wire
- * the chain.
+ * Opens a slice and returns the canvas once the chain has published what it turned on. The hard
+ * wait is the delivery contract: a page whose data-post never appears is a page whose main.ts does
+ * not wire the chain, and it fails here instead of skipping.
  */
 async function openSlice(page: Page, slice: string): Promise<Locator> {
   // Retain normal onboarding while enabling the final diagnostic handle.
@@ -144,17 +159,7 @@ async function openSlice(page: Page, slice: string): Promise<Locator> {
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
-  const wired = await page
-    .waitForFunction(
-      () => document.querySelector<HTMLCanvasElement>('canvas#scene')?.dataset.post !== undefined,
-      null,
-      {
-        timeout: POST_ATTRIBUTE_TIMEOUT,
-      },
-    )
-    .then(() => true)
-    .catch(() => false);
-  test.skip(!wired, 'post chain not wired');
+  await expectPublishedPostState(canvas);
 
   await expect(canvas).toHaveAttribute('data-post', EXPECTED_POST[slice]);
   return canvas;
@@ -260,17 +265,7 @@ test('max slice on webgl2 retains ao and traa without ssgi or ssr', async ({ pag
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
-  const wired = await page
-    .waitForFunction(
-      () => document.querySelector<HTMLCanvasElement>('canvas#scene')?.dataset.post !== undefined,
-      null,
-      {
-        timeout: POST_ATTRIBUTE_TIMEOUT,
-      },
-    )
-    .then(() => true)
-    .catch(() => false);
-  test.skip(!wired, 'post chain not wired');
+  await expectPublishedPostState(canvas);
 
   const dataPost = (await canvas.getAttribute('data-post')) ?? '';
   expect(dataPost, 'data-post contains ao').toContain('ao');
@@ -338,17 +333,7 @@ test('finishing pass reaches the screen on webgl2 on max and is absent on off', 
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
-  const wiredMax = await page
-    .waitForFunction(
-      () => document.querySelector<HTMLCanvasElement>('canvas#scene')?.dataset.post !== undefined,
-      null,
-      {
-        timeout: POST_ATTRIBUTE_TIMEOUT,
-      },
-    )
-    .then(() => true)
-    .catch(() => false);
-  test.skip(!wiredMax, 'post chain not wired');
+  await expectPublishedPostState(canvas);
 
   const dataPostMax = (await canvas.getAttribute('data-post')) ?? '';
   expect(dataPostMax, 'data-post on max contains lut').toContain('lut');
@@ -359,17 +344,7 @@ test('finishing pass reaches the screen on webgl2 on max and is absent on off', 
   await page.goto('/?webgl=1&gate=off&post=off');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
 
-  const wiredOff = await page
-    .waitForFunction(
-      () => document.querySelector<HTMLCanvasElement>('canvas#scene')?.dataset.post !== undefined,
-      null,
-      {
-        timeout: POST_ATTRIBUTE_TIMEOUT,
-      },
-    )
-    .then(() => true)
-    .catch(() => false);
-  test.skip(!wiredOff, 'post chain not wired');
+  await expectPublishedPostState(canvas);
 
   const dataPostOff = (await canvas.getAttribute('data-post')) ?? '';
   expect(dataPostOff, 'data-post on off does not contain lut').not.toContain('lut');

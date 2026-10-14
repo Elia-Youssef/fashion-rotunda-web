@@ -1,4 +1,5 @@
 import { expect, test } from './support/fixtures';
+import { backendPath, projectBackend } from './support/backend';
 import { waitForLoopIdle } from './support/ready';
 import type { APIRequestContext, Page } from '@playwright/test';
 import { PNG } from 'pngjs';
@@ -7,7 +8,9 @@ import { parseCatalog } from '../../src/catalog/catalog';
 import type { Catalog } from '../../src/catalog/catalog';
 
 // Sharing e2e test suite: deep linking, URL synchronization, and 2x screenshot capture.
-// Runs on the webgl2 project only (skips webgpu to keep headless testing reproducible and fast).
+// The deep-link and URL checks are backend independent and run on the webgl2 project only; the
+// still capture resizes the backing store and reads pixels back, so it runs on both projects and
+// pins the backend it actually got.
 
 const READY_TIMEOUT_MS = 60_000;
 const SWITCH_TIMEOUT_MS = 30_000;
@@ -110,10 +113,13 @@ test('restores look, variant, camera pose, yaw and turntable from deep link', as
 });
 
 test('captures and downloads a still at twice the canvas dimensions', async ({ page }) => {
-  skipUnlessWebgl2();
-
-  await page.goto('/?webgl=1&e2e=1');
+  await page.goto(backendPath('/?e2e=1'));
   const canvas = page.locator('canvas#scene');
+  // The capture resizes the backing store and reads it back, so a project that silently fell back
+  // to another backend would measure the wrong renderer: pin the one this project names.
+  await expect(canvas).toHaveAttribute('data-backend', projectBackend(), {
+    timeout: READY_TIMEOUT_MS,
+  });
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: READY_TIMEOUT_MS });
 
   // Prerequisite: an idle render loop, so no scaler step can move the drawing buffer before the

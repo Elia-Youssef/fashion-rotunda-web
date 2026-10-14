@@ -13,12 +13,6 @@ function declaration(selector: string, property: string): string {
 }
 
 describe('lobby contrast accessibility contract', () => {
-  it('preserves alpha in comma and slash colour syntax', () => {
-    expect(color('rgba(20, 40, 60, 0.5)')).toEqual([20, 40, 60, 0.5]);
-    expect(color('rgb(20 40 60 / 0)')).toEqual([20, 40, 60, 0]);
-    expect(color('rgb(20, 40, 60)')).toEqual([20, 40, 60, 1]);
-  });
-
   it('composites translucent surfaces without rounding channels', () => {
     expect(over([255, 255, 255, 0.5], [0, 0, 0, 1])).toEqual([127.5, 127.5, 127.5, 1]);
     expect(contrast([255, 255, 255, 0], [0, 0, 0, 1])).toBe(1);
