@@ -1,6 +1,7 @@
 import { expect, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
 
+import { holdFirstRequest } from './support/held-request';
 import { waitForSceneInitialization } from './support/ready';
 
 // Entry lobby E2E verification.
@@ -18,6 +19,10 @@ const VIEWPORTS = [
 // The final scene hook mounts after the reveal, so it is the initialized state the after-boot
 // checks observe; the budget is the same one the reveal waits in this file share.
 const INITIALIZED_TIMEOUT = 60_000;
+
+// The held half-set rotunda keeps the touch Base load observable; 30 s covers a slow boot start
+// under four software workers, the same budget the loading spec's hold uses.
+const HALF_ROTUNDA_HOLD_TIMEOUT_MS = 30_000;
 
 function skipUnlessWebgl2(): void {
   test.skip(test.info().project.name !== 'webgl2', 'the shared lobby DOM and boot checks run once on webgl2');
@@ -234,4 +239,57 @@ test('safe area insets do not clip interactive controls', async ({ page }) => {
 
   expect(musicBox!.y, 'music button clears safe area top').toBeGreaterThanOrEqual(44);
   expect(btnBox!.y + btnBox!.height, 'load button clears safe area bottom').toBeLessThanOrEqual(844 - 34);
+});
+
+// A touch device lands on the Base tier, whose asset set is the half set. The lobby's tracker must
+// follow /content/half, so the bar moves while the load is still running and every scene geometry
+// request goes to the half set.
+test.describe('lobby progress on the touch half set', () => {
+  test.use({
+    viewport: { width: 390, height: 844 },
+    deviceScaleFactor: 1,
+    hasTouch: true,
+    isMobile: true,
+  });
+
+  test('tracks the half set a touch Base device loads: the bar rises before ready', async ({ page }) => {
+    skipUnlessWebgl2();
+
+    // The held half-set rotunda keeps the lobby in its loading phase while the other tracked files
+    // arrive, so the bar has a window in which a real rise is observable.
+    const rotunda = await holdFirstRequest(page, '**/content/half/rotunda.glb', HALF_ROTUNDA_HOLD_TIMEOUT_MS);
+    const glbPaths: string[] = [];
+    page.on('request', (request) => {
+      const pathname = new URL(request.url()).pathname;
+      if (pathname.endsWith('.glb')) glbPaths.push(pathname);
+    });
+
+    await page.goto('/?webgl=1&e2e=1&gate=on&tier=base&music=off');
+    const lobby = page.locator('#entry-lobby');
+    await expect(lobby).toHaveAttribute('data-state', 'idle');
+    await lobby.locator('#lobby-load-btn').click();
+    await expect(lobby).toHaveAttribute('data-state', 'loading');
+    await rotunda.waitUntilEntered();
+
+    const progress = lobby.locator('.entry-lobby__progress-bar');
+    await expect
+      .poll(async () => Number((await progress.getAttribute('value')) ?? '0'), {
+        message: 'the bar rises above zero while the lobby is still loading',
+        timeout: 20_000,
+      })
+      .toBeGreaterThan(0);
+    expect(
+      await lobby.getAttribute('data-state'),
+      'the held rotunda keeps the lobby in its loading phase',
+    ).toBe('loading');
+
+    await rotunda.release();
+    await rotunda.waitUntilContinued();
+    await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+
+    expect(glbPaths.length, 'the scene geometry was requested').toBeGreaterThan(0);
+    for (const pathname of glbPaths) {
+      expect(pathname, `${pathname} is served from the half set`).toMatch(/^\/content\/half\//);
+    }
+  });
 });

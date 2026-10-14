@@ -445,7 +445,7 @@ async function main(): Promise<void> {
   }
 
   const canvas = requireCanvas();
-  const stopProgress = lobby !== null ? lobby.trackProgress(FULL_CONTENT_BASE) : () => {};
+  let stopProgress = lobby !== null ? lobby.trackProgress(FULL_CONTENT_BASE) : () => {};
 
   // Decided before the renderer exists because it decides how the renderer is built: the timestamp
   // queries and their per-frame resolve serve the panel and nothing else, so a visitor who never
@@ -896,6 +896,13 @@ async function main(): Promise<void> {
     // The phone set is chosen by the tier, and only a touch device can reach a tier that asks for
     // it; on anything else the full set is the only one.
     const { base, catalog } = await loadContentSet(settings.assetSet === 'half-on-touch' && isTouch);
+    // The tracker above started before the tier and the touch input were known and assumed the
+    // full set. A touch device on a tier whose asset set is the half set fetches /content/half,
+    // whose paths never match the full-set expectations, so the tracker follows the set that was
+    // actually chosen and the ready call below stops that tracker.
+    if (lobby !== null && base !== FULL_CONTENT_BASE) {
+      stopProgress = lobby.trackProgress(base);
+    }
     showroom = createShowroom({
       renderer,
       catalog,

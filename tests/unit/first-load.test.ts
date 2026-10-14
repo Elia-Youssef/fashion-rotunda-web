@@ -151,6 +151,9 @@ function harness(search = '?look=second&variant=dark', half = false, hasDark = t
   const dependencies = {
     loadCatalog, contentUrl, createShowroom, composeLighting, enableShadows, params,
     FULL_CONTENT_BASE: '/content', HALF_CONTENT_BASE: '/content/half',
+    // The boot's progress-tracking scope: this harness runs without a lobby, so the chosen-set
+    // re-track is a no-op and the stop function is the empty one main() starts with.
+    lobby: null, stopProgress: () => {},
     settings: { assetSet: half ? 'half-on-touch' : 'full', shadowMapSize: 1024 }, isTouch: half,
     renderer, canvas, routing, shell: { roots: { lightPanel: {} } },
     loop: { invalidate: vi.fn() }, resize: vi.fn(),

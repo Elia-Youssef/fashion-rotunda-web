@@ -231,8 +231,14 @@ export function trackFirstFrameProgress(
 
   void (async () => {
     try {
+      // One manifest document at the content root holds both sets (sets.full, sets.half); the
+      // half folder ships no manifest of its own, so the document is read from the root and the
+      // set is picked by name below.
+      const manifestBase = contentBase.endsWith('/half')
+        ? contentBase.slice(0, -'/half'.length)
+        : contentBase;
       const [manifestResponse, catalog] = await Promise.all([
-        fetch(contentUrl(contentBase, 'manifest.json')),
+        fetch(contentUrl(manifestBase, 'manifest.json')),
         loadCatalog(contentUrl(contentBase, 'catalog.json')),
       ]);
       if (manifestResponse.ok) {
