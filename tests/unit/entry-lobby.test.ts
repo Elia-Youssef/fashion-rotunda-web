@@ -14,6 +14,7 @@ import {
   trackFirstFrameProgress,
 } from '../../src/ui/entry-lobby';
 import type { EntryLobby, ProgressReading } from '../../src/ui/entry-lobby';
+import { lobbyWanted as gateWanted } from '../../src/ui/entry-lobby/gate';
 
 class FakeStorage {
   private data = new Map<string, string>();
@@ -101,6 +102,14 @@ afterEach(() => {
 });
 
 describe('lobbyWanted precedence', () => {
+  it('re-exports the gate function and preserves explicit gate precedence directly', () => {
+    expect(lobbyWanted).toBe(gateWanted);
+    expect(gateWanted('?e2e=1&gate=on')).toBe(true);
+    expect(gateWanted('?e2e=1&gate=off')).toBe(false);
+    expect(gateWanted('?e2e=1')).toBe(false);
+    expect(gateWanted('?gate=unknown')).toBe(true);
+  });
+
   it('shows the lobby for standard visitor URLs', () => {
     expect(lobbyWanted('')).toBe(true);
     expect(lobbyWanted('?webgl=1')).toBe(true);
