@@ -184,8 +184,9 @@ export function skyRadiance(palette: SkyPalette, sinElevation: number): Rgb {
 
 /**
  * The equirectangular pixels as linear RGBA floats, row 0 at the nadir and the last row at the zenith
- * (see the orientation note above). Each row samples its centre, so no row lands exactly on a pole or
- * on the horizon. Only a palette with a bounce adds an azimuth-dependent lobe to the gradient.
+ * (see the orientation note above). Each row samples its centre, so no row lands exactly on a pole,
+ * and none lands on the horizon while the height is even. Only a palette with a bounce adds an
+ * azimuth-dependent lobe to the gradient.
  */
 export function gradientSkyPixels(palette: SkyPalette, width = SKY_WIDTH, height = SKY_HEIGHT): Float32Array {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 2) {

@@ -6,8 +6,8 @@ import type { GovernorEvent } from '../post/governor';
 import { TIERS } from '../tiers/table';
 import type { TierName } from '../tiers/table';
 
-// One rule, one home: the panel and the <pre> variant answer the same question, so the panel
-// re-exports the predicate instead of carrying a second copy that can drift from it.
+// One rule, one home: the predicate lives in ./overlay and the panel re-exports it instead of
+// carrying a second copy that can drift from it.
 export { overlayWanted } from './overlay';
 
 export interface PanelOptions {

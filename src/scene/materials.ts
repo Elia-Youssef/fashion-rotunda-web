@@ -52,7 +52,8 @@ const TUNING_TABLE: Readonly<Record<string, MaterialTuning>> = {
     baseBrightness: BLUE_SILK_BASE_BRIGHTNESS,
     baseContrast: BLUE_SILK_BASE_CONTRAST,
   },
-  // The exported glass has metalness=1, which reflects the HDR's field/trees across the dome.
+  // The exported glass has metalness=1, which mirrors the environment's lower hemisphere
+  // across the dome.
   // Transmission needs dielectric metalness=0 so the visible sky can actually show through.
   [DOME_GLASS_MATERIAL]: {
     transmission: 1.0,
@@ -129,7 +130,7 @@ export type TuningAcquire = (material: Material) => void;
 /**
  * Applies name-based tuning to every single-material mesh in a loaded hierarchy.
  *
- * GLTFLoader's variants helper replaces `mesh.material` after a look has parsed. Call this after
+ * selectVariant in variants.ts replaces `mesh.material` after a look has parsed. Call this after
  * every variant selection as well as after the initial load, so a future tuned variant material is
  * upgraded before it is decorated, faded, or collected for disposal. Every material an upgrade
  * displaces or creates is handed to `acquire` before that upgrade can throw, so a caller that
@@ -175,7 +176,7 @@ function isPhysicalMaterial(material: MeshStandardMaterial): material is MeshPhy
 /**
  * Applies a tuning to a loaded material in place. Never replaces the material instance: the
  * cross-fade patches opacityNode and alphaTestNode on the very instance the mesh holds, and the
- * variants extension caches instances by name. When a MeshStandardNodeMaterial needs a physical
+ * glTF parser caches each variant's material by index. When a MeshStandardNodeMaterial needs a physical
  * property, the caller passes the mesh so the applier can swap the instance BEFORE the fade and the
  * variants see it (statics: in loadStatics before decorate; looks: in the loader's onLoad before the
  * switcher hands the object over). `acquire` receives the displaced material and the new instance

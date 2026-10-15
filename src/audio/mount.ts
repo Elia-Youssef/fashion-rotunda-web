@@ -1,8 +1,9 @@
 // The one call the hook in main.ts makes: creates the engine, the player and the switch, and wires
-// them to the page. The preference decides the start: 'on' arms the music and listens for the
-// first gesture anywhere on the page, 'off' fetches nothing and listens for nothing. The gesture
-// listeners come and go with the armed state rather than being installed once, because the music
-// can return to armed long after the boot: an interrupted context is the case that matters.
+// them to the page. The preference decides the start: 'on' arms the music and starts it from the
+// first gesture anywhere on the page, or from startDeferred() when deferPlay holds the start
+// back; 'off' fetches nothing and listens for nothing. The gesture listeners come and go with
+// the armed state rather than being installed once, because the music can return to armed long
+// after the boot: an interrupted context is the case that matters.
 
 import { mountMusicSwitch } from '../ui/music-switch';
 import type { MusicSwitchHandle } from '../ui/music-switch';
@@ -94,7 +95,10 @@ export function mountMusic(options: MusicMountOptions): MusicMount {
     },
   });
 
-  /** Idempotent: called at boot, on every armed state, and by the interruption recovery. */
+  /**
+   * Idempotent: called at boot unless the start is deferred, on every armed state, and by the
+   * interruption recovery.
+   */
   function listenForGesture(): void {
     if (lifetime.signal.aborted || gestures !== null) {
       return;

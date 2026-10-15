@@ -1,6 +1,7 @@
 // The entry lobby's static markup: buildLobbyMarkup builds a fresh lobby element from one
-// template. A mount that hydrates the #entry-lobby element the page ships never calls it,
-// so this module is the only writer of the lobby DOM shape.
+// template. A mount that hydrates the #entry-lobby element the page ships never calls it:
+// index.html ships that same DOM shape for the hydrating mount, and the two copies must be
+// kept identical. This module is the only code that builds the lobby element.
 
 /** Builds the lobby element in its idle state; the caller appends it to the page. */
 export function buildLobbyMarkup(doc: Document): HTMLElement {

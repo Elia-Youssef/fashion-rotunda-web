@@ -9,8 +9,8 @@
 // "await renderer.init()"), so each factory awaits it first. Renderer.init() caches its promise
 // (src/renderers/common/Renderer.js lines 784 to 849), so awaiting it again costs nothing.
 //
-// This is the only module in src/lighting that imports from 'three/webgpu'. Everything the tests read
-// imports from 'three'.
+// In src/lighting, only this module and rect-area-ltc.ts import values from 'three/webgpu';
+// compose.ts imports a type from it. The rest import nothing beyond 'three' and each other.
 
 import {
   DataTexture,

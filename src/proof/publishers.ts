@@ -3,9 +3,10 @@ import type { GovernorDiagnostics } from '../post/governor';
 
 /**
  * The data-governor bridge: fixed-order, bounded tokens read by the proof snapshot, the panel and
- * the e2e suite. 'off' means no governor runs this page (WebGL 2, a forced `?post=` slice, or
- * pass-through). Scalar readings are formatted only when they change, and the immutable event
- * history is serialized once per history version instead of on every frame.
+ * the e2e suite. 'off' means no governor runs this page (WebGL 2, a tier with neither SSGI nor SSR
+ * (Base and Mid), a forced `?post=` slice, or pass-through). The budget and threshold texts are
+ * formatted only when they change, and the immutable event history is serialized once per history
+ * version instead of on every frame.
  */
 export function createGovernorPublisher(dataset: DOMStringMap): (diagnostics: GovernorDiagnostics | null) => void {
   let previousVersion = -1;

@@ -2,9 +2,11 @@
 // Replaces the translucent loading gate with an opaque branded lobby.
 // Owns the branded lobby, state machine, focus trap, truthful progress,
 // audio preference contract, and deferred boot trigger.
-// Does NOT import renderer, scene, camera, material, lighting, or post-processing modules.
-// The markup and the progress tracker live in entry-lobby/markup and entry-lobby/progress,
-// re-exported here, so this module stays the single import point for the lobby.
+// Does NOT import renderer, scene, camera, material or post-processing modules; its one lighting
+// import is skySourceFromSearch from lighting/sky.
+// The markup builder lives in entry-lobby/markup and is not re-exported; the progress tracker
+// lives in entry-lobby/progress and is re-exported here. Page code imports the lobby through
+// this module alone.
 
 import './entry-lobby.css';
 
