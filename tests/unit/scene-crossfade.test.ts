@@ -167,6 +167,17 @@ describe('createFadeMachine', () => {
     expect(a.disposals).toBe(0);
   });
 
+  it('writes the fade\'s first opacities at start, whatever the looks carried in', () => {
+    // A look can reach a new fade carrying a stale opacity from earlier work. The first
+    // frame then renders the machine's own start state, not the value it happened to
+    // hold: the outgoing look whole, the incoming look opaque.
+    a.opacity = 0.4;
+    b.opacity = 0.25;
+    run.machine.start(a, b, CROSSFADE_MS);
+    expect(a.opacity).toBe(1);
+    expect(b.opacity).toBe(1);
+  });
+
   it('hands the one caster over at the halfway mark and not before', () => {
     run.machine.start(a, b, CROSSFADE_MS);
     expect([a.casting, b.casting]).toEqual([true, false]);
@@ -190,6 +201,22 @@ describe('createFadeMachine', () => {
       casters.push(Number(a.casting) + Number(b.casting));
     }
     expect(new Set(casters)).toEqual(new Set([1]));
+  });
+
+  it('fires the caster handover once per fade, never again on a later frame', () => {
+    run.machine.start(a, b, CROSSFADE_MS);
+    for (let frame = 0; frame < CROSSFADE_MS / MAX_FADE_STEP_MS; frame += 1) {
+      run.machine.advance(MAX_FADE_STEP_MS);
+    }
+    // Start parks the incoming look's caster, the halfway handover trades the two
+    // once, and the settle restores the incoming one. A handover that re-fires on
+    // every frame past halfway would hand a parked caster back and take it again.
+    expect(run.events.filter((event) => event.startsWith('casting '))).toEqual([
+      'casting b false',
+      'casting b true',
+      'casting a false',
+      'casting b true',
+    ]);
   });
 
   it('advances the outgoing opacity by the frame time and measures the first frame once', () => {
@@ -232,6 +259,37 @@ describe('createFadeMachine', () => {
     expect(run.counts.settles).toBe(1);
     // The restore happens before the disposal, so the order does not depend on what dispose frees.
     expect(run.events.slice(-3)).toEqual(['dissolve a false', 'dispose a', 'settled']);
+  });
+
+  it('clears the fade before its callbacks run, so a callback reads it as over', () => {
+    // The showroom resolves its settle waiters from inside settled and re-checks there
+    // whether another fade took over; that re-check is only sound if the callback's
+    // own fade is already gone when the callback runs.
+    const seen: boolean[] = [];
+    const machine = createFadeMachine<FakeLook>({
+      dissolve: () => {},
+      opacity: () => {},
+      casting: () => {},
+      dispose: (look) => {
+        look.disposals += 1;
+        seen.push(machine.running);
+      },
+      firstFrame: () => {},
+      settled: () => {
+        seen.push(machine.running);
+      },
+    });
+
+    machine.start(a, b, CROSSFADE_MS);
+    machine.advance(MAX_FADE_STEP_MS);
+    // The interrupt ends the first fade from inside start; the second runs to its end.
+    machine.start(b, c, CROSSFADE_MS);
+    for (let frame = 0; frame < CROSSFADE_MS / MAX_FADE_STEP_MS; frame += 1) {
+      machine.advance(MAX_FADE_STEP_MS);
+    }
+
+    // Two ends, each read once at its disposal and once at its settle.
+    expect(seen).toEqual([false, false, false, false]);
   });
 
   it('ends once, whatever a later frame or a stray finish does', () => {
