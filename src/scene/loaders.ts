@@ -19,6 +19,7 @@
 // builds an InstancedMesh, which the disposal path in showroom.ts treats like any other Mesh.
 
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import type { GLTFLoaderPlugin, GLTFParser } from 'three/addons/loaders/GLTFLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import type { WebGPURenderer } from 'three/webgpu';
@@ -37,6 +38,33 @@ export function transcoderPath(contentBase: string): string {
   return contentUrl(sharedBase, 'basis/');
 }
 
+/** Keep texture failures fatal even though GLTFLoader.loadTextureImage catches them as null. */
+function requireTextures(parser: GLTFParser): GLTFLoaderPlugin {
+  // Each parse owns its errors, including textures loaded later by a material variant. Sharing
+  // this state on the loader would let overlapping room and look requests poison one another.
+  const sourceErrors = new Map<number, unknown>();
+  const loadImageSource = parser.loadImageSource.bind(parser);
+  parser.loadImageSource = async (sourceIndex, loader) => {
+    try {
+      return await loadImageSource(sourceIndex, loader);
+    } catch (error) {
+      sourceErrors.set(sourceIndex, error);
+      throw error;
+    }
+  };
+
+  const loadTextureImage = parser.loadTextureImage.bind(parser);
+  parser.loadTextureImage = async (textureIndex, sourceIndex, loader) => {
+    const texture = await loadTextureImage(textureIndex, sourceIndex, loader);
+    if (texture === null) {
+      if (sourceErrors.has(sourceIndex)) throw sourceErrors.get(sourceIndex);
+      throw new Error(`content: texture ${textureIndex} could not load`);
+    }
+    return texture;
+  };
+  return { name: 'require-textures' };
+}
+
 export async function createGltfLoader(
   renderer: WebGPURenderer,
   contentBase: string,
@@ -47,5 +75,8 @@ export async function createGltfLoader(
 
   await MeshoptDecoder.ready;
 
-  return new GLTFLoader().setKTX2Loader(ktx2Loader).setMeshoptDecoder(MeshoptDecoder);
+  return new GLTFLoader()
+    .setKTX2Loader(ktx2Loader)
+    .setMeshoptDecoder(MeshoptDecoder)
+    .register(requireTextures);
 }

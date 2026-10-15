@@ -1,8 +1,35 @@
-import { expect, test, expectConsoleError } from './support/fixtures';
+import { BufferGeometry, Texture } from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+
+import { browserReports, expect, test, expectConsoleError } from './support/fixtures';
 
 import { holdFirstRequest } from './support/held-request';
 import { backendPath } from './support/backend';
 import { STARTUP_FAILURE_MESSAGE } from '../../src/ui/startup-failure';
+import { contentUrl, parseCatalog } from '../../src/catalog/catalog';
+
+/** Follow the installed parser's material dependencies without downloading or decoding images. */
+async function countBasisSources(bytes: ArrayBuffer): Promise<number> {
+  const sources = new Set<number>();
+  const ktx2 = new KTX2Loader();
+  const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
+  loader.register((parser) => {
+    // Keep the real scene, node and material traversal. Variant-only materials stay deferred;
+    // loadImageSource caches by source index, so samplers and repeated map references log once.
+    parser.loadImageSource = async (sourceIndex, imageLoader) => {
+      if (imageLoader === ktx2) sources.add(sourceIndex);
+      return new Texture();
+    };
+    // Geometry does not choose material dependencies. Empty geometry avoids decoding the meshes
+    // while retaining the loader's own material extension handling and image-source selection.
+    parser.loadGeometries = async (primitives) => primitives.map(() => new BufferGeometry());
+    return { name: 'count-basis-sources' };
+  });
+  await loader.parseAsync(bytes, '');
+  return sources.size;
+}
 
 // Opaque entry lobby on a real load.
 // Both backend projects run headless by default and activate the lobby through synthetic input.
@@ -33,6 +60,9 @@ const LOBBY_ERROR_TIMEOUT_MS = 30_000;
 // The bypass URLs never mount the lobby, so the boot's first canvas scene state is all the page
 // promises; 30 s covers a slow boot start under four software workers, as the hold budget above.
 const BOOT_SCENE_TIMEOUT_MS = 30_000;
+
+// Other image-source promises continue after a rejected parse; allow their diagnostics to settle.
+const TEXTURE_DIAGNOSTICS_TIMEOUT_MS = 30_000;
 
 test('gates the experience until the visitor activates Load Experience', async ({ page }) => {
   // The default sky is generated in memory: the page must never fetch the diagnostic HDR, and the
@@ -177,6 +207,52 @@ test('shows the lobby error state and retry control when the catalogue request i
   await expect(errorPane.locator('.entry-lobby__error-message')).toHaveText(STARTUP_FAILURE_MESSAGE);
   await expect(lobby.getByRole('button', { name: 'RETRY LOADING' })).toBeVisible();
   // The canvas publishes the same terminal state the lobby pane shows.
+  await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'error');
+});
+
+test('shows the lobby error state and retry control when the Basis transcoder request is cut', async ({
+  page,
+}) => {
+  // Read the same full content set this desktop load uses. A raw texture-table length would also
+  // count the look's deferred swatches, which never load when the initial parse rejects.
+  const catalogResponse = await page.request.get('/content/catalog.json');
+  expect(catalogResponse.ok()).toBe(true);
+  const catalog = parseCatalog(await catalogResponse.json());
+  const files = [catalog.rotunda.file, catalog.plinth.file, catalog.looks[0].file];
+  const counts = await Promise.all(files.map(async (file) => {
+    const response = await page.request.get(contentUrl('/content', file));
+    expect(response.ok(), file).toBe(true);
+    return countBasisSources(Uint8Array.from(await response.body()).buffer);
+  }));
+  const textureErrorCount = counts.reduce((total, count) => total + count, 0);
+  expect(textureErrorCount).toBeGreaterThan(0);
+
+  await page.route('**/content/basis/basis_transcoder.wasm', (route) => route.abort());
+  expectConsoleError(page, /^Failed to load resource: net::ERR_FAILED/,
+    'the aborted Basis WASM download deliberately prevents texture transcoding');
+  const textureError = /^THREE\.GLTFLoader: Couldn\x27t load texture blob:/;
+  for (let index = 0; index < textureErrorCount; index += 1) {
+    expectConsoleError(page, textureError,
+      'one unique image source in the first-frame GLBs depends on the failed transcoder');
+  }
+  expectConsoleError(page, /^\[archviz\] the showroom failed to load/,
+    'the texture failure propagates to the existing startup catch');
+
+  await page.goto(backendPath('/'));
+  const lobby = page.locator('#entry-lobby');
+  await expect(lobby).toHaveAttribute('data-state', 'idle');
+  await lobby.locator('#lobby-load-btn').click();
+
+  await expect(lobby).toHaveAttribute('data-state', 'error', { timeout: LOBBY_ERROR_TIMEOUT_MS });
+  // Rejected parses do not cancel their other image loads. Wait for every derived diagnostic,
+  // including a source whose blob fetch settles after the startup catch, before guard teardown.
+  await expect.poll(() => browserReports(page).filter((report) =>
+    report.kind === 'console' && report.type === 'error' && textureError.test(report.text),
+  ).length, { timeout: TEXTURE_DIAGNOSTICS_TIMEOUT_MS }).toBe(textureErrorCount);
+  const errorPane = lobby.locator('.entry-lobby__error-pane');
+  await expect(errorPane).toBeVisible();
+  await expect(errorPane.locator('.entry-lobby__error-message')).toHaveText(STARTUP_FAILURE_MESSAGE);
+  await expect(lobby.getByRole('button', { name: 'RETRY LOADING' })).toBeVisible();
   await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'error');
 });
 

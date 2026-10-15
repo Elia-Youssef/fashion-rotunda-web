@@ -47,6 +47,9 @@ const loaderDoubles = vi.hoisted(() => {
       attachedDecoders.push(decoder);
       return this;
     }
+    register(): this {
+      return this;
+    }
   }
 
   return {
