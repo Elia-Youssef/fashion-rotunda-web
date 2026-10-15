@@ -263,6 +263,34 @@ function expectReleasedOnce(): void {
 
 for (const spec of specs) {
   describe(`${spec.name} environment ownership`, () => {
+    it('detaches only its own maps from every scene before releasing textures', async () => {
+      const environment = await spec.build(renderer as unknown as WebGPURenderer);
+      const scenes = Array.from({ length: 4 }, () => new Scene());
+      const foreign = environment.texture.clone();
+      for (const scene of scenes) environment.apply(scene, 0.4);
+      environment.apply(scenes[0], 0.6);
+      const background = scenes[0].background;
+      scenes[1].environment = foreign;
+      scenes[2].background = foreign;
+      scenes[3].environment = foreign;
+      scenes[3].background = foreign;
+      const unapplied = new Scene();
+      unapplied.environment = environment.texture;
+      unapplied.background = background;
+
+      const expectDetached = (): void => {
+        expect(scenes.map((scene) => scene.environment)).toEqual([null, foreign, null, foreign]);
+        expect(scenes.map((scene) => scene.background)).toEqual([null, null, foreign, foreign]);
+        expect(unapplied.environment).toBe(environment.texture);
+        expect(unapplied.background).toBe(background);
+      };
+      state.output!.addEventListener('dispose', expectDetached);
+      environment.dispose();
+      expectDetached();
+      expectReleasedOnce();
+      foreign.dispose();
+    });
+
     it.each(spec.failures)('releases exactly the acquired resources after %s and preserves the error', async (phase, names) => {
       state.fail = phase;
       await expect(spec.build(renderer as unknown as WebGPURenderer)).rejects.toBe(state.error);

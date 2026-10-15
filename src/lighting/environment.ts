@@ -265,9 +265,11 @@ export function fromRenderTarget(
   background: Texture | null = null,
   source: Texture | null = null,
 ): Environment {
+  const scenes = new Set<Scene>();
   return {
     texture: target.texture,
     apply(scene: Scene, intensity: number, backgroundIntensity = 0.25): void {
+      scenes.add(scene);
       scene.environment = target.texture;
       scene.environmentIntensity = intensity;
       if (background !== null) {
@@ -284,6 +286,11 @@ export function fromRenderTarget(
       }
     },
     dispose(): void {
+      for (const scene of scenes) {
+        if (scene.environment === target.texture) scene.environment = null;
+        if (background !== null && scene.background === background) scene.background = null;
+      }
+      scenes.clear();
       // The target owns the lighting PMREM; the visible background and original HDR are separate.
       target.dispose();
       background?.dispose();
