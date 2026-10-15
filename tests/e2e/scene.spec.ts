@@ -1,49 +1,23 @@
 import { expect, test, browserReports } from './support/fixtures';
 import { waitForSceneInitialization } from './support/ready';
-import type { APIRequestContext, Locator, Page } from '@playwright/test';
 import { canvasStats } from './support/pixels';
-import { backendPath, projectBackend } from './support/backend';
-import { parseCatalog } from '../../src/catalog/catalog';
-import type { Catalog } from '../../src/catalog/catalog';
+import { openShowroom } from './support/showroom';
 
-// The rotunda, the plinth and one look, loaded from public/content. The content checks run on the
-// webgl2 project only: nothing in them is backend specific, they are about what the page loaded,
-// and the webgpu project opens a window on this machine that a duplicate content run would hold
-// open for nothing. The look-switch memory check is the exception: freeing what a replaced look
-// held is renderer behaviour, so it runs on both projects, each pinned to its project's backend
-// through the canvas data-backend attribute before any reading is taken.
+// Every case here checks what the page loaded and how it holds its state: the look and variant on
+// the plinth, the url contract, the fallback warnings, the material classes GLTFLoader created and
+// the GPU memory a replaced look releases. None of that changes with the renderer backend, so
+// every case runs on both projects, each opened through the shared showroom helper, whose
+// canvas[data-backend] pin keeps a silent fallback from pointing a run at the wrong renderer.
 
-const SCENE_READY_TIMEOUT = 60_000;
+/** The budget for the initialization wait that follows the shared opening. */
+const SCENE_INITIALIZATION_TIMEOUT = 60_000;
 /** Ten switches of the unoptimized set, 6 to 17 MB each, well past the 60 s default. */
 const SWITCH_RUN_TIMEOUT = 240_000;
 const SWITCHES = 10;
 
-function skipUnlessWebgl2(): void {
-  test.skip(test.info().project.name !== 'webgl2', 'the content checks are backend independent');
-}
-
-/** The catalogue the page itself will load, read through the same server. */
-async function readCatalog(request: APIRequestContext): Promise<Catalog> {
-  const response = await request.get('/content/catalog.json');
-  expect(response.ok(), 'public/content is on disk and served').toBeTruthy();
-  const json: unknown = await response.json();
-  return parseCatalog(json);
-}
-
-/** Opens the page and waits for the frame that has the look on the plinth. */
-async function openScene(page: Page, path: string): Promise<Locator> {
-  await page.goto(path);
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
-  return canvas;
-}
-
 test('shows the first look in the catalogue on its default variant', async ({ page, request }) => {
-  skipUnlessWebgl2();
-  const catalog = await readCatalog(request);
+  const { canvas, catalog } = await openShowroom(page, request, '/?gate=off');
   const first = catalog.looks[0];
-
-  const canvas = await openScene(page, '/?webgl=1&gate=off');
 
   await expect(canvas).toHaveAttribute('data-look', first.id);
   await expect(canvas).toHaveAttribute('data-variant', first.defaultVariant);
@@ -57,13 +31,14 @@ test('shows the first look in the catalogue on its default variant', async ({ pa
 });
 
 test('takes the look and the variant from the url', async ({ page, request }) => {
-  skipUnlessWebgl2();
-  const catalog = await readCatalog(request);
+  const { canvas, catalog } = await openShowroom(
+    page,
+    request,
+    '/?gate=off&look=zoot-suit&variant=dark',
+  );
   const zoot = catalog.looks.find((look) => look.id === 'zoot-suit');
   expect(zoot, 'the catalogue carries the zoot suit').toBeDefined();
   expect(zoot?.variants).toContain('dark');
-
-  const canvas = await openScene(page, '/?webgl=1&gate=off&look=zoot-suit&variant=dark');
 
   await expect(canvas).toHaveAttribute('data-look', 'zoot-suit');
   await expect(canvas).toHaveAttribute('data-variant', 'dark');
@@ -73,11 +48,12 @@ test('falls back to the defaults, with a warning, on a url that names neither', 
   page,
   request,
 }) => {
-  skipUnlessWebgl2();
-  const catalog = await readCatalog(request);
+  const { canvas, catalog } = await openShowroom(
+    page,
+    request,
+    '/?gate=off&look=doublet&variant=chrome',
+  );
   const first = catalog.looks[0];
-
-  const canvas = await openScene(page, '/?webgl=1&gate=off&look=doublet&variant=chrome');
 
   await expect(canvas).toHaveAttribute('data-look', first.id);
   await expect(canvas).toHaveAttribute('data-variant', first.defaultVariant);
@@ -88,10 +64,9 @@ test('falls back to the defaults, with a warning, on a url that names neither', 
   ]);
 });
 
-test('builds the room from the material classes GLTFLoader creates', async ({ page }) => {
-  skipUnlessWebgl2();
-  await openScene(page, '/?webgl=1&e2e=1');
-  await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
+test('builds the room from the material classes GLTFLoader creates', async ({ page, request }) => {
+  await openShowroom(page, request, '/?e2e=1');
+  await waitForSceneInitialization(page, SCENE_INITIALIZATION_TIMEOUT);
 
   const description = await page.evaluate(() => {
     const hooks = window.archvizE2E;
@@ -110,16 +85,13 @@ test('builds the room from the material classes GLTFLoader creates', async ({ pa
   expect(description.triangles, 'triangles in the last frame').toBeGreaterThan(0);
 });
 
-test('frees the look it replaces on both backends', async ({ page }) => {
+test('frees the look it replaces on both backends', async ({ page, request }) => {
   test.setTimeout(SWITCH_RUN_TIMEOUT);
 
-  const canvas = await openScene(page, backendPath('/?e2e=1'));
-  // A silent fallback would make the run read the wrong renderer, so the page must be on the
-  // backend its project promises before any reading is taken.
-  await expect(canvas).toHaveAttribute('data-backend', projectBackend(), {
-    timeout: SCENE_READY_TIMEOUT,
-  });
-  await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
+  // The shared opening pins canvas[data-backend] to the project's own backend, so a silent
+  // fallback cannot make the run read the wrong renderer before any reading is taken.
+  const { canvas } = await openShowroom(page, request, '/?e2e=1');
+  await waitForSceneInitialization(page, SCENE_INITIALIZATION_TIMEOUT);
   const lookBefore = await canvas.getAttribute('data-look');
   // data-memory is renderer.info.memory as geometries/textures: live GPU resources, written after
   // every drawn frame. Both readings are taken with the same look on the plinth, so ten switches
