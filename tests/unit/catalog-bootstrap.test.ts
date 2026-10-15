@@ -86,6 +86,19 @@ describe('catalog bootstrap', () => {
     );
   });
 
+  it('falls back to the authored default variant, not the first variant', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    // The catalogue only promises the default is one of the variants, so a look may
+    // author its default as the last entry; every fallback must honour that field.
+    const authored: CatalogLook = { ...catalog.looks[1],
+      variants: ['light', 'dark', 'base'], defaultVariant: 'base' };
+    expect(chooseVariant(authored, new URLSearchParams())).toBe('base');
+    expect(chooseVariant(authored, new URLSearchParams('variant=missing'))).toBe('base');
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      '[archviz] the look "second" has no variant "missing", showing "base"',
+    );
+  });
+
   it('cycles other looks and returns to the initial look for memory comparisons', () => {
     expect(switchOrder(['a', 'b', 'c'], 'b', 5)).toEqual(['a', 'c', 'a', 'c', 'b']);
     expect(switchOrder(['a', 'b'], 'a', 1)).toEqual(['a']);
