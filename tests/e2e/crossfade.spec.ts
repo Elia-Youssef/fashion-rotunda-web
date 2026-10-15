@@ -1,18 +1,20 @@
 import { expect, test } from './support/fixtures';
 import { waitForSceneInitialization } from './support/ready';
-import type { Locator, Page } from '@playwright/test';
 import { CROSSFADE_MS, MAX_FADE_STEP_MS } from '../../src/scene/crossfade';
-import { parseCatalog } from '../../src/catalog/catalog';
+import { openShowroom } from './support/showroom';
 import { holdFirstRequest } from './support/held-request';
 
-// The cross-fade between looks. The shared fade and resource-lifecycle checks run once on the
-// webgl2 project, using its forced fallback fixture.
+// The cross-fade between looks. Both cases read DOM state, canvas dataset flags, scene-graph
+// transforms and performance measures that the backend does not change, so every project runs
+// them on its own backend: the shared showroom opening pins the page to the backend its project
+// promises through the canvas data-backend attribute before any read, and waits on past the
+// first frame to the mounted strip and card.
 
 const SCENE_READY_TIMEOUT = 60_000;
 /**
- * The fade begins only after the incoming look has loaded and parsed, and the headless webgl2
- * project renders through a slow enough path (and shares this machine with other test runs) that
- * the load, not the fade, owns the wait. The chrome suite gives the same click 30 s for the same
+ * The fade begins only after the incoming look has loaded and parsed, and the headless projects
+ * render through a slow enough path (and share this machine with other test runs) that the
+ * load, not the fade, owns the wait. The chrome suite gives the same click 30 s for the same
  * reason; against a real GPU and a warm cache the whole switch measures 90-500 ms.
  */
 const FADE_TIMEOUT = 30_000;
@@ -26,13 +28,6 @@ const SWITCH_MEASURE_LIMIT_MS = 15_000;
 /** Three look loads of the unoptimized set, 6 to 17 MB each, well past the 60 s default. */
 const RAPID_RUN_TIMEOUT = 180_000;
 const TURNTABLE_YAW = Math.PI / 3;
-
-function skipUnlessWebgl2(): void {
-  test.skip(
-    test.info().project.name !== 'webgl2',
-    'the shared fade and resource-lifecycle checks run once on webgl2',
-  );
-}
 
 function expectTurntableYaw(
   state: {
@@ -59,19 +54,11 @@ function expectTurntableYaw(
   }
 }
 
-/** Opens the page and waits for the frame that has the first look on the plinth. */
-async function openScene(page: Page, path: string): Promise<Locator> {
-  await page.goto(path);
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+test('cross-fades to the third look and measures the switch', async ({ page, request }) => {
+  const { canvas } = await openShowroom(page, request, '/?e2e=1');
+  // The camera and reader handles this case reads mount after the strip and card the opening
+  // waits for, so one initialization poll covers both before the first read.
   await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
-  return canvas;
-}
-
-test('cross-fades to the third look and measures the switch', async ({ page }) => {
-  skipUnlessWebgl2();
-
-  const canvas = await openScene(page, '/?webgl=1&e2e=1');
   // The strip mounts after the tier benchmark, which runs for up to two seconds after ready.
   const thumbnails = page.locator('nav#looks button');
   await expect(thumbnails.nth(2)).toBeVisible({ timeout: SCENE_READY_TIMEOUT });
@@ -121,10 +108,10 @@ test('two clicks in a row end on the second look and stack nothing on the plinth
   page,
   request,
 }) => {
-  skipUnlessWebgl2();
   test.setTimeout(RAPID_RUN_TIMEOUT);
 
-  const canvas = await openScene(page, '/?webgl=1&e2e=1');
+  const { canvas, catalog } = await openShowroom(page, request, '/?e2e=1');
+  await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
   const thumbnails = page.locator('nav#looks button');
   await expect(thumbnails.nth(2)).toBeVisible({ timeout: SCENE_READY_TIMEOUT });
 
@@ -142,10 +129,6 @@ test('two clicks in a row end on the second look and stack nothing on the plinth
   const secondId = await thumbnails.nth(2).getAttribute('data-look');
   expect(secondId, 'the third thumbnail carries its look id').not.toBeNull();
 
-  const response = await request.get('/content/catalog.json');
-  expect(response.ok(), 'the catalogue is served').toBe(true);
-  const json: unknown = await response.json();
-  const catalog = parseCatalog(json);
   const firstId = await thumbnails.nth(1).getAttribute('data-look');
   const firstLook = catalog.looks.find((look) => look.id === firstId);
   expect(firstLook, 'the first request has a catalogue file').toBeDefined();
