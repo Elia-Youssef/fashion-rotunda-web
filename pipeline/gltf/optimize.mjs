@@ -310,7 +310,11 @@ async function finish(io, document, item, set, out, errors, fit) {
   const serialized = await io.read(path);
   validateOutputContract(serialized, { set, file: item.file });
   const geometry = validateFitOutput(serialized, fit);
-  if (geometry.checked) console.log(`validated fit ${set}/${item.file}: ${geometry.outsideSamples} outside samples`);
+  if (geometry.checked) {
+    const count = geometry.outsideVertices ?? geometry.outsideSamples;
+    const unit = geometry.outsideVertices === undefined ? 'samples' : 'vertices';
+    console.log(`validated fit ${set}/${item.file}: ${count} outside ${unit}`);
+  }
   const bytes = statSync(path).size;
   const entry = fileEntry({
     bytes,

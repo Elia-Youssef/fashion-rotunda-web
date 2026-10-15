@@ -29,6 +29,39 @@ function body() {
 }
 
 describe('covered surface fitting', () => {
+  it('excludes the first body interval when the ray begins in air and the limb is beyond the shell', () => {
+    const garment = [part(shell())], limb = [part(new BoxGeometry(0.2, 0.4, 0.2).translate(1.6, 0, 0))];
+    for (const options of [{}, { includeIntersectingIntervals: true }]) {
+      const coverage = createCoverage(combinedSurface(garment), combinedSurface(limb), null, options);
+      expect(measureSurface(limb, coverage).coveredSamples).toBe(0);
+    }
+  });
+  it('moves each fitted corner radially without changing its horizontal bearing or height', () => {
+    const garment = [part(shell())], mannequin = [part(body())];
+    const original = mannequin[0].points.map(p => p.clone());
+    fitCoveredSurface(garment, mannequin, 'body-inward');
+    for (const [i, point] of mannequin[0].points.entries()) {
+      expect(point.y).toBe(original[i].y);
+      expect(Math.abs(point.x * original[i].z - point.z * original[i].x)).toBeLessThan(0.000001);
+      expect(point.x * original[i].x + point.z * original[i].z).toBeGreaterThanOrEqual(0);
+    }
+  });
+  it('fits later body intervals that cross the shell while preserving wholly exposed limbs', () => {
+    const garment = [part(shell())], torso = part(new BoxGeometry(1.2, 1.6, 1.2));
+    const crossing = part(new BoxGeometry(0.4, 0.4, 0.4).translate(1, 0, 0));
+    const exposed = part(new BoxGeometry(0.2, 0.4, 0.2).translate(1.6, 0, 0));
+    const mannequin = [torso, crossing, exposed];
+    const base = createCoverage(combinedSurface(garment), combinedSurface(mannequin));
+    expect(measureSurface([crossing], base).outsideSamples).toBe(0);
+    const options = { includeIntersectingIntervals: true };
+    const coverage = createCoverage(combinedSurface(garment), combinedSurface(mannequin), null, options);
+    expect(measureSurface([crossing], coverage).outsideSamples).toBeGreaterThan(0);
+    expect(measureSurface([exposed], coverage).coveredSamples).toBe(0);
+    const before = exposed.points.map(p => p.toArray());
+    const result = fitCoveredSurface(garment, mannequin, 'body-inward', options);
+    expect(measureSurface(mannequin, result.reference).outsideSamples).toBe(0);
+    expect(exposed.points.map(p => p.toArray())).toEqual(before);
+  });
   it.each(['body-inward', 'garment-outward'] as const)('%s resolves real surface penetration without removing triangles', (method) => {
     const garment = [part(shell())], mannequin = [part(body())];
     const coverage = createCoverage(combinedSurface(garment), combinedSurface(mannequin));
@@ -62,10 +95,11 @@ describe('covered surface fitting', () => {
     expect(() => createCoverage(g, body())).toThrow('invalid topology');
   });
 
-  it('applies the named policy only to its selected look and retains all three variant mappings', () => {
+  it('preserves policy opt-in and variant mappings when requesting inward fitting', () => {
     const doc = new Document(), scene = doc.createScene(), buffer = doc.createBuffer();
     const variants = doc.createExtension(KHRMaterialsVariants);
-    for (const [name, geometry] of [['garment', shell()], ['mannequin', body()]] as const) {
+    const mannequin = body();
+    for (const [name, geometry] of [['garment', shell()], ['mannequin', mannequin]] as const) {
       const p = geometry.getAttribute('position');
       const primitive = doc.createPrimitive()
         .setAttribute('POSITION', doc.createAccessor().setBuffer(buffer).setType('VEC3').setArray(new Float32Array(p.array)))
@@ -83,8 +117,11 @@ describe('covered surface fitting', () => {
     const garmentBefore = [...surfaceParts(doc, 'garment')[0].primitive.getAttribute('POSITION')!.getArray()!];
     const broken = cloneDocument(doc);
     expect(applyLookFit(doc, 'unaffected')).toEqual({ applied: false });
-    const fit = applyLookFit(doc, 'mondrian-dress');
+    const fit = applyLookFit(doc, 'mondrian-dress', 'body-inward');
     expect(fit).toMatchObject({ applied: true, method: 'body-inward' });
+    const extended = createCoverage(combinedSurface(surfaceParts(doc, 'garment')),
+      combinedSurface(surfaceParts(broken, 'mannequin')), null, { includeIntersectingIntervals: true });
+    expect(measureSurface(surfaceParts(doc, 'mannequin'), extended).outsideSamples).toBe(0);
     expect(validateFitOutput(doc, fit)).toMatchObject({ checked: true, outsideSamples: 0 });
     expect(() => validateFitOutput(broken, fit)).toThrow('Serialized garment fit failed');
     expect([...surfaceParts(doc, 'garment')[0].primitive.getAttribute('POSITION')!.getArray()!]).toEqual(garmentBefore);

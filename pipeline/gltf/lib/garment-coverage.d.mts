@@ -35,8 +35,12 @@ export interface CoverageHit {
 export interface Coverage {
   query(point: Vector3): CoverageHit | null;
   centerAt(y: number): Vector3 | null;
+  shellRadiusAt(point: Vector3): number | null;
   topology: SurfaceTopology;
+  options: CoverageOptions;
 }
+
+export interface CoverageOptions { includeIntersectingIntervals?: boolean; }
 
 export interface SurfaceMeasurement {
   totalFaces: number;
@@ -57,6 +61,7 @@ export declare function combinedSurface(parts: SurfacePart[]): BufferGeometry;
 export declare function surfaceTopology(geometry: BufferGeometry): SurfaceTopology;
 export declare function createCoverage(
   garmentGeometry: BufferGeometry, bodyGeometry: BufferGeometry, reference?: Coverage | null,
+  options?: CoverageOptions,
 ): Coverage;
 export declare function faceSamples(a: Vector3, b: Vector3, c: Vector3): Vector3[];
 export declare function measureSurface(parts: SurfacePart[], coverage: Coverage): SurfaceMeasurement;

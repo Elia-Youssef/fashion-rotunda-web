@@ -345,7 +345,7 @@
           "largestNonFloorTexture": 2048
         },
         "looks/mondrian-dress.glb": {
-          "bytes": 1895288,
+          "bytes": 1895632,
           "triangles": 71469,
           "meshes": 2,
           "nodes": 4,
@@ -1094,7 +1094,7 @@
         }
       },
       "totals": {
-        "bytes": 26348255,
+        "bytes": 26348599,
         "gpuBytes": 97493202,
         "triangles": 1518558
       }
@@ -1443,7 +1443,7 @@
           "largestNonFloorTexture": 1024
         },
         "looks/mondrian-dress.glb": {
-          "bytes": 1301020,
+          "bytes": 1301364,
           "triangles": 71469,
           "meshes": 2,
           "nodes": 4,
@@ -2192,7 +2192,7 @@
         }
       },
       "totals": {
-        "bytes": 14427435,
+        "bytes": 14427779,
         "gpuBytes": 40534808,
         "triangles": 857093
       }

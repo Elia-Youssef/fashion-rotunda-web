@@ -1,6 +1,6 @@
 // Offline coverage queries for an open garment around a body. Rays start at the garment's
-// horizontal section centre, rather than its pivot. Only the first body interval belongs to
-// the covered torso or legs: a separate hand or arm farther along a ray remains exposed.
+// horizontal section centre, rather than its pivot. The first body interval is the default;
+// an opt-in also covers later intervals crossing the shell. Separate exposed limbs stay excluded.
 import {
   BufferGeometry, DoubleSide, Float32BufferAttribute, Line3, Matrix4, Ray, Vector3,
 } from 'three';
@@ -132,7 +132,7 @@ function sectionCenters(topology) {
 }
 
 /** Uses the unchanged body as a coverage reference, including when testing a repaired body. */
-export function createCoverage(garmentGeometry, bodyGeometry, reference = null) {
+export function createCoverage(garmentGeometry, bodyGeometry, reference = null, options = {}) {
   const topology = surfaceTopology(garmentGeometry);
   if (topology.degenerateFaces || topology.nonManifoldEdges || topology.inconsistentEdges ||
       topology.loops.some((loop) => !loop.closed)) {
@@ -169,7 +169,20 @@ export function createCoverage(garmentGeometry, bodyGeometry, reference = null) 
     if (!hit || hit.face.normal.dot(direction) <= 0) return null;
     const bodyHits = body.raycast(ray, DoubleSide).sort((a, b) => a.distance - b.distance);
     const firstExit = bodyHits.find((h) => h.face.normal.dot(direction) > 0);
-    if (!firstExit || radius > firstExit.distance + CONTACT_TOLERANCE) return null;
+    if (!firstExit) return null;
+    const firstEntry = bodyHits[0].face.normal.dot(direction) < 0 ? bodyHits[0].distance : 0;
+    if (radius > firstExit.distance + CONTACT_TOLERANCE || firstEntry > hit.distance) {
+      if (!options.includeIntersectingIntervals) return null;
+      // A later limb is covered only when its own body interval crosses the shell.
+      // Limbs wholly outside the shell retain the default exposed-surface exclusion.
+      let entry = 0, covered = false;
+      for (const bodyHit of bodyHits) {
+        if (bodyHit.face.normal.dot(direction) < 0) entry = bodyHit.distance;
+        else if (entry <= hit.distance && bodyHit.distance >= hit.distance &&
+          radius >= entry - CONTACT_TOLERANCE && radius <= bodyHit.distance + CONTACT_TOLERANCE) covered = true;
+      }
+      if (!covered) return null;
+    }
     let openingDistance = Infinity;
     const closest = new Vector3();
     for (const edge of topology.boundary) {
@@ -178,7 +191,13 @@ export function createCoverage(garmentGeometry, bodyGeometry, reference = null) 
     return { center, direction, radius, shellRadius: hit.distance,
       depth: radius - hit.distance, openingDistance, point: hit.point, faceIndex: hit.faceIndex };
   }
-  return { query, topology, centerAt };
+  function shellRadiusAt(point) {
+    const center = centerAt(point.y); if (!center) return null;
+    const direction = point.clone().sub(center); direction.y = 0; direction.normalize();
+    const hit = garment.raycastFirst(new Ray(center, direction), DoubleSide);
+    return hit && hit.face.normal.dot(direction) > 0 ? hit.distance : null;
+  }
+  return { query, topology, centerAt, shellRadiusAt, options };
 }
 
 /** Vertices, edge midpoints and centroid sample the actual triangle surface, not only labels. */

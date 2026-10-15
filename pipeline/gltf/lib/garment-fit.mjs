@@ -1,36 +1,40 @@
 // Static garment/body fitting belongs before texture encoding and meshopt quantization. A look's
 // opt-in policy selects the surfaces; the geometry solver never branches on asset identity.
-import { Vector3 } from 'three';
 import {
   combinedSurface, CONTACT_TOLERANCE, createCoverage, faceSamples, FIT_MARGIN,
   SEAM_TOLERANCE, surfaceParts, measureSurface,
 } from './garment-coverage.mjs';
+import { writeFittedParts } from './garment-attributes.mjs';
+import { fitContactClearance } from './garment-shape.mjs';
+import { measureNormalVertices } from './garment-measurement.mjs';
+import { assertNoSurfaceIntersections } from './garment-intersection.mjs';
 
-/** Bounded convergence prevents a new source mesh from silently shipping a partial repair. */
-export const MAX_FIT_PASSES = 16;
+/** Later covered intervals took 31 passes in the measured repair. Sixty-four bounds that
+ *  advancing face boundary with room for quantization, without allowing a partial output. */
+export const MAX_FIT_PASSES = 64;
 
-/** Only this open, coarse shell has a measured body intersection requiring an offline fit. */
+/** The selected coarse shell separates limb contacts while fitting only its covered torso. */
 export const LOOK_FIT_POLICIES = {
-  'mondrian-dress': { garmentGroup: 'garment', bodyGroup: 'mannequin', method: 'body-inward' },
+  'mondrian-dress': { garmentGroup: 'garment', bodyGroup: 'mannequin', method: 'contact-clearance' },
 };
 
 const positionKey = (p) => p.toArray().map((v) => Math.round(v / SEAM_TOLERANCE)).join(',');
 
 /**
  * Fits either the shell outward or its covered body inward, preserving topology and openings.
- * The original body intervals stay fixed. A separate limb beyond the first interval cannot
- * become part of the fitted torso. No body face is removed, including at garment openings.
+ * The original body intervals stay fixed. A limb wholly beyond the garment remains exposed;
+ * intersecting intervals follow the selected coverage policy. No body face is removed.
  */
-export function fitCoveredSurface(garmentParts, bodyParts, method = 'garment-outward') {
+export function fitCoveredSurface(garmentParts, bodyParts, method = 'garment-outward', coverageOptions = {}, margin = FIT_MARGIN) {
   if (!['garment-outward', 'body-inward'].includes(method)) throw new Error(`Unknown fit method ${method}`);
-  const reference = createCoverage(combinedSurface(garmentParts), combinedSurface(bodyParts));
+  const reference = createCoverage(combinedSurface(garmentParts), combinedSurface(bodyParts), null, coverageOptions);
   const referenceBody = combinedSurface(bodyParts);
   const moving = method === 'garment-outward' ? garmentParts : bodyParts;
   const original = moving.map((part) => part.points.map((point) => point.clone()));
   const history = [];
   for (let pass = 0; pass <= MAX_FIT_PASSES; pass++) {
     const current = method === 'garment-outward'
-      ? createCoverage(combinedSurface(garmentParts), referenceBody) : reference;
+      ? createCoverage(combinedSurface(garmentParts), referenceBody, null, coverageOptions) : reference;
     const proposals = new Map();
     let outsideSamples = 0, maxDepth = 0;
     for (const part of bodyParts) {
@@ -56,14 +60,26 @@ export function fitCoveredSurface(garmentParts, bodyParts, method = 'garment-out
             vertices = abc;
           }
           if (!vertices?.length) throw new Error(`Penetrating face has no covered vertex; fit refused at ${JSON.stringify(abc.map((p) => p.toArray()))}`);
-          const distance = q.depth + FIT_MARGIN;
+          const distance = q.depth + margin;
           for (const vertex of vertices) {
-            const direction = method === 'garment-outward'
-              ? vertex.clone().sub(current.centerAt(vertex.y)).normalize() : q.direction;
-            const delta = direction.clone().multiplyScalar(method === 'garment-outward' ? distance : -distance);
+            // Each corner follows its own horizontal radial direction. Using one sample's
+            // direction for the whole triangle can push another corner sideways out of the shell.
+            const center = current.centerAt(vertex.y) ?? q.center;
+            const direction = vertex.clone().sub(center); direction.y = 0;
+            const radius = direction.length(); direction.normalize();
+            // Covered interiors can belong to a face whose corners were previously exposed.
+            // Project those corners against their own shell exit instead of applying only the
+            // interior sample's smaller depth and advancing one small face at a time.
+            const shellRadius = current.shellRadiusAt(vertex);
+            const cornerDistance = method === 'body-inward' && shellRadius !== null
+              ? Math.max(distance, radius - shellRadius + margin) : distance;
+            // A face-wide inward correction must never cross the section centre and emerge
+            // on the opposite side. Short-radius corners stop inside the same radial half-line.
+            const movement = method === 'body-inward' ? Math.min(cornerDistance, Math.max(0, radius - FIT_MARGIN)) : distance;
+            const delta = direction.clone().multiplyScalar(method === 'garment-outward' ? movement : -movement);
             const key = positionKey(vertex);
             const previous = proposals.get(key);
-            if (!previous || previous.distance < distance) proposals.set(key, { delta, distance });
+            if (!previous || previous.distance < movement) proposals.set(key, { delta, distance: movement });
           }
         }
       }
@@ -92,40 +108,6 @@ export function fitCoveredSurface(garmentParts, bodyParts, method = 'garment-out
   throw new Error(`Garment fit did not converge: ${JSON.stringify(history)}`);
 }
 
-/** Rebuild area-weighted normals across position seams and keep tangent frames orthogonal. */
-function writeFittedParts(parts) {
-  for (const part of parts) {
-    const inverse = part.matrix.clone().invert();
-    const positions = part.primitive.getAttribute('POSITION');
-    const points = part.points.map((point) => point.clone().applyMatrix4(inverse));
-    const sums = new Map(), affected = new Set();
-    for (let i = 0; i < part.indices.length; i += 3) {
-      const abc = part.indices.slice(i, i + 3).map((j) => points[j]);
-      const changed = part.indices.slice(i, i + 3).some((j) =>
-        !points[j].equals(new Vector3().fromArray(positions.getElement(j, []))));
-      const normal = new Vector3().subVectors(abc[1], abc[0]).cross(new Vector3().subVectors(abc[2], abc[0]));
-      for (const point of abc) {
-        const key = positionKey(point), sum = sums.get(key) ?? new Vector3();
-        sum.add(normal); sums.set(key, sum);
-        if (changed) affected.add(key);
-      }
-    }
-    const normals = part.primitive.getAttribute('NORMAL');
-    const tangents = part.primitive.getAttribute('TANGENT');
-    for (const [i, point] of points.entries()) {
-      positions.setElement(i, point.toArray());
-      if (!affected.has(positionKey(point))) continue;
-      const normal = sums.get(positionKey(point)).clone().normalize();
-      if (normals) normals.setElement(i, normal.toArray());
-      if (tangents) {
-        const value = tangents.getElement(i, []), tangent = new Vector3().fromArray(value);
-        tangent.addScaledVector(normal, -tangent.dot(normal)).normalize();
-        tangents.setElement(i, [...tangent.toArray(), value[3]]);
-      }
-    }
-  }
-}
-
 /** Named opt-in at the pipeline boundary; all other looks return without modifying their graph. */
 export function applyLookFit(document, lookId, method = null) {
   const policy = LOOK_FIT_POLICIES[lookId];
@@ -133,8 +115,10 @@ export function applyLookFit(document, lookId, method = null) {
   const garmentParts = surfaceParts(document, policy.garmentGroup);
   const bodyParts = surfaceParts(document, policy.bodyGroup);
   const selected = method ?? policy.method;
-  const result = fitCoveredSurface(garmentParts, bodyParts, selected);
-  writeFittedParts(selected === 'garment-outward' ? garmentParts : bodyParts);
+  const result = selected === 'contact-clearance'
+    ? fitContactClearance(garmentParts, bodyParts)
+    : fitCoveredSurface(garmentParts, bodyParts, selected, policy.coverage, policy.margin);
+  writeFittedParts(selected === 'body-inward' ? bodyParts : garmentParts);
   return { applied: true, method: selected, ...result };
 }
 
@@ -142,7 +126,17 @@ export function applyLookFit(document, lookId, method = null) {
 export function validateFitOutput(document, fit) {
   if (!fit.applied) return { checked: false };
   const garment = surfaceParts(document, 'garment'), body = surfaceParts(document, 'mannequin');
-  const coverage = createCoverage(combinedSurface(garment), fit.referenceBody);
+  if (fit.method === 'contact-clearance') {
+    assertNoSurfaceIntersections(garment);
+    // Whole radial intervals can reach past an opening along an exposed limb. Local normal
+    // contacts provide the contact gate; the exact protection and shape guards run before encoding.
+    const measurement = measureNormalVertices(garment, body);
+    if (measurement.outsideVertices !== 0) {
+      throw new Error(`Serialized garment fit failed: ${measurement.outsideVertices} outside vertices`);
+    }
+    return { checked: true, ...measurement };
+  }
+  const coverage = createCoverage(combinedSurface(garment), fit.referenceBody, null, fit.reference.options);
   const measurement = measureSurface(body, coverage);
   if (measurement.outsideSamples !== 0) {
     throw new Error(`Serialized garment fit failed: ${measurement.outsideSamples} outside samples on ` +
