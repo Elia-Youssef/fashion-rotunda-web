@@ -1,7 +1,7 @@
 import { expect, test } from './support/fixtures';
 import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
-import type { Locator, Page } from '@playwright/test';
-import { backendPath, projectBackend } from './support/backend';
+import type { Page } from '@playwright/test';
+import { openShowroom } from './support/showroom';
 import { holdFirstRequest } from './support/held-request';
 
 // Catalogue rail E2E verification.
@@ -20,20 +20,10 @@ const SWITCH_TIMEOUT = 30_000;
 
 // attract=0 keeps the idle tour from starting after 60 s and rendering every frame, and post=off
 // drops the post chain; both only slow the software renderer, and these checks are DOM layout.
-// Every project runs the suite on its own backend: openScene pins the page to the backend its
-// project promises through the canvas data-backend attribute before any DOM reading.
-async function openScene(
-  page: Page,
-  path = '/?gate=off&e2e=1&proof=1&attract=0&post=off',
-): Promise<Locator> {
-  await page.goto(backendPath(path));
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-backend', projectBackend(), {
-    timeout: SCENE_READY_TIMEOUT,
-  });
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
-  return canvas;
-}
+// Every project runs the suite on its own backend: the shared showroom opening pins the page to
+// the backend its project promises through the canvas data-backend attribute before any DOM
+// reading, and waits on past the first frame to the mounted strip and card.
+const RAIL_PATH = '/?gate=off&e2e=1&proof=1&attract=0&post=off';
 
 interface SafeArea {
   top: number;
@@ -173,9 +163,10 @@ test.describe('Catalogue Rail Parity', () => {
   for (const vp of GEOMETRY_VIEWPORTS) {
     test(`rail geometry, internal scrolling, touch sizing, and zero document scroll at ${vp.id}`, async ({
       page,
+      request,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
-      await openScene(page);
+      await openShowroom(page, request, RAIL_PATH);
 
       const rail = page.locator('#looks');
       await expect(rail).toBeVisible();
@@ -272,6 +263,7 @@ test.describe('Catalogue Rail Parity', () => {
 
     test('desktop rail shows all seven looks at once, clear of the light bar, down to short windows', async ({
       page,
+      request,
     }) => {
       const viewports = [
         { id: '1669x1115', width: 1669, height: 1115, mode: 'fit' },
@@ -284,18 +276,12 @@ test.describe('Catalogue Rail Parity', () => {
         { id: '1280x420', width: 1280, height: 420, mode: 'floor' },
       ] as const;
 
-      await openScene(page);
-
-      // data-scene goes ready on the first frame with content, but the page mounts the strip and
-      // the card only after the tier benchmark and the post chain settle, so the readings wait
-      // for the rail state they assume: seven buttons, the count the geometry test pins to the
-      // shipped catalogue, exactly one of them the catalogue's current mark, and the card mounted.
-      const rail = page.locator('#looks');
-      await expect(rail.locator('button')).toHaveCount(7, { timeout: SCENE_READY_TIMEOUT });
-      await expect(rail.locator('button[aria-current="true"]')).toHaveCount(1, {
-        timeout: SCENE_READY_TIMEOUT,
-      });
-      await expect(page.locator('.product-card')).toHaveCount(1, { timeout: SCENE_READY_TIMEOUT });
+      // The shared opening waits for the mounted chrome before the readings: data-scene goes ready
+      // on the first frame with content, but the page mounts the strip and the card only after the
+      // tier benchmark and the post chain settle, and readDesktopRail reads the rail without
+      // waiting, so the count the geometry test pins to the shipped catalogue and the catalogue's
+      // own current mark have to be on the buttons before the first resize.
+      await openShowroom(page, request, RAIL_PATH);
 
       for (const vp of viewports) {
         await resizeTo(page, vp.width, vp.height);
@@ -364,8 +350,11 @@ test.describe('Catalogue Rail Parity', () => {
   test.describe('desktop rail with a coarse pointer', () => {
     test.use({ viewport: { width: 1280, height: 560 }, hasTouch: true });
 
-    test('keeps 44px thumbnails and scrolls, clear of the light bar, at 1280x560', async ({ page }) => {
-      await openScene(page);
+    test('keeps 44px thumbnails and scrolls, clear of the light bar, at 1280x560', async ({
+      page,
+      request,
+    }) => {
+      await openShowroom(page, request, RAIL_PATH);
       const tag = 'desktop 1280x560 coarse pointer';
 
       expect(
@@ -391,6 +380,7 @@ test.describe('Catalogue Rail Parity', () => {
 
   test('synthetic safe areas and actionable point hit testing at phone portrait and short landscape', async ({
     page,
+    request,
   }) => {
     const viewports = [
       { id: 'phone-390x844', width: 390, height: 844 },
@@ -399,7 +389,7 @@ test.describe('Catalogue Rail Parity', () => {
 
     for (const vp of viewports) {
       await page.setViewportSize({ width: vp.width, height: vp.height });
-      await openScene(page);
+      await openShowroom(page, request, RAIL_PATH);
       const safeArea = await installSafeArea(page);
       const tag = `${vp.id} synthetic safe area`;
 
@@ -488,6 +478,7 @@ test.describe('Catalogue Rail Parity', () => {
 
   test('actionable point hit testing, clipping proof, and non-occlusion at desktop and tablet', async ({
     page,
+    request,
   }) => {
     const viewports = [
       { id: 'desktop', width: 1440, height: 900 },
@@ -496,7 +487,7 @@ test.describe('Catalogue Rail Parity', () => {
 
     for (const vp of viewports) {
       await page.setViewportSize({ width: vp.width, height: vp.height });
-      await openScene(page);
+      await openShowroom(page, request, RAIL_PATH);
       const tag = `${vp.id} hit testing`;
 
       const rail = page.locator('#looks');
@@ -546,9 +537,10 @@ test.describe('Catalogue Rail Parity', () => {
 
   test('selection via pointer, Enter, Space, and focus continuity across breakpoints', async ({
     page,
+    request,
   }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    const canvas = await openScene(page);
+    const { canvas } = await openShowroom(page, request, RAIL_PATH);
 
     const rail = page.locator('#looks');
     const buttons = rail.locator('button');
@@ -594,9 +586,12 @@ test.describe('Catalogue Rail Parity', () => {
     ).toBe('jumpsuit-dress');
   });
 
-  test('latest-click-wins race condition with deterministic route delay', async ({ page }) => {
+  test('latest-click-wins race condition with deterministic route delay', async ({
+    page,
+    request,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    const canvas = await openScene(page);
+    const { canvas } = await openShowroom(page, request, RAIL_PATH);
 
     const rail = page.locator('#looks');
     const btnJumpsuit = rail.locator('button[data-look="jumpsuit-dress"]');
@@ -637,9 +632,12 @@ test.describe('Catalogue Rail Parity', () => {
     await page.unroute('**/content/looks/jumpsuit-dress.glb');
   });
 
-  test('controlled pending and busy state capture and semantic reading', async ({ page }) => {
+  test('controlled pending and busy state capture and semantic reading', async ({
+    page,
+    request,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await openScene(page);
+    await openShowroom(page, request, RAIL_PATH);
 
     const rail = page.locator('#looks');
     const targetBtn = rail.locator('button[data-look="new-look-dress"]');
@@ -689,10 +687,10 @@ test.describe('Catalogue Rail Parity', () => {
     await page.unroute('**/content/looks/new-look-dress.glb');
   });
 
-  test('renderer preservation and demand loop return to idle', async ({ page }) => {
+  test('renderer preservation and demand loop return to idle', async ({ page, request }) => {
     test.setTimeout(120_000);
     await page.setViewportSize({ width: 1440, height: 900 });
-    const canvas = await openScene(page);
+    const { canvas } = await openShowroom(page, request, RAIL_PATH);
 
     await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
     const initialMetrics = await page.evaluate(() => {

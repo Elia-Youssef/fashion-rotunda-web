@@ -1,7 +1,8 @@
 import { expect, test } from './support/fixtures';
-import type { Locator, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { waitForTooltipInstallation } from './support/a11y-mount';
 import { backendPath, projectBackend } from './support/backend';
+import { openShowroom } from './support/showroom';
 
 // Onboarding, tooltips and accessibility pass.
 // Tests the first-visit onboarding card, Skip dismissal, the DOM tab walk order,
@@ -33,19 +34,6 @@ function boxesIntersect(
   );
 }
 
-/** Opens the page on the project's own backend and waits for the first drawn frame. */
-async function openScene(page: Page, path: string): Promise<Locator> {
-  await page.goto(backendPath(path));
-  const canvas = page.locator('canvas#scene');
-  // A silent fallback would run these DOM checks against the wrong renderer, so the page must
-  // publish the backend its project promises before any check reads the DOM.
-  await expect(canvas).toHaveAttribute('data-backend', projectBackend(), {
-    timeout: SCENE_READY_TIMEOUT,
-  });
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
-  return canvas;
-}
-
 async function installSafeArea(page: Page): Promise<void> {
   await page.evaluate((insets) => {
     const root = document.documentElement;
@@ -70,11 +58,14 @@ async function tabUntil(page: Page, selector: string): Promise<void> {
   }
 }
 
-test('onboarding sequence, focus order, swatch navigation and live announcements', async ({ page }) => {
+test('onboarding sequence, focus order, swatch navigation and live announcements', async ({
+  page,
+  request,
+}) => {
   // Six steps on a software-rendered page: the suite's default minute ran out under load.
   test.setTimeout(120_000);
 
-  const canvas = await openScene(page, '/?gate=off&onboarding=reset');
+  const { canvas } = await openShowroom(page, request, '/?gate=off&onboarding=reset');
   await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
 
   // 1. Onboarding card appears with the first step; the a11y mount follows the ready attribute.
@@ -215,8 +206,8 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
   ).toBe(true);
 });
 
-test('the onboarding card stays away under e2e without the flag', async ({ page }) => {
-  await openScene(page, '/?e2e=1');
+test('the onboarding card stays away under e2e without the flag', async ({ page, request }) => {
+  await openShowroom(page, request, '/?e2e=1');
 
   // Other specs run under e2e=1 and must never meet the card. Two assertions: the a11y mount
   // decides onboarding and must be installed first, then the card is asserted absent.
@@ -226,10 +217,11 @@ test('the onboarding card stays away under e2e without the flag', async ({ page 
 
 test('the long GPU tooltip stays inside short landscape and dismisses without stale ARIA', async ({
   page,
+  request,
 }) => {
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 844, height: 390 });
-  await openScene(page, '/?e2e=1&gate=off');
+  await openShowroom(page, request, '/?e2e=1&gate=off');
 
   const badge = page.locator('.badge');
   const tooltip = page.locator('#a11y-tooltip[role="tooltip"]');
@@ -259,10 +251,11 @@ for (const viewport of [
 ]) {
   test(`the onboarding Lights step leaves its launcher usable at ${viewport.width}x${viewport.height}`, async ({
     page,
+    request,
   }) => {
     test.setTimeout(120_000);
     await page.setViewportSize(viewport);
-    await openScene(page, '/?gate=off&onboarding=reset');
+    await openShowroom(page, request, '/?gate=off&onboarding=reset');
     await installSafeArea(page);
 
     const card = page.locator('.onboarding-card');

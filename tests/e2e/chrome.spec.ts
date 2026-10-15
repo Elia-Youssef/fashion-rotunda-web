@@ -1,47 +1,20 @@
 import { expect, test } from './support/fixtures';
-import type { APIRequestContext, Locator, Page } from '@playwright/test';
-import { backendPath, projectBackend } from './support/backend';
-import { parseCatalog } from '../../src/catalog/catalog';
-import type { Catalog } from '../../src/catalog/catalog';
+import type { Page } from '@playwright/test';
+import { openShowroom, readCatalog } from './support/showroom';
 
 // The visitor-facing chrome. The strip switches the look, the card names it, the
 // swatches swap the mannequin and Reset returns the default. The checks are about the DOM, not the
 // backend, so both projects run them; each page is pinned to its project's backend through the
 // canvas data-backend attribute before any DOM reading.
 
-const SCENE_READY_TIMEOUT = 60_000;
 /** One look fetch through the local preview server, well past the five-second assertion default. */
 const SWITCH_TIMEOUT = 30_000;
 
-/** The catalogue the page itself will load, read through the same server. */
-async function readCatalog(request: APIRequestContext): Promise<Catalog> {
-  const response = await request.get('/content/catalog.json');
-  expect(response.ok(), 'public/content is on disk and served').toBeTruthy();
-  const json: unknown = await response.json();
-  return parseCatalog(json);
-}
-
-/** Opens the page on the project's own backend and waits for the frame that has the look on the plinth. */
-async function openScene(page: Page, path: string): Promise<Locator> {
-  await page.goto(backendPath(path));
-  const canvas = page.locator('canvas#scene');
-  // A silent fallback would run these DOM checks against the wrong renderer, so the page must
-  // publish the backend its project promises before any check reads the DOM.
-  await expect(canvas).toHaveAttribute('data-backend', projectBackend(), {
-    timeout: SCENE_READY_TIMEOUT,
-  });
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
-  return canvas;
-}
-
 test('the strip switches the look and the card names it', async ({ page, request }) => {
-  const catalog = await readCatalog(request);
+  const { canvas, catalog } = await openShowroom(page, request, '/?gate=off');
   const third = catalog.looks[2];
 
-  const canvas = await openScene(page, '/?gate=off');
-
   const thumbnails = page.locator('#looks button');
-  await expect(thumbnails).toHaveCount(catalog.looks.length, { timeout: SCENE_READY_TIMEOUT });
   await thumbnails.nth(2).click();
 
   await expect(canvas).toHaveAttribute('data-look', third.id, { timeout: SWITCH_TIMEOUT });
@@ -57,7 +30,7 @@ test('the swatches switch the mannequin and Reset returns the default', async ({
   const first = catalog.looks[0];
   expect(first.variants, 'the first look carries a dark variant').toContain('dark');
 
-  const canvas = await openScene(page, '/?gate=off');
+  const { canvas } = await openShowroom(page, request, '/?gate=off');
 
   await page.getByRole('radio', { name: 'Dark charcoal' }).click();
   await expect(canvas).toHaveAttribute('data-variant', 'dark', { timeout: SWITCH_TIMEOUT });
@@ -384,29 +357,11 @@ for (const viewport of CENSUS_VIEWPORTS) {
     page,
     request,
   }) => {
-    // The proof panel is part of the census, so the URL asks for it.
+    // The proof panel is part of the census, so the URL asks for it. The shared opening pins the
+    // backend and waits for the mounted strip, card and mode buttons; the light panel is census
+    // chrome beyond that opening, so the census waits for it here before its phases read boxes.
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    await openScene(page, '/?e2e=1&proof=1');
-
-    // data-scene goes ready on the first frame with content, but the page mounts the mode switch,
-    // the strip and the card only after the tier benchmark and the post chain settle, so the
-    // census waits for every chrome it reads before its first phase measures a box. The strip
-    // holds one button per catalogue look, the catalogue's own current mark is on one of them,
-    // and the card and both camera mode buttons are mounted.
-    const catalog = await readCatalog(request);
-    await expect(page.locator('#looks button')).toHaveCount(catalog.looks.length, {
-      timeout: SCENE_READY_TIMEOUT,
-    });
-    await expect(page.locator('#looks button[aria-current="true"]')).toHaveCount(1, {
-      timeout: SCENE_READY_TIMEOUT,
-    });
-    await expect(page.locator('.product-card')).toHaveCount(1, { timeout: SCENE_READY_TIMEOUT });
-    await expect(page.locator('button[data-mode="orbit"]')).toHaveCount(1, {
-      timeout: SCENE_READY_TIMEOUT,
-    });
-    await expect(page.locator('button[data-mode="walk"]')).toHaveCount(1, {
-      timeout: SCENE_READY_TIMEOUT,
-    });
+    await openShowroom(page, request, '/?e2e=1&proof=1');
     await expect(page.locator('.lightpanel')).toHaveCount(1);
 
     const controls = census();
@@ -461,9 +416,10 @@ for (const viewport of [
 ]) {
   test(`synthetic safe areas contain overlay chrome at ${viewport.width}x${viewport.height}`, async ({
     page,
+    request,
   }) => {
     await page.setViewportSize(viewport);
-    await openScene(page, '/?e2e=1&proof=1');
+    await openShowroom(page, request, '/?e2e=1&proof=1');
     const safeArea = await installSafeArea(page);
     const tag = `${viewport.width}x${viewport.height} synthetic safe area`;
 
