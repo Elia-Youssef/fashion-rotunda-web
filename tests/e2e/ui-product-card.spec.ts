@@ -1,5 +1,6 @@
 import { expect, test } from './support/fixtures';
-import type { Locator, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { openShowroom } from './support/showroom';
 
 // Product-card and narration cleanup E2E verification.
 // Covers four viewports (1440x900, 820x1180, 390x844, 844x390),
@@ -7,20 +8,16 @@ import type { Locator, Page } from '@playwright/test';
 // 3-action reflow without Audio, elementFromPoint hit testing,
 // touch targets >= 44x44px, synthetic safe insets,
 // roving-tabindex keyboard navigation, look refresh, and sheet dismissal.
+//
+// The checks read DOM, layout, focus and the state attributes the page publishes, none of
+// which the backend changes, so both projects run them: the shared showroom opening pins the
+// page to the backend its project promises through the canvas data-backend attribute before
+// any DOM reading, and waits on past the first frame to the mounted card, strip and mode
+// buttons. The product card mounts only after the tier benchmark and the post chain settle,
+// which on WebGPU outlasts the ready attribute.
 
-const SCENE_READY_TIMEOUT = 60_000;
 const SWITCH_TIMEOUT = 30_000;
-
-function skipUnlessWebgl2(): void {
-  test.skip(test.info().project.name !== 'webgl2', 'the chrome checks are backend independent');
-}
-
-async function openScene(page: Page, path = '/?webgl=1&gate=off&e2e=1&proof=1'): Promise<Locator> {
-  await page.goto(path);
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
-  return canvas;
-}
+const CARD_PATH = '/?gate=off&e2e=1&proof=1';
 
 interface SafeArea {
   top: number;
@@ -44,10 +41,10 @@ async function installSafeArea(page: Page): Promise<SafeArea> {
 test.describe('Product-Card Parity and Narration Cleanup', () => {
   test('desktop 1440x900: card hierarchy, actions reflow without Audio, and Material disclosure toggle', async ({
     page,
+    request,
   }) => {
-    skipUnlessWebgl2();
     await page.setViewportSize({ width: 1440, height: 900 });
-    await openScene(page);
+    await openShowroom(page, request, CARD_PATH);
 
     const card = page.locator('.product-card');
     await expect(card).toBeVisible();
@@ -131,10 +128,10 @@ test.describe('Product-Card Parity and Narration Cleanup', () => {
 
   test('desktop keyboard accessibility: Material toggle, roving tabindex swatches, and tab order', async ({
     page,
+    request,
   }) => {
-    skipUnlessWebgl2();
     await page.setViewportSize({ width: 1440, height: 900 });
-    const canvas = await openScene(page);
+    const { canvas } = await openShowroom(page, request, CARD_PATH);
 
     const rotateBtn = page.locator('.product-card__action[data-action="rotate"]');
     const resetBtn = page.locator('.product-card__action[data-action="reset"]');
@@ -199,10 +196,12 @@ test.describe('Product-Card Parity and Narration Cleanup', () => {
     await expect(copyBtn).toBeFocused();
   });
 
-  test('Reset remains the final intent when pressed immediately after a swatch', async ({ page }) => {
-    skipUnlessWebgl2();
+  test('Reset remains the final intent when pressed immediately after a swatch', async ({
+    page,
+    request,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    const canvas = await openScene(page);
+    const { canvas } = await openShowroom(page, request, CARD_PATH);
 
     const dark = page.locator('.product-card__swatch[aria-label="Dark charcoal"]');
     const base = page.locator('.product-card__swatch[aria-label="Default"]');
@@ -217,10 +216,12 @@ test.describe('Product-Card Parity and Narration Cleanup', () => {
     await expect(canvas).toHaveAttribute('data-variant', 'base');
   });
 
-  test('look switch: content refresh and Material disclosure consistency', async ({ page }) => {
-    skipUnlessWebgl2();
+  test('look switch: content refresh and Material disclosure consistency', async ({
+    page,
+    request,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    const canvas = await openScene(page);
+    const { canvas } = await openShowroom(page, request, CARD_PATH);
 
     const card = page.locator('.product-card');
     const materialBtn = card.locator('.product-card__action[data-action="material"]');
@@ -245,10 +246,12 @@ test.describe('Product-Card Parity and Narration Cleanup', () => {
     await expect(swatches.locator('.product-card__swatch')).toHaveCount(3);
   });
 
-  test('tablet 820x1180: card and rail coexistence without collision', async ({ page }) => {
-    skipUnlessWebgl2();
+  test('tablet 820x1180: card and rail coexistence without collision', async ({
+    page,
+    request,
+  }) => {
     await page.setViewportSize({ width: 820, height: 1180 });
-    await openScene(page);
+    await openShowroom(page, request, CARD_PATH);
 
     const rail = page.locator('#looks');
     const card = page.locator('#shell-card');
@@ -280,10 +283,10 @@ test.describe('Product-Card Parity and Narration Cleanup', () => {
 
   test('phone portrait 390x844: Look sheet internal scroll, touch sizes, safe insets, and hit testing', async ({
     page,
+    request,
   }) => {
-    skipUnlessWebgl2();
     await page.setViewportSize({ width: 390, height: 844 });
-    await openScene(page);
+    await openShowroom(page, request, CARD_PATH);
     const safeArea = await installSafeArea(page);
 
     // Look sheet starts closed behind Look pill
@@ -365,10 +368,10 @@ test.describe('Product-Card Parity and Narration Cleanup', () => {
 
   test('short landscape 844x390: Look sheet internal scroll, touch sizes, safe insets, and hit testing', async ({
     page,
+    request,
   }) => {
-    skipUnlessWebgl2();
     await page.setViewportSize({ width: 844, height: 390 });
-    await openScene(page);
+    await openShowroom(page, request, CARD_PATH);
     const safeArea = await installSafeArea(page);
 
     const lookPill = page.locator('.shell-pill--look');
@@ -438,10 +441,12 @@ test.describe('Product-Card Parity and Narration Cleanup', () => {
     await expect(lookPill).toBeFocused();
   });
 
-  test('breakpoint focus continuity: focus retained across desktop and tablet resize', async ({ page }) => {
-    skipUnlessWebgl2();
+  test('breakpoint focus continuity: focus retained across desktop and tablet resize', async ({
+    page,
+    request,
+  }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await openScene(page);
+    await openShowroom(page, request, CARD_PATH);
 
     const materialBtn = page.locator('.product-card__action[data-action="material"]');
     await materialBtn.focus();
