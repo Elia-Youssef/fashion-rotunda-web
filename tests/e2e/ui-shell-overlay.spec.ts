@@ -1,16 +1,13 @@
 import { expect, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
+import { openShowroom } from './support/showroom';
 
 // The overlay shell contract. The canvas is the full scene field beneath the chrome, so
 // opening or closing the Light Control drawer must not move it, or anything else. The drawer
 // starts closed on every review viewport, with ARIA, hidden and the visible state in agreement.
-// webgl2 project only, like the chrome suite: the checks read the DOM, not the backend.
-
-const SCENE_READY_TIMEOUT = 60_000;
-
-function skipUnlessWebgl2(): void {
-  test.skip(test.info().project.name !== 'webgl2', 'the shell checks are backend independent');
-}
+// The checks read the DOM, the layout, ARIA and focus, none of which the backend changes, so
+// every case runs on both projects; the shared showroom opening pins the project's backend and
+// waits past the late chrome mount that canvas[data-scene] does not cover.
 
 interface CanvasBox {
   x: number;
@@ -73,12 +70,12 @@ const REVIEW_VIEWPORTS: Array<{ name: string; width: number; height: number }> =
 ];
 
 for (const viewport of REVIEW_VIEWPORTS) {
-  test(`the light control starts closed at ${viewport.width}x${viewport.height}`, async ({ page }) => {
-    skipUnlessWebgl2();
+  test(`the light control starts closed at ${viewport.width}x${viewport.height}`, async ({
+    page,
+    request,
+  }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    await page.goto('/?webgl=1&gate=off&e2e=1');
-    const canvas = page.locator('canvas#scene');
-    await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+    await openShowroom(page, request, '/?gate=off&e2e=1');
 
     const box = await readCanvasBox(page);
     expect(box.width, `${viewport.name}: the canvas keeps a positive width`).toBeGreaterThan(0);
@@ -95,12 +92,12 @@ for (const viewport of REVIEW_VIEWPORTS) {
   });
 }
 
-test('the desktop drawer opens over the canvas without moving anything', async ({ page }) => {
-  skipUnlessWebgl2();
+test('the desktop drawer opens over the canvas without moving anything', async ({
+  page,
+  request,
+}) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/?webgl=1&gate=off&e2e=1');
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+  await openShowroom(page, request, '/?gate=off&e2e=1');
 
   const closed = await readLayout(page);
   expect(closed.canvas.width).toBe(1440);
@@ -128,12 +125,12 @@ test('the desktop drawer opens over the canvas without moving anything', async (
   expect(closedAgain.canvas).toEqual(closed.canvas);
 });
 
-test('opening and closing the drawer preserves the look, the card and the music', async ({ page }) => {
-  skipUnlessWebgl2();
+test('opening and closing the drawer preserves the look, the card and the music', async ({
+  page,
+  request,
+}) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/?webgl=1&gate=off&e2e=1&music=on');
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+  const { canvas } = await openShowroom(page, request, '/?gate=off&e2e=1&music=on');
 
   const music = page.locator('header button.music-switch');
   const musicBefore = await music.getAttribute('aria-pressed');
@@ -156,13 +153,10 @@ for (const viewport of [
 ]) {
   test(`closed mobile sheet chrome cannot cover Light Control at ${viewport.width}x${viewport.height}`, async ({
     page,
+    request,
   }) => {
-    skipUnlessWebgl2();
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
-    await page.goto('/?webgl=1&gate=off&e2e=1');
-    await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'ready', {
-      timeout: SCENE_READY_TIMEOUT,
-    });
+    await openShowroom(page, request, '/?gate=off&e2e=1');
 
     const toggle = page.locator('#shell-light-toggle');
     const chrome = page.locator('#shell-light-row .shell-sheet__chrome');
@@ -226,13 +220,12 @@ for (const viewport of [
   });
 }
 
-test('Escape closes desktop Light Control and returns focus to its trigger', async ({ page }) => {
-  skipUnlessWebgl2();
+test('Escape closes desktop Light Control and returns focus to its trigger', async ({
+  page,
+  request,
+}) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/?webgl=1&gate=off&e2e=1');
-  await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'ready', {
-    timeout: SCENE_READY_TIMEOUT,
-  });
+  await openShowroom(page, request, '/?gate=off&e2e=1');
 
   const toggle = page.locator('#shell-light-toggle');
   await toggle.focus();
