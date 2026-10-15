@@ -1,7 +1,8 @@
-import { expect, test } from './support/fixtures';
+import { expect, test, expectConsoleError } from './support/fixtures';
 
 import { holdFirstRequest } from './support/held-request';
 import { backendPath } from './support/backend';
+import { STARTUP_FAILURE_MESSAGE } from '../../src/ui/startup-failure';
 
 // Opaque entry lobby on a real load.
 // Both backend projects run headless by default and activate the lobby through synthetic input.
@@ -118,6 +119,42 @@ test('activates Load Experience on Enter from the keyboard', async ({ page }) =>
   await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
   await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'ready');
   await expect(lobby).toBeHidden();
+});
+
+// A first-frame load cut at the catalogue request must reach the visitor as the lobby's terminal
+// error state, not only as a console line. The startup catch in src/main.ts sets the canvas error
+// state and hands the failure to the routing in src/ui/startup-failure.ts, which paints the lobby
+// error pane while the lobby owns the screen; the two were only tested apart before this case.
+test('shows the lobby error state and retry control when the catalogue request is cut', async ({
+  page,
+}) => {
+  // Cutting the request is the same class of failure as a 404 or a broken connection, without
+  // needing one: the boot cannot resolve a content set without the catalogue.
+  await page.route('**/content/catalog.json', (route) => route.abort());
+
+  // Chromium reports the cut request as a console error whose text carries no URL, so the pattern
+  // anchors on the reported text, as the music manifest case does. The startup catch then logs the
+  // routed failure once. The progress tracker warns, and warnings are not console errors, so it
+  // needs no declaration.
+  expectConsoleError(page, /^Failed to load resource: net::ERR_FAILED/,
+    'the route abort is a deliberate network failure: the cut catalogue behind the lobby error');
+  expectConsoleError(page, /^\[archviz\] the showroom failed to load/,
+    'the failed startup is diagnosed in the console while the lobby shows its error state');
+
+  await page.goto(backendPath('/'));
+  const lobby = page.locator('#entry-lobby');
+  await expect(lobby).toHaveAttribute('data-state', 'idle');
+  await lobby.locator('#lobby-load-btn').click();
+
+  // The adapter probe and the renderer start are the slow part under software rendering; the abort
+  // fails fast once the catalogue fetch begins.
+  await expect(lobby).toHaveAttribute('data-state', 'error', { timeout: 30_000 });
+  const errorPane = lobby.locator('.entry-lobby__error-pane');
+  await expect(errorPane).toBeVisible();
+  await expect(errorPane.locator('.entry-lobby__error-message')).toHaveText(STARTUP_FAILURE_MESSAGE);
+  await expect(lobby.getByRole('button', { name: 'RETRY LOADING' })).toBeVisible();
+  // The canvas publishes the same terminal state the lobby pane shows.
+  await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'error');
 });
 
 // Explicit bypass URLs: gate=off and e2e=1 (without gate=on)
