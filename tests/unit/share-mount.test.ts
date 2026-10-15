@@ -174,6 +174,17 @@ afterEach(() => {
 });
 
 describe('share mount', () => {
+  it('publishes an elapsed observer update before the next timer task', async () => {
+    const stage = makeStage('');
+    mount(stage);
+    // Time since navigation can already exceed the window when the mount is first installed.
+    clock.ms = 1000;
+    stage.canvas.dataset.look = 'look-03';
+    await Promise.resolve();
+    expect(window.location.search).toBe('?look=look-03');
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
   it.each(['resolve', 'reject'] as const)('retires clipboard %s after disposal', async (outcome) => {
     const pending = deferred<void>();
     const writeText = vi.fn(() => pending.promise);

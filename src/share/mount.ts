@@ -8,7 +8,7 @@ import type { Rig } from '../lighting/rig';
 import { lazyImport } from '../ui/lazy-import';
 import { mountShare as mountShareUI } from '../ui/share';
 import type { ScreenshotOptions } from './screenshot';
-import { DEFAULT_RIG_SERIALIZED, buildSearch, parseShareState } from './state';
+import { buildSearch, parseShareState } from './state';
 import type { ShareState } from './state';
 
 export interface ShareMountOptions {
@@ -81,6 +81,7 @@ function formatStillFileName(lookId: string, date: Date = new Date()): string {
 export function mountShare(options: ShareMountOptions): ShareMount {
   const lifetime = new AbortController();
   const signal = lifetime.signal;
+  // Share an in-flight import, and let a failed chunk load be retried by the next action.
   const loadScreenshot = lazyImport(() => import('./screenshot'));
   // Capture proof position before applying any state overrides so proof resets can be detected.
   const proofPos = options.camera.orbit.position;
@@ -141,8 +142,8 @@ export function mountShare(options: ShareMountOptions): ShareMount {
     const look = liveLook === options.defaultLook ? null : liveLook;
     const variant = liveVariant === options.defaultVariant ? null : liveVariant;
 
-    const currentRig = options.lighting.serialize();
-    const rig = currentRig === DEFAULT_RIG_SERIALIZED ? null : currentRig;
+    // buildSearch owns omission of the default rig for every serialization caller.
+    const rig = options.lighting.serialize();
 
     const pos = options.camera.orbit.position;
     const dx = pos[0] - proofPosition[0];
@@ -190,6 +191,7 @@ export function mountShare(options: ShareMountOptions): ShareMount {
   let pendingTimer: number | null = null;
 
   function updateSearchNow(): void {
+    // Disposal clears the timer sources; keep the write boundary safe for future callers too.
     if (signal.aborted) return;
     if (pendingTimer !== null) {
       window.clearTimeout(pendingTimer);
@@ -206,10 +208,12 @@ export function mountShare(options: ShareMountOptions): ShareMount {
   }
 
   function scheduleUpdate(): void {
+    // Scheduling must never extend the mount lifetime, even if another event source is added.
     if (signal.aborted) return;
     const now = performance.now();
     const elapsed = now - lastReplaceTime;
 
+    // An elapsed window publishes in this callback, without waiting for another timer task.
     if (elapsed >= THROTTLE_MS) {
       updateSearchNow();
     } else if (pendingTimer === null) {
@@ -271,6 +275,8 @@ export function mountShare(options: ShareMountOptions): ShareMount {
         const lookId = options.showroom.currentLook ?? 'look';
         const fileName = formatStillFileName(lookId);
         const result = await deliverStill(blob, fileName, signal);
+        // Delivery can outlive disposal. Keep its continuation within the same lifetime even
+        // though the current UI handle also ignores notifications after it is disposed.
         if (signal.aborted) return;
         uiHandle.notify(result === 'shared' ? 'Still shared' : 'Still saved');
       } catch (error) {
