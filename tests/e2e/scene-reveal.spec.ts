@@ -76,6 +76,12 @@ async function enterExperience(lobby: Locator, canvas: Locator, backend: Backend
   await expect(canvas).toHaveAttribute('data-backend', backend, { timeout: 60_000 });
 }
 
+async function expectRevealComplete(page: Page): Promise<void> {
+  await expect.poll(() => page.evaluate(() => window.archvizReveal?.state), { timeout: 60_000 }).toBe('revealed');
+  await expect(page.locator('#scene-veil')).toHaveCount(0);
+  expect(await page.evaluate(() => window.archvizTransitionSeam === undefined)).toBe(true);
+}
+
 // The veil reads black-hold as soon as the stable-frame handshake starts, but the handshake still has
 // to wait for three scheduled scene renders (one committed black frame, then two counted frames).
 // Under software GL with four workers that takes seconds. 10 s is far above that and far below the
@@ -118,7 +124,7 @@ async function expectParkedBehindBlack(page: Page): Promise<void> {
 
 test.describe('Scene Reveal Transition', () => {
   test('executes two-stage reveal lifecycle in exact order with stable frames', async ({ page }) => {
-    const { backend, lobby, veil, canvas } = await openTransition(page);
+    const { backend, lobby, canvas } = await openTransition(page);
 
     // The held rotunda request keeps the boot in loading, so the loading phase is observed while
     // it is held instead of raced against the content that ends it.
@@ -133,23 +139,22 @@ test.describe('Scene Reveal Transition', () => {
 
     // Wait for full transition to revealed
     await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
-    await expect(veil).toHaveAttribute('data-state', 'revealed');
-    await expect(veil).toBeHidden();
+    await expectRevealComplete(page);
     await expect(lobby).toBeHidden();
     await expect(canvas).toHaveAttribute('data-scene', 'ready');
 
-    // Inspect recorded timestamps and stable frames via seam
+    // Completed diagnostics remain readable on the existing coordinator handle.
     const seamData = await page.evaluate(() => {
-      const seam = window.archvizTransitionSeam;
-      if (!seam) return null;
+      const coordinator = window.archvizReveal;
+      if (!coordinator) return null;
       return {
-        state: seam.state,
-        stableFrames: seam.stableFrames,
-        timestamps: seam.timestamps,
+        state: coordinator.state,
+        stableFrames: coordinator.frameCountBehindBlack,
+        timestamps: coordinator.transitionTimestamps,
       };
     });
 
-    expect(seamData, 'transition seam was exposed').not.toBeNull();
+    expect(seamData, 'completed coordinator is available').not.toBeNull();
     if (seamData) {
       expect(seamData.state).toBe('revealed');
       expect(seamData.stableFrames).toBeGreaterThanOrEqual(2);
@@ -215,8 +220,7 @@ test.describe('Scene Reveal Transition', () => {
 
     // Unfreeze and confirm graceful completion to revealed
     await page.evaluate(() => window.archvizTransitionSeam?.unfreeze());
-    await expect(veil).toHaveAttribute('data-state', 'revealed', { timeout: 30_000 });
-    await expect(veil).toBeHidden();
+    await expectRevealComplete(page);
   });
 
   test('freezes deterministic mid-reveal capture at a genuinely partial veil opacity', async ({ page }) => {
@@ -235,7 +239,7 @@ test.describe('Scene Reveal Transition', () => {
     expect(reading.revealEnd).toBeNull();
 
     await page.evaluate(() => window.archvizTransitionSeam?.unfreeze());
-    await expect(veil).toHaveAttribute('data-state', 'revealed', { timeout: 30_000 });
+    await expectRevealComplete(page);
   });
 
   test('keeps the branded ready-hidden lobby visible until cover-to-black begins', async ({ page }) => {
@@ -262,7 +266,7 @@ test.describe('Scene Reveal Transition', () => {
     expect(composition.hitLobby).toBe(true);
 
     await page.evaluate(() => window.archvizTransitionSeam?.unfreeze());
-    await expect(veil).toHaveAttribute('data-state', 'revealed', { timeout: 30_000 });
+    await expectRevealComplete(page);
   });
 
   test('restarts the black-frame handshake after viewport disruption before revealing', async ({ page }) => {
@@ -308,12 +312,17 @@ test.describe('Scene Reveal Transition', () => {
     expect(release.parked, 'the disruption leaves the black-hold latch closed until release').toBe(true);
     expect(release.stableFrames, 'no stable frame is counted while the disrupted handshake is parked').toBe(0);
 
-    await page.evaluate(() => window.archvizTransitionSeam?.unfreeze());
-    await expect(veil).toHaveAttribute('data-state', 'revealed', { timeout: 30_000 });
-    expect(await page.evaluate(() => window.archvizTransitionSeam?.stableFrames)).toBeGreaterThanOrEqual(2);
-    const freshSamples = await page.evaluate((start) =>
-      window.archvizTransitionSeam?.stableFrameSamples.slice(start) ?? [], release.samples);
-    assertFreshStableFrames(freshSamples, reset.generation);
+    // Retain this observation handle before release; disposal unpublishes the global.
+    const seam = await page.evaluateHandle(() => window.archvizTransitionSeam!);
+    try {
+      await seam.evaluate((value) => value.unfreeze());
+      await expectRevealComplete(page);
+      expect(await page.evaluate(() => window.archvizReveal?.frameCountBehindBlack)).toBeGreaterThanOrEqual(2);
+      const freshSamples = await seam.evaluate((value, start) => value.stableFrameSamples.slice(start), release.samples);
+      assertFreshStableFrames(freshSamples, reset.generation);
+    } finally {
+      await seam.dispose();
+    }
   });
 
   test('waits for a hidden-tab restore, then reruns the black-frame handshake before reveal', async ({ page }) => {
@@ -338,8 +347,8 @@ test.describe('Scene Reveal Transition', () => {
       document.dispatchEvent(new Event('visibilitychange'));
       window.archvizTransitionSeam?.unfreeze();
     });
-    await expect(veil).toHaveAttribute('data-state', 'revealed', { timeout: 30_000 });
-    expect(await page.evaluate(() => window.archvizTransitionSeam?.stableFrames)).toBeGreaterThanOrEqual(2);
+    await expectRevealComplete(page);
+    expect(await page.evaluate(() => window.archvizReveal?.frameCountBehindBlack)).toBeGreaterThanOrEqual(2);
   });
 
   test('restarts the black-frame handshake after an orientation disruption before revealing', async ({ page }) => {
@@ -353,8 +362,8 @@ test.describe('Scene Reveal Transition', () => {
     await expect(veil).toHaveAttribute('data-state', 'black-hold');
 
     await page.evaluate(() => window.archvizTransitionSeam?.unfreeze());
-    await expect(veil).toHaveAttribute('data-state', 'revealed', { timeout: 30_000 });
-    expect(await page.evaluate(() => window.archvizTransitionSeam?.stableFrames)).toBeGreaterThanOrEqual(2);
+    await expectRevealComplete(page);
+    expect(await page.evaluate(() => window.archvizReveal?.frameCountBehindBlack)).toBeGreaterThanOrEqual(2);
   });
 
   test('defers music and onboarding until the reveal has completed', async ({ page }) => {
@@ -376,7 +385,7 @@ test.describe('Scene Reveal Transition', () => {
     expect(underBlack.onboardingCards, 'onboarding has not mounted behind the veil').toBe(0);
 
     await page.evaluate(() => window.archvizTransitionSeam?.unfreeze());
-    await expect(veil).toHaveAttribute('data-state', 'revealed', { timeout: 30_000 });
+    await expectRevealComplete(page);
     await expect(page.locator('#shell-header button.music-switch')).toHaveAttribute('data-music', 'playing', {
       timeout: 15_000,
     });
@@ -418,7 +427,7 @@ test.describe('Scene Reveal Transition', () => {
     expect(focusOwner, 'keyboard navigation cannot reach the scene under black').not.toBe('scene');
 
     await page.evaluate(() => window.archvizTransitionSeam?.unfreeze());
-    await expect(veil).toHaveAttribute('data-state', 'revealed', { timeout: 30_000 });
+    await expectRevealComplete(page);
   });
 
   test('blocks pointer input until revealed, then enables camera interaction', async ({ page }) => {
@@ -439,7 +448,7 @@ test.describe('Scene Reveal Transition', () => {
 
     // Unfreeze
     await page.evaluate(() => window.archvizTransitionSeam?.unfreeze());
-    await expect(veil).toHaveAttribute('data-state', 'revealed', { timeout: 30_000 });
+    await expectRevealComplete(page);
 
     // After reveal: dragging canvas rotates camera
     const readCameraFrame = (): Promise<{ position: [number, number, number]; frames: number }> =>
@@ -481,12 +490,11 @@ test.describe('Scene Reveal Transition', () => {
       page,
     }) => {
       await page.setViewportSize({ width: vp.width, height: vp.height });
-      const { backend, lobby, veil, canvas } = await openTransition(page);
+      const { backend, lobby, canvas } = await openTransition(page);
 
       // Click load and await reveal
       await enterExperience(lobby, canvas, backend);
-      await expect(veil).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
-      await expect(veil).toBeHidden();
+      await expectRevealComplete(page);
 
       // Verify zero scroll after reveal
       const scrollMetrics = await page.evaluate(() => ({

@@ -113,6 +113,63 @@ describe('SceneRevealCoordinator', () => {
     document.body.innerHTML = '';
   });
 
+  it.each(['pending', 'failed', 'completed'] as const)(
+    'releases its seam and veil at disposal after a %s transition', async (phase) => {
+      const onRevealed = vi.fn(() => {
+        expect(window.archvizTransitionSeam?.state).toBe('revealed');
+        expect(coordinator.veil.isConnected).toBe(true);
+      });
+      const coordinator = new SceneRevealCoordinator({
+        canvas, search: '?e2e=1&gate=on', lobby: mockLobby,
+        predicates: createAllPassingPredicates(), wakeRenderer: vi.fn(),
+        onFrameRequest: vi.fn().mockResolvedValue(undefined), onRevealed,
+      });
+      const seam = window.archvizTransitionSeam!;
+      expect(seam).toBeDefined();
+      expect(coordinator.veil.isConnected).toBe(true);
+      if (phase === 'failed') {
+        coordinator.fail('failed before reveal');
+        expect(window.archvizTransitionSeam).toBe(seam);
+        expect(seam.state).toBe('error');
+      } else if (phase === 'completed') {
+        const run = coordinator.execute();
+        await vi.runAllTimersAsync();
+        await run;
+        expect(onRevealed).toHaveBeenCalledOnce();
+        expect(window.archvizTransitionSeam).toBeUndefined();
+        expect(coordinator.veil.isConnected).toBe(false);
+      }
+      coordinator.dispose();
+      coordinator.dispose();
+      expect(window.archvizTransitionSeam).toBeUndefined();
+      expect(coordinator.veil.isConnected).toBe(false);
+      expect(document.querySelector('#scene-veil')).toBeNull();
+    },
+  );
+
+  it('preserves a later seam and veil when an earlier owner is disposed', () => {
+    const create = (search: string): SceneRevealCoordinator => {
+      const root = document.createElement('div');
+      document.body.appendChild(root);
+      return new SceneRevealCoordinator({
+        root, canvas, search, lobby: mockLobby, predicates: createAllPassingPredicates(),
+        wakeRenderer: vi.fn(), onFrameRequest: vi.fn().mockResolvedValue(undefined),
+      });
+    };
+    const earlier = create('?e2e=1&gate=on');
+    const later = create('?e2e=1&gate=on');
+    const production = create('');
+    const seam = window.archvizTransitionSeam;
+    earlier.dispose();
+    production.dispose();
+    expect(window.archvizTransitionSeam).toBe(seam);
+    expect(later.veil.isConnected).toBe(true);
+    expect(earlier.veil.isConnected).toBe(false);
+    expect(production.veil.isConnected).toBe(false);
+    later.dispose();
+    expect(window.archvizTransitionSeam).toBeUndefined();
+  });
+
   it('progresses through the exact state lifecycle in order', async () => {
     const predicates = createAllPassingPredicates();
     let frameResolver: (() => void) | null = null;
@@ -545,9 +602,10 @@ describe('SceneRevealCoordinator', () => {
         expect.objectContaining({ type: 'orientationchange', source: 'window', generation: 2, stableFrames: 0 }),
         expect.objectContaining({ type: 'resize', source: 'visual-viewport', generation: 3, stableFrames: 0 }),
       ]);
+      const seam = window.archvizTransitionSeam!;
       coordinator.dispose();
       window.dispatchEvent(new Event('resize'));
-      expect(window.archvizTransitionSeam?.disruptions).toHaveLength(3);
+      expect(seam.disruptions).toHaveLength(3);
     } finally {
       coordinator.dispose();
       if (originalViewport === undefined) Reflect.deleteProperty(window, 'visualViewport');

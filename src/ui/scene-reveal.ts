@@ -119,6 +119,7 @@ export class SceneRevealCoordinator {
   private restartGeneration = 0;
   private observeDisruption: ((event: Event, source: TransitionDisruption['source']) => void) | null = null;
   private observeStableFrame: (() => void) | null = null;
+  private testSeam: TransitionSeam | null = null;
 
   private readonly timestamps: TransitionTimestamps = {
     readyHidden: performance.now(),
@@ -256,7 +257,7 @@ export class SceneRevealCoordinator {
         stableFrames: this.stableFrames,
       }));
     };
-    window.archvizTransitionSeam = {
+    this.testSeam = {
       get state(): RevealState {
         return getState();
       },
@@ -285,6 +286,7 @@ export class SceneRevealCoordinator {
         resume?.();
       },
     };
+    window.archvizTransitionSeam = this.testSeam;
   }
 
   private installLifecycleGuards(): void {
@@ -593,5 +595,12 @@ export class SceneRevealCoordinator {
     }
     this.disposed = true;
     this.stopAsyncWork();
+    if (typeof window !== 'undefined' && this.testSeam !== null && window.archvizTransitionSeam === this.testSeam) {
+      delete window.archvizTransitionSeam;
+    }
+    this.testSeam = null;
+    this.observeDisruption = null;
+    this.observeStableFrame = null;
+    this.veilElement.remove();
   }
 }
