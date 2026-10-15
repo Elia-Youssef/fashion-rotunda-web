@@ -161,6 +161,18 @@ describe('post governor: downgrade behaviour', () => {
     consoleSpy.mockRestore();
   });
 
+  it('decides on every frame when the window is a single sample', () => {
+    const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const gov = createGovernor({ budgetMs: BUDGET_MS, windowFrames: 1, patience: 2 });
+    // A one-sample window completes on every frame: its p95 is that sample alone,
+    // so the second over-budget frame is the second over-budget window and decides.
+    expect(gov.observe(25.0, 100, true)).toBe('full');
+    expect(gov.state.lastP95Ms).toBe(25);
+    expect(gov.state.consecutiveOverBudget).toBe(1);
+    expect(gov.observe(25.0, 200, true)).toBe('ssgi-half');
+    consoleSpy.mockRestore();
+  });
+
   it('matrix 17: a partial window never decides anything', () => {
     const gov = createGovernor(defaultOptions);
     const clock: Clock = { t: 0 };
@@ -244,6 +256,20 @@ describe('post governor: downgrade behaviour', () => {
       expect(consoleSpy.mock.calls[idx][0]).toContain(`stepped down to ${expectedSteps[idx]}`);
       expect(consoleSpy.mock.calls[idx][0]).toContain('[archviz]');
     }
+    consoleSpy.mockRestore();
+  });
+
+  it('resets the published patience once the ladder is exhausted at base', () => {
+    const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const gov = createGovernor({ budgetMs: BUDGET_MS, windowFrames: 10, patience: 2 });
+    feed(gov, span(80, 40, 10, 500)); // four downgrades; base reached at t=39510
+    expect(gov.level).toBe('base');
+    // Two more over-budget windows complete at t=46511 and t=51511, both past
+    // the last cooldown (t=49510). The second reaches the decision point again
+    // with nowhere left to step: the patience the proof panel publishes must
+    // fall back to zero there, not grow without bound.
+    feed(gov, span(20, 40, 42_011, 500));
+    expect(gov.state.consecutiveOverBudget).toBe(0);
     consoleSpy.mockRestore();
   });
 
@@ -370,6 +396,22 @@ describe('post governor: recovery policy', () => {
     consoleSpy.mockRestore();
   });
 
+  it('recovers on the window completing exactly 10,000 ms into the run', () => {
+    const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const gov = createGovernor({ budgetMs: BUDGET_MS, windowFrames: 2, patience: 2 });
+    // Samples 400 ms apart: two over-budget windows decide at t=1600 (cooldown to
+    // 11600), the eligible run restarts at t=2000, and windows complete every
+    // second sample. The completion at t=12000 is the first past the cooldown and
+    // holds exactly the required 10,000 ms: the boundary is inclusive there.
+    feed(gov, span(4, 40, 400, 400));
+    expect(gov.level).toBe('ssgi-half');
+    for (let k = 0; k < 25; k += 1) {
+      expect(gov.observe(COMFORTABLE_MS, 2000 + k * 400, true)).toBe('ssgi-half');
+    }
+    expect(gov.observe(COMFORTABLE_MS, 12_000, true)).toBe('full');
+    consoleSpy.mockRestore();
+  });
+
   it('matrix 9: recovery moves exactly one level', () => {
     const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
     const gov = createGovernor({ budgetMs: BUDGET_MS, windowFrames: 10, patience: 2 });
@@ -440,6 +482,41 @@ describe('post governor: recovery policy', () => {
     expect(gov.level).toBe('ssgi-half');
     expect(gov.diagnostics(14_301).recoveryElapsedMs).toBe(9_500);
     feed(gov, span(10, COMFORTABLE_MS, 14_801, 500)); // fresh decade completes: one step up
+    expect(gov.level).toBe('full');
+    consoleSpy.mockRestore();
+  });
+
+  it('a defective observation leaves the next window recovery-eligible', () => {
+    const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const gov = createGovernor({ budgetMs: BUDGET_MS, windowFrames: 40, patience: 2 });
+    feed(gov, span(80, 40, 1000, 500)); // two over-budget windows: ssgi-half at t=40500
+    feed(gov, span(10, COMFORTABLE_MS, 41_000, 500)); // partial comfortable window
+    gov.observe(Number.NaN, 46_000, true); // defective reading: window, run and clock wiped
+    // The cleared window is vacuously all-eligible and the clock did not advance.
+    expect(gov.state.windowAllEligible).toBe(true);
+    expect(gov.state.lastObservedAtMs).toBe(45_500);
+    // The first fully post-defect window completes at t=66000 holding a 19,500 ms
+    // run, past the t=50500 cooldown: nothing marks it ineligible, so this
+    // completion itself recovers instead of delaying the decision by one window.
+    feed(gov, span(40, COMFORTABLE_MS, 46_500, 500));
+    expect(gov.level).toBe('full');
+    consoleSpy.mockRestore();
+  });
+
+  it('a window that held an ineligible sample can never produce the recovery', () => {
+    const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const gov = createGovernor({ budgetMs: BUDGET_MS, windowFrames: 40, patience: 2 });
+    feed(gov, span(80, 40, 1000, 500)); // ssgi-half at t=40500, cooldown to 50500
+    // The post-decision window opens on one ineligible sample and fills with
+    // eligible ones; it completes at t=60500 holding a 19,000 ms run, but a
+    // window is recovery evidence only when every one of its samples was.
+    feed(gov, [{ workMs: COMFORTABLE_MS, atMs: 41_000, eligible: false }]);
+    feed(gov, span(5, COMFORTABLE_MS, 41_500, 500));
+    expect(gov.state.windowAllEligible).toBe(false);
+    feed(gov, span(34, COMFORTABLE_MS, 44_000, 500));
+    expect(gov.level).toBe('ssgi-half');
+    // The next window starts fresh and all-eligible: it recovers normally.
+    feed(gov, span(40, COMFORTABLE_MS, 61_000, 500));
     expect(gov.level).toBe('full');
     consoleSpy.mockRestore();
   });
@@ -548,6 +625,28 @@ describe('post governor: recovery policy', () => {
     expect(gov.observe(COMFORTABLE_MS, 99, true)).toBe('full');
     expect(gov.state.recoveryStartedAtMs).toBeNull();
     expect(gov.state.samples).toEqual([]);
+  });
+
+  it('fails closed on a non-finite sample clock', () => {
+    const gov = createGovernor({ budgetMs: BUDGET_MS, windowFrames: 10, patience: 2 });
+    gov.observe(COMFORTABLE_MS, 100, true);
+    // NaN reaches the clock check itself: the monotonic comparison would let it
+    // through, so the finite check is what drops the reading whole.
+    expect(gov.observe(COMFORTABLE_MS, Number.NaN, true)).toBe('full');
+    expect(gov.state.samples).toEqual([]);
+    expect(gov.state.lastObservedAtMs).toBe(100);
+    expect(gov.state.recoveryStartedAtMs).toBeNull();
+  });
+
+  it('accepts two samples that share one clock value', () => {
+    const gov = createGovernor({ budgetMs: BUDGET_MS, windowFrames: 10, patience: 2 });
+    // The clock guard is strictly monotonic: two frames can read one clock value,
+    // and an equal timestamp is not a clock defect.
+    gov.observe(COMFORTABLE_MS, 500, true);
+    gov.observe(COMFORTABLE_MS, 500, true);
+    expect(gov.state.samples).toEqual([COMFORTABLE_MS, COMFORTABLE_MS]);
+    expect(gov.state.lastObservedAtMs).toBe(500);
+    expect(gov.state.recoveryStartedAtMs).toBe(500);
   });
 
   it('matrix 18: cooldown blocks changes in both directions', () => {
@@ -796,6 +895,138 @@ describe('post governor: snapshot, restoration and resize state transfer', () =>
     });
   });
 
+  it('matrix 22b: each restoration rejection fires for its own cause', () => {
+    // Matrix 22 mutates a state whose active run makes several checks overlap
+    // (an infinite eligible-sample clock also breaks the ordering rules, a
+    // non-down event also breaks the one-step rule). These variants isolate
+    // one check each and pin the exact cause string, so a guard that stops
+    // firing cannot hide behind its neighbour.
+    const activeRun: GovernorState = {
+      level: 'ssgi-half',
+      samples: [10, 12],
+      consecutiveOverBudget: 0,
+      cooldownUntilMs: 500,
+      recoveryStartedAtMs: 100,
+      lastEligibleSampleAtMs: 120,
+      windowAllEligible: true,
+      lastP95Ms: 12.5,
+      lastObservedAtMs: 120,
+      lastSampleEligible: true,
+      events: [
+        {
+          direction: 'down',
+          from: 'full',
+          to: 'ssgi-half',
+          p95Ms: 19.4,
+          budgetMs: BUDGET_MS,
+          atMs: 100,
+          reason: 'p95 19.4 ms > 16.7 ms',
+        },
+      ],
+    };
+    const idleStream = (): GovernorState => ({
+      ...structuredClone(activeRun),
+      recoveryStartedAtMs: null,
+      lastEligibleSampleAtMs: null,
+      lastSampleEligible: false,
+    });
+    const options = { budgetMs: BUDGET_MS, windowFrames: 10, patience: 2 };
+    const rejects = (state: GovernorState, message: string): void => {
+      expect(() => createGovernor({ ...options, initialState: state })).toThrow(message);
+    };
+    // The idle variant itself stays acceptable.
+    expect(() => createGovernor({ ...options, initialState: idleStream() })).not.toThrow();
+
+    // A p95 no consumer can render, in the active profile.
+    rejects(
+      { ...structuredClone(activeRun), lastP95Ms: Number.POSITIVE_INFINITY },
+      'invalid governor p95 reading',
+    );
+    // An eligible-sample clock that never existed, in a stream with no run to
+    // order it against.
+    const neverEligible = idleStream();
+    neverEligible.lastEligibleSampleAtMs = Number.NEGATIVE_INFINITY;
+    rejects(neverEligible, 'invalid governor recovery sample time');
+    // An observation clock that never ticked.
+    const nanObserved = idleStream();
+    nanObserved.lastObservedAtMs = Number.NaN;
+    rejects(nanObserved, 'invalid governor observation clock');
+    // An eligible sample after the last observation is impossible ordering.
+    const lateEligible = idleStream();
+    lateEligible.lastEligibleSampleAtMs = 121;
+    rejects(lateEligible, 'invalid governor eligible sample ordering');
+    // A history that is not a list at all.
+    rejects(
+      { ...structuredClone(activeRun), events: {} as unknown as GovernorEvent[] },
+      'invalid governor event history',
+    );
+    // Event causes, each shaped to pass the checks beside it.
+    const eventVariant = (mutate: (event: GovernorEvent) => void): GovernorState => {
+      const state = structuredClone(activeRun) as GovernorState;
+      mutate(state.events[0] as GovernorEvent);
+      return state;
+    };
+    rejects(
+      eventVariant((event) => {
+        event.direction = 'sideways' as 'down';
+        event.from = 'ssgi-half';
+        event.to = 'full';
+      }),
+      'invalid governor event direction',
+    );
+    rejects(
+      eventVariant((event) => {
+        event.to = 'warp' as EnhancedLevel;
+      }),
+      'invalid governor event level',
+    );
+    rejects(
+      eventVariant((event) => {
+        event.budgetMs = Number.NaN;
+      }),
+      'invalid governor event reading',
+    );
+    rejects(
+      eventVariant((event) => {
+        event.atMs = Number.NaN;
+      }),
+      'invalid governor event reading',
+    );
+  });
+
+  it('a restored window marked ineligible stays ineligible through its completion', () => {
+    const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const carried: GovernorState = {
+      level: 'ssgi-half',
+      samples: [COMFORTABLE_MS, COMFORTABLE_MS],
+      consecutiveOverBudget: 0,
+      cooldownUntilMs: 0,
+      recoveryStartedAtMs: null,
+      lastEligibleSampleAtMs: null,
+      windowAllEligible: false,
+      lastP95Ms: null,
+      lastObservedAtMs: 5_000,
+      lastSampleEligible: false,
+      events: [],
+    };
+    const restored = createGovernor({
+      budgetMs: BUDGET_MS,
+      windowFrames: 40,
+      patience: 2,
+      initialState: carried,
+    });
+    expect(restored.state.windowAllEligible).toBe(false);
+    // The two carried samples complete a window with 38 resumed ones at
+    // t=23500, the restarted run holding 18,400 ms: qualified in time, but not
+    // in eligibility, so the rebuild may not launder the carried window.
+    feed(restored, span(38, COMFORTABLE_MS, 5_100, 500));
+    expect(restored.level).toBe('ssgi-half');
+    // The next window starts fresh and all-eligible: it recovers normally.
+    feed(restored, span(40, COMFORTABLE_MS, 24_000, 500));
+    expect(restored.level).toBe('full');
+    consoleSpy.mockRestore();
+  });
+
   it('matrix 24: a restored governor makes the same next decision as the uninterrupted one', () => {
     const carried = richState();
     const original = createGovernor({
@@ -951,6 +1182,13 @@ describe('post governor: where a governor exists at all (matrix 25)', () => {
     expect(governorOperates('webgpu', midWithoutCompute, false)).toBe(false); // no SSGI/SSR tier
   });
 
+  it('operates whenever either heavy effect is present, not only both', () => {
+    // SSR without SSGI is the shorter-ladder graph; SSGI without SSR is the
+    // diagnostic graph. Either heavy effect alone still needs the ladder.
+    expect(governorOperates('webgpu', { ssgi: 'off', ssr: true }, false)).toBe(true);
+    expect(governorOperates('webgpu', { ssgi: 'full-with-half-fallback', ssr: false }, false)).toBe(true);
+  });
+
   it('keeps a runtime pass-through fallback through a CSS-box resize', () => {
     expect(postChainRebuildAllowed(false)).toBe(true);
     expect(postChainRebuildAllowed(true)).toBe(false);
@@ -990,6 +1228,56 @@ describe('post governor: diagnostics and the event log (matrix 26)', () => {
     expect(qualifying.activity).toBe('recovery-qualifying');
     expect(qualifying.recoveryElapsedMs).toBe(11_000 - 701);
     expect(qualifying.recoveryEligible).toBe(true);
+  });
+
+  it('reports cooldown ahead of downgrade patience when both are true', () => {
+    const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const { gov } = degradedAtSsgiHalf(); // decided at t=200, cooldown until 10200
+    feed(gov, span(10, 40, 201, 100)); // one over-budget window: patience 1 at t=1101
+    const diagnostics = gov.diagnostics(1_200);
+    expect(diagnostics.consecutiveOverBudget).toBe(1);
+    expect(diagnostics.cooldownRemainingMs).toBeGreaterThan(0);
+    // The status the proof panel prints while a fresh cooldown overlaps a partial
+    // downgrade case is the cooldown: no new change can happen inside it.
+    expect(diagnostics.activity).toBe('cooldown');
+    consoleSpy.mockRestore();
+  });
+
+  it('never reports negative recovery elapsed time', () => {
+    const carried: GovernorState = {
+      level: 'ssgi-half',
+      samples: [],
+      consecutiveOverBudget: 0,
+      cooldownUntilMs: 0,
+      recoveryStartedAtMs: 20_000,
+      lastEligibleSampleAtMs: 25_000,
+      windowAllEligible: true,
+      lastP95Ms: null,
+      lastObservedAtMs: 25_000,
+      lastSampleEligible: true,
+      events: [],
+    };
+    const restored = createGovernor({
+      budgetMs: BUDGET_MS,
+      windowFrames: 10,
+      patience: 2,
+      initialState: carried,
+    });
+    // A reading clock older than the carried run start is a stale publish, not
+    // negative qualification time; a later one still measures normally.
+    expect(restored.diagnostics(10_000).recoveryElapsedMs).toBe(0);
+    expect(restored.diagnostics(25_000).recoveryElapsedMs).toBe(5_000);
+  });
+
+  it('defaults the diagnostics clock to the last observed sample', () => {
+    const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const { gov } = degradedAtSsgiHalf(); // last observed sample at t=200
+    const decided = gov.diagnostics();
+    expect(decided.cooldownRemainingMs).toBe(LEVEL_CHANGE_COOLDOWN_MS);
+    expect(decided.activity).toBe('cooldown');
+    feed(gov, span(5, COMFORTABLE_MS, 10_300, 100)); // last observed t=10700, run from 10300
+    expect(gov.diagnostics().recoveryElapsedMs).toBe(400);
+    consoleSpy.mockRestore();
   });
 
   it('resetSamplingState empties the stream state but keeps level, cooldown and history', () => {
