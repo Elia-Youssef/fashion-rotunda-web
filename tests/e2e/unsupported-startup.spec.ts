@@ -10,6 +10,12 @@ import type { Page } from '@playwright/test';
 
 const DISABLED_GRAPHICS_FLAGS = ['--disable-webgl', '--disable-webgl2', '--disable-features=WebGPU'];
 
+// The post-error absence window: after the lobby reaches its terminal error state, a late
+// startup fetch has this long to appear in the request watcher before the zero-request
+// reading. Absence is only provable by wall time, so the length is kept; the surface reads
+// run inside the window once it is anchored on the published state.
+const UNSUPPORTED_QUIET_WINDOW_MS = 1_000;
+
 function skipUnlessWebgl2(): void {
   test.skip(test.info().project.name !== 'webgl2', 'webgl2 project Chromium only');
 }
@@ -74,6 +80,10 @@ test('flags: unsupported surface after Load, no retry drawn, no content request'
     // unsupported surface, never on an eternal loading state.
     await expect(lobby).toHaveAttribute('data-state', 'error', { timeout: 15_000 });
 
+    // The error state is terminal, so it anchors the absence window: the surface reads below
+    // run inside the window instead of pushing the reading past the window's end.
+    const anchoredAtMs = Date.now();
+
     const surface = await readSurface(page);
     expect(surface.paneVisible).toBe(true);
     expect(surface.paneRole).toBe('alert');
@@ -85,8 +95,9 @@ test('flags: unsupported surface after Load, no retry drawn, no content request'
     expect(surface.retryHidden).toBe(true);
     expect(surface.retryDrawn, 'the hidden retry button must not be drawn').toBe(false);
 
-    // Startup never reached the catalogue: no content request at all.
-    await page.waitForTimeout(1000);
+    // Startup never reached the catalogue: no content request at all. The window is measured
+    // from the published error state, so only its remainder is slept here.
+    await page.waitForTimeout(Math.max(0, UNSUPPORTED_QUIET_WINDOW_MS - (Date.now() - anchoredAtMs)));
     expect(contentUrls(), 'zero content requests on the unsupported path').toEqual([]);
   } finally {
     await browser.close();

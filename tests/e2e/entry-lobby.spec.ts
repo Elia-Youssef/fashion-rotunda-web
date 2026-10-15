@@ -24,6 +24,11 @@ const INITIALIZED_TIMEOUT = 60_000;
 // under four software workers, the same budget the loading spec's hold uses.
 const HALF_ROTUNDA_HOLD_TIMEOUT_MS = 30_000;
 
+// The pre-gesture absence window: after the lobby publishes idle, a premature fetch has this
+// long to appear in the request watcher before the zero-request reading. Absence is only
+// provable by wall time, so the length is kept; the anchor decides where it starts.
+const PRE_GESTURE_QUIET_WINDOW_MS = 1_000;
+
 function skipUnlessWebgl2(): void {
   test.skip(test.info().project.name !== 'webgl2', 'the shared lobby DOM and boot checks run once on webgl2');
 }
@@ -102,8 +107,18 @@ test('proves deferred load: zero /content/ or music requests before user gesture
   const lobby = page.locator('#entry-lobby');
   await expect(lobby).toHaveAttribute('data-state', 'idle');
 
-  // Let any potential premature timers fire
-  await page.waitForTimeout(1000);
+  // The markup ships idle, so the attribute above cannot prove the app is alive: the window is
+  // anchored on the state the mounted lobby publishes instead (dev and ?e2e=1 builds), so a
+  // boot that never mounts fails here rather than leaving the window running without an app.
+  await expect
+    .poll(() => page.evaluate(() => window.archvizLobby?.state ?? null), {
+      message: 'the mounted lobby publishes its idle state',
+    })
+    .toBe('idle');
+
+  // Let any potential premature timers fire: the window is measured from the published idle
+  // state, and nothing runs between the anchor and the window, so it keeps its full length.
+  await page.waitForTimeout(PRE_GESTURE_QUIET_WINDOW_MS);
 
   // Assert: ZERO /content/ and ZERO music requests made
   expect(watcher.contentUrls(), 'zero content requests before click').toEqual([]);
