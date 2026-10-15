@@ -405,4 +405,202 @@ describe('share mount', () => {
     expect(replace).not.toHaveBeenCalled();
     expect(stage.root.querySelector('.share')).toBeNull();
   });
+
+  it('arms no timer for a change that lands after disposal', async () => {
+    const stage = makeStage('');
+    const handle = mount(stage);
+    stage.canvas.dataset.look = 'look-03';
+    await tick(300);
+    handle.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    stage.canvas.dataset.look = 'look-04';
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('the published state', () => {
+  it('publishes a variant that only the canvas dataset knows', async () => {
+    const stage = makeStage('');
+    mount(stage);
+    stage.canvas.dataset.variant = 'dark';
+    await tick(300);
+    expect(window.location.search).toBe('?variant=dark');
+  });
+
+  it('wraps a negative yaw into [0, tau) before publishing it', async () => {
+    const stage = makeStage('');
+    mount(stage);
+    stage.live.yaw = -0.5;
+    stage.canvas.dataset.yaw = '-0.5';
+    await tick(300);
+    expect(window.location.search).toBe('?yaw=5.783');
+  });
+
+  it('omits a yaw that rounds to a full turn', async () => {
+    const stage = makeStage('');
+    mount(stage);
+    stage.live.yaw = 6.2831;
+    stage.canvas.dataset.yaw = '6.2831';
+    await tick(300);
+    expect(window.location.search).toBe('');
+  });
+});
+
+describe('the music preference sources', () => {
+  it('mounts and publishes when localStorage access itself throws', async () => {
+    const original = Object.getOwnPropertyDescriptor(window, 'localStorage');
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new Error('denied');
+      },
+    });
+    try {
+      const stage = makeStage('');
+      mount(stage);
+      stage.canvas.dataset.look = 'look-03';
+      await tick(300);
+      expect(window.location.search).toBe('?look=look-03');
+    } finally {
+      if (original !== undefined) {
+        Object.defineProperty(window, 'localStorage', original);
+      }
+    }
+  });
+
+  it('falls back to the boot preference when the store cannot be read', async () => {
+    const stage = makeStage('');
+    window.localStorage.setItem(MUSIC_STORAGE_KEY, 'off');
+    const getItem = vi
+      .spyOn(Storage.prototype, 'getItem')
+      .mockImplementation(() => {
+        throw new Error('denied');
+      });
+    try {
+      mount(stage);
+      await tick(300);
+      expect(window.location.search).toBe('');
+    } finally {
+      getItem.mockRestore();
+    }
+  });
+
+  it('a stored preference of on beats a player that booted off', async () => {
+    const stage = makeStage('');
+    stage.live.playerState = 'off';
+    window.localStorage.setItem(MUSIC_STORAGE_KEY, 'on');
+    mount(stage);
+    await tick(300);
+    expect(window.location.search).toBe('');
+  });
+});
+
+describe('copy link', () => {
+  it('confirms a copied link without the manual fallback', async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const stage = makeStage('');
+    mount(stage);
+    const status = stage.root.querySelector('.share__status')!;
+    const fallback = stage.root.querySelector<HTMLInputElement>('.share__fallback')!;
+    stage.root.querySelector<HTMLButtonElement>('.share__button--copy')!.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(status.textContent).toBe('Link copied');
+    expect(fallback.classList.contains('share__fallback--hidden')).toBe(true);
+    expect(document.activeElement).not.toBe(fallback);
+  });
+
+  it('shows the manual fallback when the clipboard refuses', async () => {
+    const writeText = vi.fn(() => Promise.reject(new Error('refused')));
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const stage = makeStage('');
+    mount(stage);
+    const status = stage.root.querySelector('.share__status')!;
+    const fallback = stage.root.querySelector<HTMLInputElement>('.share__fallback')!;
+    const focus = vi.spyOn(fallback, 'focus');
+    stage.root.querySelector<HTMLButtonElement>('.share__button--copy')!.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fallback.classList.contains('share__fallback--hidden')).toBe(false);
+    expect(fallback.value).toContain(window.location.origin);
+    expect(focus).toHaveBeenCalled();
+    expect(status.textContent).toBe('Press Ctrl+C to copy');
+  });
+
+  it('shows the manual fallback when the browser has no clipboard', async () => {
+    vi.stubGlobal('navigator', {});
+    const stage = makeStage('');
+    mount(stage);
+    const status = stage.root.querySelector('.share__status')!;
+    const fallback = stage.root.querySelector<HTMLInputElement>('.share__fallback')!;
+    stage.root.querySelector<HTMLButtonElement>('.share__button--copy')!.click();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fallback.classList.contains('share__fallback--hidden')).toBe(false);
+    expect(fallback.value).toContain(window.location.origin);
+    expect(status.textContent).toBe('Press Ctrl+C to copy');
+  });
+});
+
+describe('screenshot', () => {
+  it('names the still after the fallback look id and today, and downloads it', async () => {
+    const stage = makeStage('');
+    vi.spyOn(stage.canvas, 'toBlob').mockImplementation((callback) => {
+      callback(new Blob(['still'], { type: 'image/png' }));
+    });
+    // No Web Share on this navigator, so delivery takes the download path.
+    vi.stubGlobal('navigator', {});
+    const downloads: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloads.push(this.download);
+    });
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:still');
+    mount(stage);
+    stage.root.querySelector<HTMLButtonElement>('.share__button--screenshot')!.click();
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(downloads).toHaveLength(1);
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const dd = String(now.getDate()).padStart(2, '0');
+    expect(downloads[0]).toMatch(
+      new RegExp(`^fashion-rotunda-look-${yyyy}${mm}${dd}-\\d{6}\\.png$`),
+    );
+    await tick(1000);
+  });
+
+  it('says Still shared when the device takes the Web Share sheet', async () => {
+    const stage = makeStage('');
+    vi.spyOn(stage.canvas, 'toBlob').mockImplementation((callback) => {
+      callback(new Blob(['still'], { type: 'image/png' }));
+    });
+    const share = vi.fn(async () => undefined);
+    vi.stubGlobal('navigator', { canShare: () => true, share });
+    mount(stage);
+    const status = stage.root.querySelector('.share__status')!;
+    stage.root.querySelector<HTMLButtonElement>('.share__button--screenshot')!.click();
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(share).toHaveBeenCalledTimes(1);
+    expect(status.textContent).toBe('Still shared');
+  });
+
+  it('reports a failed capture on the status line and the console', async () => {
+    const stage = makeStage('');
+    stage.options.drawFrame = () => {
+      throw new Error('renderer lost');
+    };
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mount(stage);
+    const status = stage.root.querySelector('.share__status')!;
+    stage.root.querySelector<HTMLButtonElement>('.share__button--screenshot')!.click();
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(status.textContent).toBe('Screenshot failed');
+    expect(error).toHaveBeenCalledWith('[archviz] screenshot capture failed', expect.any(Error));
+  });
 });

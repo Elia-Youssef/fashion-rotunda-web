@@ -65,6 +65,32 @@ describe('screenshot loading', () => {
     expect(capture).not.toHaveBeenCalled();
   });
 
+  it('a copy action after disposal touches no clipboard and no URL', async () => {
+    const writeText = vi.fn(async () => undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    await mount();
+    handle!.dispose();
+    handle = null;
+    const replace = vi.spyOn(window.history, 'replaceState');
+    await actions.copyLink();
+    expect(writeText).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('a screenshot action after disposal draws no frame and imports nothing', async () => {
+    const options = await mount();
+    options.drawFrame = vi.fn();
+    handle!.dispose();
+    handle = null;
+    await actions.screenshot();
+    await vi.dynamicImportSettled();
+    expect(options.drawFrame).not.toHaveBeenCalled();
+    expect(capture).not.toHaveBeenCalled();
+    expect(imports).toBe(0);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
   it('imports once on screenshot actions and captures each requested still', async () => {
     await mount();
     await actions.screenshot();

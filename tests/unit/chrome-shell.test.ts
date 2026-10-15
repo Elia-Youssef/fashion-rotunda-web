@@ -11,7 +11,7 @@ import type { ShellHandle } from '../../src/ui/shell';
 
 let stubWidth = 0;
 let stubHeight = 0;
-const registered: Array<{ fire: () => void }> = [];
+const registered: Array<{ query: string; matches: boolean; fire: () => void }> = [];
 
 function queryMatches(query: string): boolean {
   const minWidth = /min-width:\s*(\d+)px/.exec(query);
@@ -31,6 +31,8 @@ function stubViewport(width: number, height = 800): void {
   vi.stubGlobal('matchMedia', (query: string): MediaQueryList => {
     const listeners = new Set<(event: Event) => void>();
     registered.push({
+      query,
+      matches: queryMatches(query),
       fire(): void {
         const event = new Event('change');
         for (const listener of listeners) {
@@ -62,14 +64,19 @@ function stubViewport(width: number, height = 800): void {
   });
 }
 
-/** The browser half of a resize: new dimensions, then the change events the queries owe. */
+/** The browser half of a resize: new dimensions, then a change event for each query whose match
+ * state flipped, which is when a real MediaQueryList fires its change listeners. */
 function resizeTo(width: number, height = 800): void {
   stubWidth = width;
   stubHeight = height;
   Object.defineProperty(window, 'innerWidth', { value: width, configurable: true });
   Object.defineProperty(window, 'innerHeight', { value: height, configurable: true });
   for (const entry of registered) {
-    entry.fire();
+    const now = queryMatches(entry.query);
+    if (now !== entry.matches) {
+      entry.matches = now;
+      entry.fire();
+    }
   }
 }
 
@@ -148,6 +155,75 @@ describe('mountShell', () => {
     stubViewport(1440);
     document.getElementById('shell-stage')?.remove();
     expect(() => mountShell(document)).toThrow('canvas stage');
+  });
+
+  it('throws when the light panel row is not an HTML element', () => {
+    stubViewport(1440);
+    // An SVG parent is an Element but not an HTMLElement, so the shell must refuse it.
+    document.getElementById('shell-light-row')?.remove();
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    const panel = document.createElement('div');
+    panel.id = 'shell-light-panel';
+    svg.appendChild(panel);
+    document.getElementById('shell-stage')?.appendChild(svg);
+    expect(() => mountShell(document)).toThrow('light row');
+  });
+
+  it('mounts a detached document as phone sheets without throwing', () => {
+    // A document with no default view has no width and no matchMedia; width 0 is a phone.
+    const doc = document.implementation.createHTMLDocument('detached');
+    doc.body.innerHTML = document.body.innerHTML;
+    expect(doc.defaultView).toBeNull();
+    const detached = mountShell(doc);
+    expect(detached.breakpoint).toBe('phone');
+    expect(doc.getElementById('shell-card')?.hidden).toBe(true);
+    detached.dispose();
+  });
+
+  it('stays at the width it mounted with when the view has no matchMedia', () => {
+    // jsdom ships no matchMedia, so the shell keeps its mount-time breakpoint and layout.
+    Object.defineProperty(window, 'innerWidth', { value: 1024, configurable: true });
+    shell = mountShell(document);
+    expect(shell.breakpoint).toBe('tablet');
+    expect(document.querySelector<HTMLElement>('.shell-pill--look')?.hidden).toBe(true);
+    Object.defineProperty(window, 'innerWidth', { value: 390, configurable: true });
+    expect(shell.breakpoint).toBe('tablet');
+  });
+});
+
+describe('the short-viewport boundary', () => {
+  it.each([
+    [599, true],
+    [600, false],
+  ])('treats a %ipx-tall tablet by the 599px rule', (height, short) => {
+    stubViewport(844, height);
+    shell = mountShell(document);
+    expect(shell.breakpoint).toBe('tablet');
+    expect(shell.cardOpen).toBe(!short);
+    expect(document.getElementById('shell-card')?.hidden).toBe(short);
+  });
+
+  it('enters sheet country exactly at 599px of height', () => {
+    stubViewport(844, 600);
+    shell = mountShell(document);
+    expect(document.getElementById('shell-card')?.hidden).toBe(false);
+    resizeTo(844, 599);
+    expect(shell.breakpoint).toBe('tablet');
+    expect(shell.cardOpen).toBe(false);
+    expect(document.getElementById('shell-card')?.hidden).toBe(true);
+  });
+});
+
+describe('the width boundaries the resize queries watch', () => {
+  it('notifies tablet exactly at 768px and desktop exactly at 1200px', () => {
+    stubViewport(390);
+    shell = mountShell(document);
+    const seen: string[] = [];
+    shell.onBreakpointChange((bp) => seen.push(bp));
+    resizeTo(768);
+    expect(seen).toEqual(['tablet']);
+    resizeTo(1200);
+    expect(seen).toEqual(['tablet', 'desktop']);
   });
 });
 
@@ -512,5 +588,199 @@ describe('dispose', () => {
     expect(document.getElementById('shell-light-row')?.dataset.open).toBeUndefined();
     expect(document.getElementById('shell-stage')?.dataset.sheet).toBeUndefined();
     expect(document.body.hasAttribute('data-shell-sheet-open')).toBe(false);
+  });
+
+  it('stops responding to resizes after dispose', () => {
+    stubViewport(390);
+    const disposed = mountShell(document);
+    const seen: string[] = [];
+    disposed.onBreakpointChange((bp) => seen.push(bp));
+    disposed.dispose();
+    resizeTo(1300);
+    expect(seen).toEqual([]);
+    // The shell is frozen at its dispose-time state, and its DOM markers stay cleaned up.
+    expect(disposed.breakpoint).toBe('phone');
+    expect(document.getElementById('shell-light-row')?.dataset.open).toBeUndefined();
+    expect(document.getElementById('looks')?.hidden).toBe(false);
+  });
+});
+
+describe('focus return and the invoker record', () => {
+  // The invoker parameter is real on the shell's own click wiring but is not on the public
+  // handle type, so these tests reach the same closure signature through a typed view.
+  type InvokerHandle = {
+    setLightPanelOpen(open: boolean, invoker?: HTMLElement): void;
+    setCardOpen(open: boolean, invoker?: HTMLElement): void;
+  };
+
+  function invokerView(handle: ShellHandle): InvokerHandle {
+    return handle as unknown as InvokerHandle;
+  }
+
+  it('returns focus to a custom light invoker on Escape', () => {
+    stubViewport(390);
+    shell = mountShell(document);
+    const custom = document.createElement('button');
+    document.getElementById('shell-stage')?.appendChild(custom);
+    invokerView(shell).setLightPanelOpen(true, custom);
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(escape);
+    expect(shell.lightPanelOpen).toBe(false);
+    expect(document.activeElement).toBe(custom);
+  });
+
+  it('returns focus to a custom card invoker on Escape', () => {
+    stubViewport(390);
+    shell = mountShell(document);
+    const cardControl = document.createElement('button');
+    document.getElementById('shell-card')?.appendChild(cardControl);
+    const custom = document.createElement('button');
+    document.getElementById('shell-stage')?.appendChild(custom);
+    invokerView(shell).setCardOpen(true, custom);
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(escape);
+    expect(shell.cardOpen).toBe(false);
+    expect(document.activeElement).toBe(custom);
+  });
+
+  it('does not return focus into the light panel it just hid', () => {
+    stubViewport(390);
+    const inPanel = document.createElement('button');
+    document.getElementById('shell-light-panel')?.appendChild(inPanel);
+    shell = mountShell(document);
+    invokerView(shell).setLightPanelOpen(true, inPanel);
+    expect(document.activeElement).toBe(inPanel);
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(escape);
+    expect(shell.lightPanelOpen).toBe(false);
+    expect(document.activeElement).toBe(document.getElementById('shell-light-toggle'));
+  });
+
+  it('does not return focus to an invoker that left the document', () => {
+    stubViewport(390);
+    shell = mountShell(document);
+    const visitor = document.createElement('button');
+    document.getElementById('shell-stage')?.appendChild(visitor);
+    invokerView(shell).setLightPanelOpen(true, visitor);
+    visitor.remove();
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(escape);
+    expect(shell.lightPanelOpen).toBe(false);
+    expect(document.activeElement).toBe(document.getElementById('shell-light-toggle'));
+  });
+
+  it('a reopen of an open light panel moves no focus and keeps the first invoker', () => {
+    stubViewport(390);
+    const control = document.createElement('button');
+    document.getElementById('shell-light-panel')?.appendChild(control);
+    shell = mountShell(document);
+    const toggle = document.getElementById('shell-light-toggle') as HTMLButtonElement;
+    const first = document.createElement('button');
+    document.getElementById('shell-stage')?.appendChild(first);
+    invokerView(shell).setLightPanelOpen(true, first);
+    expect(document.activeElement).toBe(control);
+    toggle.focus();
+    const second = document.createElement('button');
+    document.getElementById('shell-stage')?.appendChild(second);
+    invokerView(shell).setLightPanelOpen(true, second);
+    expect(document.activeElement).toBe(toggle);
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(escape);
+    expect(document.activeElement).toBe(first);
+  });
+
+  it('a reopen of an open card sheet moves no focus and keeps the first invoker', () => {
+    stubViewport(390);
+    const cardControl = document.createElement('button');
+    document.getElementById('shell-card')?.appendChild(cardControl);
+    shell = mountShell(document);
+    const first = document.createElement('button');
+    document.getElementById('shell-stage')?.appendChild(first);
+    invokerView(shell).setCardOpen(true, first);
+    cardControl.focus();
+    const second = document.createElement('button');
+    document.getElementById('shell-stage')?.appendChild(second);
+    invokerView(shell).setCardOpen(true, second);
+    expect(document.activeElement).toBe(cardControl);
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.dispatchEvent(escape);
+    expect(shell.cardOpen).toBe(false);
+    expect(document.activeElement).toBe(first);
+  });
+});
+
+describe('the controls inside the panels', () => {
+  it('opens the light panel without focusing a hidden control', () => {
+    stubViewport(390);
+    const hidden = document.createElement('button');
+    hidden.hidden = true;
+    document.getElementById('shell-light-panel')?.appendChild(hidden);
+    shell = mountShell(document);
+    const before = document.activeElement;
+    shell.setLightPanelOpen(true);
+    expect(shell.lightPanelOpen).toBe(true);
+    expect(document.activeElement).toBe(before);
+  });
+
+  it('focuses the Light Control toggle when the card has no visible control', () => {
+    stubViewport(390);
+    const hidden = document.createElement('button');
+    hidden.hidden = true;
+    document.getElementById('shell-card')?.appendChild(hidden);
+    shell = mountShell(document);
+    const lookPill = document.querySelector<HTMLButtonElement>('.shell-pill--look');
+    lookPill?.focus();
+    resizeTo(1440, 900);
+    expect(document.activeElement).toBe(document.getElementById('shell-light-toggle'));
+  });
+
+  it('keeps the closed card sheet close control inert on the phone', () => {
+    stubViewport(390);
+    shell = mountShell(document);
+    const chrome = document.querySelector<HTMLElement>('#shell-card .shell-sheet__chrome');
+    const close = chrome?.querySelector<HTMLButtonElement>('.shell-sheet__close');
+    expect(chrome?.hidden).toBe(true);
+    expect(chrome?.inert).toBe(true);
+    expect(chrome?.getAttribute('aria-hidden')).toBe('true');
+    expect(close?.tabIndex).toBe(-1);
+    shell.setCardOpen(true);
+    expect(chrome?.hidden).toBe(false);
+    expect(chrome?.inert).toBe(false);
+    expect(close?.tabIndex).toBe(0);
+  });
+
+  it('expands the Look pill only while the card sheet is open', () => {
+    stubViewport(390);
+    shell = mountShell(document);
+    const pill = document.querySelector('.shell-pill--look');
+    expect(pill?.getAttribute('aria-expanded')).toBe('false');
+    shell.setCardOpen(true);
+    expect(pill?.getAttribute('aria-expanded')).toBe('true');
+    shell.setCardOpen(false);
+    expect(pill?.getAttribute('aria-expanded')).toBe('false');
+  });
+});
+
+describe('sheet exclusivity and idle close presses', () => {
+  it('opening the card closes an open light panel on the phone', () => {
+    stubViewport(390);
+    shell = mountShell(document);
+    shell.setLightPanelOpen(true);
+    expect(shell.lightPanelOpen).toBe(true);
+    shell.setCardOpen(true);
+    expect(shell.cardOpen).toBe(true);
+    expect(shell.lightPanelOpen).toBe(false);
+  });
+
+  it('a close press while both sheets are closed moves no focus', () => {
+    stubViewport(390);
+    shell = mountShell(document);
+    document
+      .querySelector<HTMLElement>('#shell-light-row .shell-sheet__close')
+      ?.click();
+    document.querySelector<HTMLElement>('#shell-card .shell-sheet__close')?.click();
+    expect(shell.lightPanelOpen).toBe(false);
+    expect(shell.cardOpen).toBe(false);
+    expect(document.activeElement).toBe(document.body);
   });
 });
