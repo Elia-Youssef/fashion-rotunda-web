@@ -23,8 +23,8 @@ export const VIEWPORTS = [
   { name: 'short-landscape', width: 844, height: 390, sheet: true },
 ] as const;
 
-// The desktop bar matrix: the client's window (1669x1115 CSS), the common laptop sizes, and the
-// smallest window that still gets the desktop layout.
+// The desktop bar matrix: the client's window (1669x1115 CSS), the common laptop sizes, and
+// 1200x640, just above the 1200x600 floor of the desktop layout.
 export const DESKTOP_BAR_VIEWPORTS = [
   { width: 1669, height: 1115 },
   { width: 1440, height: 900 },

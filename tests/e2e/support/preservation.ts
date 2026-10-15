@@ -57,7 +57,7 @@ export async function nextProofReading(page: Page) {
           if (!value) throw new Error(`missing proof row: ${name}`);
           return value;
         };
-        // The proof panel is the only place the page publishes its tier.
+        // The proof panel row carries the tier as data; the badge in the footer strip only prints it.
         const tier = row('tier');
         if (tier !== 'base' && tier !== 'mid' && tier !== 'high') {
           throw new Error(`unknown proof tier: ${tier}`);
