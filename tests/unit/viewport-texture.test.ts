@@ -3,6 +3,7 @@
 // copyFramebufferToTexture), so the size bookkeeping is covered without drawing anything.
 
 import { RenderTarget, ViewportTextureNode } from 'three/webgpu';
+import { screenUV } from 'three/tsl';
 import type { NodeFrame, Texture } from 'three/webgpu';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -149,5 +150,23 @@ describe('viewport copy retirement', () => {
 
     expect(keptDisposed()).toBe(0);
     expect(node.getTextureForReference(kept)).toBe(keptCopy);
+  });
+
+  it('separates and retires copies cached on the reference base a sampled node defers to', () => {
+    separateViewportTextureSizes();
+    // The glass samples the viewport through sample(), whose clone defers every per-reference
+    // texture to the base it was cloned from (TextureNode.getBase), so both the copies and the
+    // retirement must reach the base's cache, not the clone's own.
+    const base = new ViewportTextureNode();
+    const sampled = base.sample(screenUV);
+    const target = new RenderTarget(640, 480);
+    const copy = drawnCopy(sampled, target);
+    expect(base.getTextureForReference(target)).toBe(copy);
+    const disposed = disposalCounter(copy);
+
+    target.dispose();
+
+    expect(disposed()).toBe(1);
+    expect(base.getTextureForReference(target)).not.toBe(copy);
   });
 });

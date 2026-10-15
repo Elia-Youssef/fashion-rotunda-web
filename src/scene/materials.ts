@@ -292,8 +292,14 @@ export function applyTuning(mesh: Mesh, tuning: MaterialTuning, acquire?: Tuning
   ) {
     // materialColor resolves the current map (including glTF UV transforms) times its factor.
     // Rebuild from that source on each variant application so repeated tuning never compounds.
-    // The declaration says vec3; MaterialNode.COLOR actually returns RGBA for a mapped material.
-    // Convert to vec4 so an unmapped factor gains alpha 1 and a mapped factor keeps texture alpha.
+    // The cast stays: three declares materialColor as MaterialNode<'vec3'> for every scope
+    // (three/tsl), but MaterialNode.COLOR multiplies the vec3 factor by the vec4 map sample
+    // (MaterialNode.setup, nodes/accessors/MaterialNode.js), so a mapped material's node is
+    // RGBA at setup time. The vec4() overloads accept a scalar node or a vec4 node, never a
+    // declared-vec3 one, and the cast-free convert(materialColor, 'vec4') builds the graph
+    // without the shared conversion variable vec4() emits, changing generated code. The
+    // conversion is what makes an unmapped factor gain alpha 1 while a mapped factor keeps
+    // texture alpha; scene-base-colour.test.ts pins the alpha passthrough.
     const base = vec4(materialColor as unknown as Node<'vec4'>);
     let rgb = base.rgb;
     if (tuning.baseSaturation !== undefined) {

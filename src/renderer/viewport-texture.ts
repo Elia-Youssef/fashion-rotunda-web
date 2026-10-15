@@ -37,32 +37,42 @@
 // resizes in place, retains the graph).
 
 import { TextureSource, Vector2, ViewportTextureNode } from 'three/webgpu';
-import type { Texture } from 'three/webgpu';
+import type { EventDispatcher, RenderTargetEventMap, Texture } from 'three/webgpu';
 
 type Reference = Parameters<ViewportTextureNode['getTextureForReference']>[0];
 type ReferenceObject = Exclude<Reference, null | undefined>;
 
-/** The cache the shared getTextureForReference fills, on the node or on its shared reference base. */
-type CacheHost = {
-  referenceNode?: CacheHost | null;
-  _cacheTextures?: WeakMap<object, Texture>;
-};
-
-/** A reference read the way updateBefore sizes its copy: a render target by width and height, the
- *  canvas target by drawing-buffer size (ViewportTextureNode.js lines 165-179). */
-type SizedReference = {
-  getDrawingBufferSize?: (target: Vector2) => Vector2;
-  width?: number;
-  height?: number;
-};
+/** The 'dispose' event both reference kinds dispatch with an empty payload. */
+type DisposeEvents = EventDispatcher<Pick<RenderTargetEventMap, 'dispose'>>;
 
 const separated = new WeakSet<Texture>();
 const copySize = new Vector2();
 let installed = false;
 
+// The per-reference texture cache getTextureForReference fills, on the node itself or, when the
+// node was cloned through sample(), level() or bias(), on the shared reference base it defers to
+// (TextureNode.getBase). three keeps the WeakMap private: `_cacheTextures` appears in no public
+// type, so the `in` check narrows to the hosts that carry it and the remaining assertion names
+// the type the ViewportTextureNode constructor gives it. Retirement deletes a disposed
+// reference's copy from this cache; tests/unit/viewport-texture.test.ts pins that on a plain
+// node and on a shared reference base.
 function cacheOf(node: ViewportTextureNode): WeakMap<object, Texture> | undefined {
-  const host = node as unknown as CacheHost;
-  return (host.referenceNode ?? host)._cacheTextures;
+  const owner: object = node.referenceNode ?? node;
+  if (!('_cacheTextures' in owner)) {
+    return undefined;
+  }
+  return (owner as { _cacheTextures: WeakMap<object, Texture> })._cacheTextures;
+}
+
+// Reads the size the reference draws at, the way updateBefore sizes its copy: the canvas target
+// by drawing-buffer size (which honours the pixel ratio), a render target by width and height.
+// Each member of the reference union already declares its side, so the choice is a narrowing
+// check on that union.
+function referenceDrawSize(reference: ReferenceObject, out: Vector2): Vector2 {
+  if ('getDrawingBufferSize' in reference) {
+    return reference.getDrawingBufferSize(out);
+  }
+  return out.set(reference.width, reference.height);
 }
 
 /**
@@ -97,19 +107,12 @@ function retireWith(
   reference: ReferenceObject,
   texture: Texture,
 ): void {
-  // Both reference kinds extend EventDispatcher, but their typed maps differ, so the dispose
-  // subscription is made through one structural shape.
-  const events = reference as unknown as {
-    addEventListener(type: 'dispose', listener: () => void): void;
-    removeEventListener(type: 'dispose', listener: () => void): void;
-  };
+  // Both reference kinds dispatch 'dispose' with an empty payload, but their event maps differ,
+  // and a listener call on their union does not typecheck; each kind on its own is assignable to
+  // the shared dispatcher shape used here.
+  const events: DisposeEvents = reference;
   events.addEventListener('dispose', function referenceDisposed(): void {
-    const sized = reference as unknown as SizedReference;
-    if (typeof sized.getDrawingBufferSize === 'function') {
-      sized.getDrawingBufferSize(copySize);
-    } else {
-      copySize.set(sized.width ?? 0, sized.height ?? 0);
-    }
+    referenceDrawSize(reference, copySize);
     const image = texture.image as { width: number; height: number };
     if (image.width !== copySize.width || image.height !== copySize.height) {
       return;
