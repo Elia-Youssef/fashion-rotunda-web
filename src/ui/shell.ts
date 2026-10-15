@@ -208,6 +208,7 @@ export function mountShell(doc: Document): ShellHandle {
       close.focus();
       return;
     }
+    // The document is caller-owned: its close button may have been removed or hidden separately.
     focusVisibleCardControl();
   }
 
@@ -338,6 +339,7 @@ export function mountShell(doc: Document): ShellHandle {
       const activeInLightPanel = active !== null && roots.lightPanel.contains(active);
       const activeInLightChrome = active !== null && lightChrome.contains(active);
       const activeInCardChrome = active !== null && cardChrome.contains(active);
+      // Keep sheet chrome on its own focus route if a layout transition hides it.
       const activeInCardContent =
         active !== null && roots.card.contains(active) && !activeInCardChrome;
       const activeLookPill = active === lookPill;

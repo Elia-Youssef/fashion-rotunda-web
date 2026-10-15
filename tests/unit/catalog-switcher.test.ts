@@ -60,6 +60,26 @@ function harness(): Harness {
 }
 
 describe('createSwitcher', () => {
+  it('retires a request started synchronously by an abort listener', async () => {
+    const { switcher, loads, ready, disposed } = harness();
+    const first = switcher.request('first');
+    let reentrant: Promise<void> | undefined;
+    loads[0].signal.addEventListener('abort', () => {
+      reentrant = switcher.request('during-abort');
+    }, { once: true });
+    const last = switcher.request('last');
+    expect(loads.map((entry) => entry.id)).toEqual(['first', 'during-abort', 'last']);
+    loads[2].deferred.resolve({ id: 'last' });
+    await last;
+    loads[1].deferred.resolve({ id: 'during-abort' });
+    loads[0].deferred.resolve({ id: 'first' });
+    await Promise.all([first, reentrant]);
+    expect(ready).toEqual([{ id: 'last', loaded: { id: 'last' } }]);
+    expect(disposed).toEqual([{ id: 'during-abort' }, { id: 'first' }]);
+    expect(switcher.current).toBe('last');
+    expect(switcher.pending).toBeNull();
+  });
+
   it('keeps the second request when the first one resolves last', async () => {
     const { switcher, loads, ready, disposed } = harness();
     const first = switcher.request('wallis-dress');

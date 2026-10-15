@@ -40,6 +40,7 @@ export function createSwitcher<T>(options: SwitcherOptions<T>): Switcher {
       // still match the current generation and put its look on screen.
       generation += 1;
       controller.abort();
+      // Release the retired controller so later cancellation has no completed request to revisit.
       controller = null;
     }
     pending = null;
@@ -57,6 +58,7 @@ export function createSwitcher<T>(options: SwitcherOptions<T>): Switcher {
         return;
       }
       pending = null;
+      // A settled request no longer owns a deduplication promise, on failure or success.
       pendingPromise = null;
       controller = null;
       throw error;
@@ -66,6 +68,7 @@ export function createSwitcher<T>(options: SwitcherOptions<T>): Switcher {
       return;
     }
     pending = null;
+    // Keep all pending fields empty before onReady can synchronously request another look.
     pendingPromise = null;
     controller = null;
     current = id;
@@ -86,6 +89,8 @@ export function createSwitcher<T>(options: SwitcherOptions<T>): Switcher {
         return pendingPromise;
       }
       abortPending();
+      // Abort listeners run synchronously and may request a look themselves. This request needs
+      // its own generation after those callbacks return, even if cancellation already advanced it.
       generation += 1;
       const mine = generation;
       const mineController = new AbortController();

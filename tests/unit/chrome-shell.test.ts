@@ -458,6 +458,16 @@ describe('the card sheet', () => {
 });
 
 describe('the sheet close buttons', () => {
+  it('focuses card content when its close button has been removed', () => {
+    stubViewport(390);
+    shell = mountShell(document);
+    const control = document.createElement('button');
+    shell.roots.card.append(control);
+    shell.roots.card.querySelector<HTMLButtonElement>('.shell-sheet__close')!.remove();
+    shell.setCardOpen(true);
+    expect(document.activeElement).toBe(control);
+  });
+
   // WCAG 2.5.3 (label in name): the accessible name must contain the visible label text. The
   // chrome paints the glyph "x" as real text, which the name "Close" cannot contain, so the
   // factory hides the glyph inside an aria-hidden span. jsdom computes no accessible name, so

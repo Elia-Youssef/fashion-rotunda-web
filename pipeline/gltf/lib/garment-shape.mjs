@@ -195,6 +195,8 @@ export function fitSmoothGarment(garmentParts, bodyParts, coverageOptions = {}, 
         if (!sample.outside) continue;
         const direction = new Vector3().fromArray(sample.normal);
         const hit = garment.raycastFirst(new Ray(new Vector3().fromArray(sample.point), direction.clone().negate()), DoubleSide);
+        // An outside sample already had an inward hit on these unchanged garment parts. Refuse
+        // inconsistent measurement/contact geometry instead of silently skipping its correction.
         if (!hit) throw new Error('Normal contact lost its garment hit');
         const exit = closestBodyExit(bodySurface, hit.point, direction), previous = contacts.get(hit.faceIndex);
         if (!previous || previous.depth < exit.depth) contacts.set(hit.faceIndex, exit);

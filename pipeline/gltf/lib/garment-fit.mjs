@@ -59,6 +59,8 @@ export function fitCoveredSurface(garmentParts, bodyParts, method = 'garment-out
             // opening. Correct its complete face while retaining every body face and opening.
             vertices = abc;
           }
+          // The hit indexes the same merged parts walked above; inward fitting uses abc directly.
+          // Refuse a broken face-to-part mapping rather than applying an incomplete correction.
           if (!vertices?.length) throw new Error(`Penetrating face has no covered vertex; fit refused at ${JSON.stringify(abc.map((p) => p.toArray()))}`);
           const distance = q.depth + margin;
           for (const vertex of vertices) {
