@@ -12,8 +12,8 @@ export function contentSecurityPolicy(originValue = ''): string {
     "script-src 'self' 'unsafe-eval'",
     // index.html and imported UI CSS become external Vite stylesheets. UI updates use CSSOM.
     "style-src 'self'",
-    // index.html's poster and empty data favicon, plus catalogue thumbnails in the DOM.
-    `img-src 'self' data:${extra}`,
+    // index.html's poster and linked brand icon, plus catalogue thumbnails in the DOM.
+    `img-src 'self'${extra}`,
     // Catalogues, GLBs, collision, optional HDR, Basis JS/WASM and Web Audio music use fetch.
     // GLTFLoader creates blob URLs for embedded KTX2 images; KTX2Loader's FileLoader fetches them.
     `connect-src 'self' blob:${extra}`,

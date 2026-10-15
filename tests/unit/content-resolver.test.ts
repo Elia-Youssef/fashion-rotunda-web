@@ -104,7 +104,7 @@ describe('content transport contract', () => {
     expect(contentSecurityPolicy()).toBe(CONTENT_SECURITY_POLICY);
     const remote = contentSecurityPolicy(origin).split('; ');
     expect(remote.filter((directive) => directive.includes(origin))).toEqual([
-      `img-src 'self' data: ${origin}`, `connect-src 'self' blob: ${origin}`,
+      `img-src 'self' ${origin}`, `connect-src 'self' blob: ${origin}`,
     ]);
     expect(remote.filter((directive) => !directive.includes(origin)))
       .toEqual(CONTENT_SECURITY_POLICY.split('; ').filter((directive) =>

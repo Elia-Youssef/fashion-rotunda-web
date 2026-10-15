@@ -12,7 +12,7 @@ describe('production content security policy', () => {
   it.each([
     ['script-src', ["'self'", "'unsafe-eval'"], 'module scripts, Basis bindings and decoder WASM'],
     ['style-src', ["'self'"], 'external application and UI stylesheets'],
-    ['img-src', ["'self'", 'data:'], 'poster, thumbnails and empty favicon'],
+    ['img-src', ["'self'"], 'poster, thumbnails and brand icon'],
     ['connect-src', ["'self'", 'blob:'], 'full/half catalogues, GLBs, collision, HDR, Basis and music'],
     ['worker-src', ['blob:'], 'KTX2 texture workers'],
   ])('limits %s to the sources for %s (%s)', (directive, expected) => {
