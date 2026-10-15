@@ -1,4 +1,5 @@
 import { expect, test } from './support/fixtures';
+import { openShowroom } from './support/showroom';
 import type { Page } from '@playwright/test';
 
 const SCENE_READY_TIMEOUT = 60_000;
@@ -14,10 +15,6 @@ interface Box {
 }
 
 const SAFE_AREA = { top: 19, right: 23, bottom: 29, left: 17 };
-
-function skipUnlessWebgl2(): void {
-  test.skip(test.info().project.name !== 'webgl2', 'the onboarding layout check is backend independent');
-}
 
 function boxesIntersect(a: Box, b: Box): boolean {
   return (
@@ -44,14 +41,13 @@ for (const viewport of [
 ]) {
   test(`the onboarding Lights guide respects safe areas at ${viewport.width}x${viewport.height}`, async ({
     page,
+    request,
   }) => {
-    skipUnlessWebgl2();
     test.setTimeout(120_000);
     await page.setViewportSize(viewport);
-    await page.goto('/?webgl=1&e2e=1&onboarding=1');
-    await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'ready', {
-      timeout: SCENE_READY_TIMEOUT,
-    });
+    // The check reads DOM boxes, the safe-area tokens and one aria state, none of which the
+    // renderer backend changes, so both projects run it against their own pinned backend.
+    await openShowroom(page, request, '/?e2e=1&onboarding=1');
     const card = page.locator('.onboarding-card');
     // Onboarding mounts with the a11y module after the ready attribute is published.
     await expect(card).toBeVisible({ timeout: A11Y_MOUNT_TIMEOUT });
