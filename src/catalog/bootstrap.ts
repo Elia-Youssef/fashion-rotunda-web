@@ -27,17 +27,25 @@ export async function loadContentSet(wantHalf: boolean): Promise<{ base: string;
   return { base: FULL_CONTENT_BASE, catalog };
 }
 
-/** `?look=<id>`, falling back to the first look in the catalogue with one warning. */
-export function chooseLook(catalog: Catalog, params: URLSearchParams): CatalogLook {
-  const first = catalog.looks[0];
-  const wanted = params.get('look');
+/**
+ * The one look rule behind `?look=`: the look whose id equals `wanted`, else the first look. The
+ * picker and the lobby's progress tracker both resolve through it, so a deep link shows and
+ * counts the same look. Pure: it prints nothing, and the picker owns the warning.
+ */
+export function findLook(looks: CatalogLook[], wanted: string | null): CatalogLook {
+  const first = looks[0];
   if (wanted === null) {
     return first;
   }
-  const found = catalog.looks.find((look) => look.id === wanted);
-  if (found === undefined) {
-    console.warn(`[archviz] no look "${wanted}" in the catalogue, showing "${first.id}"`);
-    return first;
+  return looks.find((look) => look.id === wanted) ?? first;
+}
+
+/** `?look=<id>`, falling back to the first look in the catalogue with one warning. */
+export function chooseLook(catalog: Catalog, params: URLSearchParams): CatalogLook {
+  const wanted = params.get('look');
+  const found = findLook(catalog.looks, wanted);
+  if (wanted !== null && found.id !== wanted) {
+    console.warn(`[archviz] no look "${wanted}" in the catalogue, showing "${found.id}"`);
   }
   return found;
 }

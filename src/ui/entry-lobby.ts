@@ -47,7 +47,12 @@ export interface EntryLobby {
   readonly state: LobbyState;
   readonly element: HTMLElement;
   waitForLoadRequest(): Promise<{ musicPreference: 'on' | 'off' }>;
-  trackProgress(contentBase: string): () => void;
+  /**
+   * Starts truthful first-frame progress tracking. `wantedLook` is the raw ?look= value (or
+   * null), so the expected bytes and file count follow the look the catalogue's one look rule
+   * resolves from it, not always the catalogue's first look.
+   */
+  trackProgress(contentBase: string, wantedLook?: string | null): () => void;
   setProgress(reading: ProgressReading): void;
   setReady(): void;
   setCoverToBlack(): void;
@@ -376,7 +381,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       return loadRequestPromise;
     },
 
-    trackProgress(contentBase: string): () => void {
+    trackProgress(contentBase: string, wantedLook?: string | null): () => void {
       if (stopProgressTrackingFn !== null) {
         stopProgressTrackingFn();
       }
@@ -386,6 +391,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
           lobbyHandle.setProgress(reading);
         },
         skySourceFromSearch(options.search) === 'hdr',
+        wantedLook ?? null,
       );
       return () => {
         if (stopProgressTrackingFn !== null) {

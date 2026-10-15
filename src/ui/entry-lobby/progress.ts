@@ -3,6 +3,7 @@
 // resolved content URLs. Depends only on the catalog and loading modules; the lobby turns
 // readings into the bar and status text.
 
+import { findLook } from '../../catalog/bootstrap';
 import { contentUrl, loadCatalog } from '../../catalog/catalog';
 import { expectedBytes } from '../../loading/progress';
 import type { ManifestFile, ResourceEntry } from '../../loading/progress';
@@ -46,12 +47,15 @@ function resourceUrl(name: string): string {
 
 /**
  * `countEnvironment` is true only under the ?sky=hdr diagnostic: the default sky is generated in
- * memory and requests no environment file.
+ * memory and requests no environment file. `wantedLook` is the raw ?look= value, resolved by the
+ * catalogue's one look rule: the expected bytes, paths and file count follow the look the page's
+ * picker shows first, so a deep link is counted by the look it names instead of the first look.
  */
 export function trackFirstFrameProgress(
   contentBase: string,
   onProgress: (reading: ProgressReading) => void,
   countEnvironment = false,
+  wantedLook: string | null = null,
 ): () => void {
   let expected = 0;
   let expectedPaths: string[] = [];
@@ -138,7 +142,7 @@ export function trackFirstFrameProgress(
       if (manifestResponse.ok) {
         const setName = contentBase.endsWith('/half') ? 'half' : 'full';
         const files = readManifestFiles(await manifestResponse.json(), setName);
-        const firstLook = catalog.looks[0]?.file ?? '';
+        const firstLook = findLook(catalog.looks, wantedLook).file;
         const environmentFile = countEnvironment ? catalog.environment.file : null;
         expected = files === null ? 0 : expectedBytes(files, firstLook, environmentFile);
         expectedPaths = [

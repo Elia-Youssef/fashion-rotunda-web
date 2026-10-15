@@ -308,3 +308,93 @@ test.describe('lobby progress on the touch half set', () => {
     }
   });
 });
+
+// A ?look= deep link names the look the page loads first, and the lobby's tracker must count
+// that same look. While the rotunda request is held the tracker owns the readout and the status
+// text, so the readout's total is checked against the shipped manifest there. The bar after the
+// release cannot prove the count: setReady forces the bar to 1 whatever the tracker counted.
+test('counts the deep-linked look: the bar rises and reaches its total', async ({ page, request }) => {
+  skipUnlessWebgl2();
+
+  // The same files the tracker counts: rotunda, plinth and the deep-linked look, no environment
+  // under the default sky. The deep-linked look and the first look differ by about 1 MB, so a
+  // tracker that counted the wrong look would publish a different readout total.
+  const catalog = (await (await request.get('/content/catalog.json')).json()) as {
+    rotunda: { file: string };
+    plinth: { file: string };
+    looks: Array<{ id: string; file: string }>;
+  };
+  const manifest = (await (await request.get('/content/manifest.json')).json()) as {
+    sets: { full: { files: Record<string, { bytes: number }> } };
+  };
+  const manifestFiles = manifest.sets.full.files;
+  const linked = catalog.looks.find((look) => look.id === 'zoot-suit');
+  if (linked === undefined) {
+    throw new Error('the shipped catalogue has no look zoot-suit');
+  }
+  const expectedBytes =
+    manifestFiles[catalog.rotunda.file].bytes +
+    manifestFiles[catalog.plinth.file].bytes +
+    manifestFiles[linked.file].bytes;
+  const expectedTotal = new RegExp(
+    `^\\d+\\.\\d+ MB of ${(expectedBytes / 1_000_000).toFixed(1).replace('.', '\\.')} MB$`,
+  );
+
+  // The held rotunda keeps the lobby in its loading phase while the other tracked files arrive,
+  // so the bar has a window in which a real rise is observable.
+  const rotunda = await holdFirstRequest(page, '**/content/rotunda.glb', HALF_ROTUNDA_HOLD_TIMEOUT_MS);
+  const glbPaths: string[] = [];
+  page.on('request', (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (pathname.endsWith('.glb')) glbPaths.push(pathname);
+  });
+
+  await page.goto('/?webgl=1&e2e=1&gate=on&music=off&look=zoot-suit');
+  const lobby = page.locator('#entry-lobby');
+  await expect(lobby).toHaveAttribute('data-state', 'idle');
+  await lobby.locator('#lobby-load-btn').click();
+  await expect(lobby).toHaveAttribute('data-state', 'loading');
+  await rotunda.waitUntilEntered();
+
+  // While the lobby is still loading, the tracker publishes the readout total and the status
+  // count: the total must be the deep-linked look's share of the manifest, formatted the way
+  // formatProgress formats it, and the count the three tracked files.
+  const readout = lobby.locator('.entry-lobby__progress-readout');
+  await expect
+    .poll(async () => (await readout.textContent()) ?? '', {
+      message: `the readout total is the deep-linked look total (${(expectedBytes / 1_000_000).toFixed(1)} MB)`,
+      timeout: 20_000,
+    })
+    .toMatch(expectedTotal);
+  await expect
+    .poll(async () => (await lobby.locator('.entry-lobby__status').textContent()) ?? '', {
+      message: 'the status publishes the three tracked files while the load runs',
+      timeout: 20_000,
+    })
+    .toMatch(/ of 3 files$/);
+
+  const progress = lobby.locator('.entry-lobby__progress-bar');
+  await expect
+    .poll(async () => Number((await progress.getAttribute('value')) ?? '0'), {
+      message: 'the bar rises above zero while the lobby is still loading',
+      timeout: 20_000,
+    })
+    .toBeGreaterThan(0);
+  expect(
+    await lobby.getAttribute('data-state'),
+    'the held rotunda keeps the lobby in its loading phase',
+  ).toBe('loading');
+
+  await rotunda.release();
+  await rotunda.waitUntilContinued();
+
+  await expect
+    .poll(async () => Number((await progress.getAttribute('value')) ?? '0'), {
+      message: 'the bar reaches the deep-linked look total',
+      timeout: 60_000,
+    })
+    .toBe(1);
+  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+
+  expect(glbPaths, 'the deep-linked look was requested').toContain('/content/looks/zoot-suit.glb');
+});

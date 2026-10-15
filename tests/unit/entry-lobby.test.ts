@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadContentSet } from '../../src/catalog/bootstrap';
+import { loadContentSet, chooseLook } from '../../src/catalog/bootstrap';
+import { parseCatalog } from '../../src/catalog/catalog';
 
 import {
   APPROVED_FACTS,
@@ -781,7 +782,7 @@ describe('first-frame byte total and the sky source', () => {
     environment: { file: string };
     rotunda: { file: string };
     plinth: { file: string };
-    looks: { file: string }[];
+    looks: { id: string; file: string }[];
   };
   const manifest = JSON.parse(manifestText) as {
     sets: { full: { files: Record<string, { bytes: number }> } };
@@ -877,4 +878,74 @@ describe('first-frame byte total and the sky source', () => {
       }
     },
   );
+
+  // A ?look= deep link names a later look, and the tracker must count that look's file: the
+  // expected byte total covers it and the resource entries matched are exactly the three files
+  // the page requests, so the readout and the bar describe the load the visitor waits for.
+  it('counts a non-first ?look= in the expected bytes, paths and file count', async () => {
+    const wanted = catalog.looks[1];
+    vi.stubGlobal('fetch', (url: string) =>
+      Promise.resolve(new Response(url.endsWith('manifest.json') ? manifestText : catalogText)),
+    );
+    const entries = [
+      { name: '/content/' + catalog.rotunda.file, transferSize: 111 },
+      { name: '/content/' + catalog.plinth.file, transferSize: 222 },
+      { name: '/content/' + wanted.file, transferSize: 333 },
+    ].map((entry) => ({ ...entry, responseEnd: 1, entryType: 'resource' }));
+    vi.stubGlobal('performance', { getEntriesByType: () => entries });
+    const readings: ProgressReading[] = [];
+    const stop = trackFirstFrameProgress(
+      '/content', (reading) => readings.push(reading), false, wanted.id,
+    );
+    try {
+      await vi.waitFor(() => {
+        expect(readings.some((reading) => reading.expected > 0)).toBe(true);
+      });
+    } finally {
+      stop();
+      vi.unstubAllGlobals();
+    }
+    const reading = readings.find((one) => one.expected > 0)!;
+    expect(reading.expected).toBe(
+      bytes(catalog.rotunda.file) + bytes(catalog.plinth.file) + bytes(wanted.file),
+    );
+    expect(reading.totalFiles).toBe(3);
+    // The stub sizes arrive only when the tracker's expected paths name these three files.
+    expect(reading.received).toBe(666);
+    expect(reading.ended).toBe(3);
+  });
+
+  // The picker and the tracker resolve the same raw ?look= value through the same rule, so the
+  // bar's total always describes the look the page shows first, whatever the value names.
+  it.each([
+    { label: 'no look parameter', search: '' },
+    { label: 'an unknown id', search: '?look=missing' },
+    { label: 'a file name', search: `?look=${catalog.looks[1].file}` },
+    { label: 'a later look id', search: `?look=${catalog.looks[1].id}` },
+  ])('tracker and picker agree on the first-frame look for $label', async ({ search }) => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const params = new URLSearchParams(search);
+    const chosen = chooseLook(parseCatalog(JSON.parse(catalogText)), params);
+    vi.stubGlobal('fetch', (url: string) =>
+      Promise.resolve(new Response(url.endsWith('manifest.json') ? manifestText : catalogText)),
+    );
+    const readings: ProgressReading[] = [];
+    const stop = trackFirstFrameProgress(
+      '/content', (reading) => readings.push(reading), false, params.get('look'),
+    );
+    try {
+      await vi.waitFor(() => {
+        expect(readings.some((reading) => reading.expected > 0)).toBe(true);
+      });
+    } finally {
+      stop();
+      warning.mockRestore();
+      vi.unstubAllGlobals();
+    }
+    const reading = readings.find((one) => one.expected > 0)!;
+    expect(reading.expected).toBe(
+      bytes(catalog.rotunda.file) + bytes(catalog.plinth.file) + bytes(chosen.file),
+    );
+    expect(reading.totalFiles).toBe(3);
+  });
 });

@@ -237,7 +237,10 @@ async function main(): Promise<void> {
   }
 
   const canvas = requireCanvas();
-  let stopProgress = lobby !== null ? lobby.trackProgress(FULL_CONTENT_BASE) : () => {};
+  // The raw ?look= value rides along: the tracker resolves it through the catalogue's one look
+  // rule, so its expected bytes and file count describe the look the page is about to show.
+  let stopProgress =
+    lobby !== null ? lobby.trackProgress(FULL_CONTENT_BASE, params.get('look')) : () => {};
 
   // Decided before the renderer exists because it decides how the renderer is built: the timestamp
   // queries and their per-frame resolve serve the panel and nothing else, so a visitor who never
@@ -693,7 +696,7 @@ async function main(): Promise<void> {
     // whose paths never match the full-set expectations, so the tracker follows the set that was
     // actually chosen and the ready call below stops that tracker.
     if (lobby !== null && base !== FULL_CONTENT_BASE) {
-      stopProgress = lobby.trackProgress(base);
+      stopProgress = lobby.trackProgress(base, params.get('look'));
     }
     showroom = createShowroom({
       renderer,

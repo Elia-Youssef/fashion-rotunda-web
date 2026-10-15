@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { chooseLook, chooseVariant, loadContentSet, switchOrder } from '../../src/catalog/bootstrap';
+import { chooseLook, chooseVariant, findLook, loadContentSet, switchOrder } from '../../src/catalog/bootstrap';
 import type { Catalog, CatalogLook } from '../../src/catalog/catalog';
 
 const { loadCatalog } = vi.hoisted(() => ({ loadCatalog: vi.fn() }));
@@ -59,6 +59,19 @@ describe('catalog bootstrap', () => {
     expect(warn).toHaveBeenCalledExactlyOnceWith(
       '[archviz] no look "missing" in the catalogue, showing "first"',
     );
+  });
+
+  it('resolves the one look rule by id, else the first look, and prints nothing', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    expect(findLook(catalog.looks, 'second'), 'an id hit returns that look').toBe(catalog.looks[1]);
+    expect(findLook(catalog.looks, null), 'no wanted name returns the first look').toBe(catalog.looks[0]);
+    expect(findLook(catalog.looks, 'missing'), 'an unknown id returns the first look').toBe(catalog.looks[0]);
+    // A file name is not an id: it falls back to the first look exactly like the page's picker,
+    // so the tracker can never count a file the picker would not show.
+    expect(findLook(catalog.looks, 'second.glb'), 'a file name returns the first look').toBe(catalog.looks[0]);
+    expect(warn).not.toHaveBeenCalled();
+    expect(log).not.toHaveBeenCalled();
   });
 
   it('selects a requested variant or its default with the original warning', () => {
