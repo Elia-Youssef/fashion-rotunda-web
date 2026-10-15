@@ -139,7 +139,6 @@ export function createMusicPlayer(options: MusicPlayerOptions): MusicPlayer {
   let manifestPromise: Promise<MusicManifest> | null = null;
   let warnedUnknownTrack = false;
   let buffer: AudioBuffer | null = null;
-  let bufferedTrackId: string | null = null;
   let buses: AudioBuses | null = null;
   let source: AudioBufferSourceNode | null = null;
   let sourceGain: GainNode | null = null;
@@ -167,6 +166,8 @@ export function createMusicPlayer(options: MusicPlayerOptions): MusicPlayer {
   }
 
   async function loadManifest(): Promise<MusicManifest> {
+    // Keep the resolved value separate from the in-flight promise so later plays take the hot
+    // path without adopting that promise again. A successful manifest stays fixed for this player.
     if (manifest !== null) {
       return manifest;
     }
@@ -210,10 +211,14 @@ export function createMusicPlayer(options: MusicPlayerOptions): MusicPlayer {
   async function ensureTrack(): Promise<{ track: MusicTrack; audioBuses: AudioBuses }> {
     const listed = await loadManifest();
     const track = chooseTrack(listed);
+    // play assigns buses only after a successful unlock. Keep this assertion at the decode
+    // boundary so a future caller cannot fetch or decode through an unavailable context.
     if (buses === null) {
       throw new Error('The audio context is not available.');
     }
-    if (buffer === null || bufferedTrackId !== track.id) {
+    // trackId and the successful manifest are fixed for this player, so a buffer always belongs
+    // to this chosen track. There is no second track identity to invalidate independently.
+    if (buffer === null) {
       // canPlayType is the one allowed use of a media element: choosing the file format.
       const picked = pickSource(track.sources, (type) => new Audio().canPlayType(type));
       if (picked === null) {
@@ -226,12 +231,12 @@ export function createMusicPlayer(options: MusicPlayerOptions): MusicPlayer {
       const data = await response.arrayBuffer();
       // decodeAudioData detaches the buffer, so it is never reused after this line.
       buffer = await buses.context.decodeAudioData(data);
-      bufferedTrackId = track.id;
     }
     return { track, audioBuses: buses };
   }
 
   function startSource(track: MusicTrack, audioBuses: AudioBuses): void {
+    // ensureTrack must finish decoding before any source starts, including future call paths.
     if (buffer === null) {
       throw new Error('The music buffer is missing.');
     }
@@ -376,7 +381,8 @@ export function createMusicPlayer(options: MusicPlayerOptions): MusicPlayer {
         try {
           source.stop();
         } catch {
-          // A source that never started throws on stop; it is finished either way.
+          // Sources are published only after start succeeds. Keep disconnection best-effort
+          // even if a future source lifecycle allows stop to reject.
         }
         source.disconnect();
         sourceGain?.disconnect();
