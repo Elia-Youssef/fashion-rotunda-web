@@ -4,7 +4,7 @@
 //   node pipeline/gltf/inspect.mjs <file.glb> [more files...] [--json]
 //
 // The optimize pass writes meshopt-compressed geometry, so the reader registers the meshopt decoder:
-// without it every optimized file reads as an error. The summary line ends with the four checks the
+// without it every optimized file reads as an error. The summary line ends with the five checks the
 // output has to pass, so the answer is readable without scrolling: KTX2 on every texture, meshopt
 // present, instancing on the rotunda, authored KHR_materials_specular values retained, variants on
 // every look.

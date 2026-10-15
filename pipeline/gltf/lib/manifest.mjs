@@ -83,8 +83,9 @@ export function buildManifest(generated, sets, errors = []) {
 
 /**
  * The text of a shipped JSON file: two-space indented with a final newline, and every character
- * outside printable ASCII written as a backslash-u escape, so the file stays ASCII while its parsed
- * value is unchanged. Catalogue descriptions come from the Unreal data and can carry typographic dashes.
+ * outside printable ASCII except the newline written as a backslash-u escape, so the file stays ASCII
+ * while its parsed value is unchanged. Catalogue descriptions come from the Unreal data and can carry
+ * typographic dashes.
  */
 export function shippedJson(value) {
   const text = JSON.stringify(value, null, 2).replace(

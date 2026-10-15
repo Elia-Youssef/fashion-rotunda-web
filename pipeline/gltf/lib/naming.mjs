@@ -25,7 +25,7 @@ export function isColorSlot(slot) {
   return SRGB_SLOT_PATTERN.test(String(slot));
 }
 
-/** True when a slot name means a normal map. Checked before isColorSlot; the two never overlap. */
+/** True when a slot name means a normal map. Independent of isColorSlot; the two never overlap. */
 export function isNormalSlot(slot) {
   return NORMAL_SLOT_PATTERN.test(String(slot));
 }

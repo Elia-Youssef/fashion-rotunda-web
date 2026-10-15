@@ -124,7 +124,10 @@ export function applyLookFit(document, lookId, method = null) {
   return { applied: true, method: selected, ...result };
 }
 
-/** Checks the serialized surface after meshopt quantization, using the original body intervals. */
+/**
+ * Checks the serialized surface after meshopt quantization: a contact-clearance fit against the
+ * serialized mannequin, the covered-surface methods against the original body intervals.
+ */
 export function validateFitOutput(document, fit) {
   if (!fit.applied) return { checked: false };
   const garment = surfaceParts(document, 'garment'), body = surfaceParts(document, 'mannequin');
