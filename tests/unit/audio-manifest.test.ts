@@ -104,4 +104,15 @@ describe('parseMusicManifest', () => {
   it('names the track by index when the entry is not an object', () => {
     expect(() => parseMusicManifest({ ...base(), tracks: ['nope'] })).toThrow(/tracks\[0\]/);
   });
+
+  it('says "is not an object" for a non-object entry, track and source alike', () => {
+    // A field-type message also names tracks[0], so the index alone cannot tell these apart; a
+    // caller reading the message needs to know the entry itself was the problem.
+    expect(() => parseMusicManifest({ ...base(), tracks: ['nope'] })).toThrow(
+      /tracks\[0\] is not an object/,
+    );
+    expect(() =>
+      parseMusicManifest({ ...base(), tracks: [{ ...base().tracks[0], sources: ['nope'] }] }),
+    ).toThrow(/tracks\[0\]\.sources\[0\] is not an object/);
+  });
 });
