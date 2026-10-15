@@ -1,16 +1,13 @@
 import { expect, test } from './support/fixtures';
+import { openShowroom } from './support/showroom';
 
 const SCENE_TIMEOUT_MS = 60_000;
 
 for (const tier of ['base', 'mid', 'high']) {
-  test(`thumbnail requests follow the first scene frame at ${tier}`, async ({ page }, info) => {
+  test(`thumbnail requests follow the first scene frame at ${tier}`, async ({ page, request }) => {
     // Routing disables the HTTP cache so every thumbnail has a Resource Timing entry.
     await page.route('**/thumbs/**', (route) => route.continue());
-    const backend = info.project.name === 'webgl2' ? '&webgl=1' : '';
-    await page.goto(`/?e2e=1&gate=off&proof=1&tier=${tier}${backend}`);
-    await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'ready', {
-      timeout: SCENE_TIMEOUT_MS,
-    });
+    await openShowroom(page, request, `/?e2e=1&gate=off&proof=1&tier=${tier}`);
     await page.waitForFunction(() => {
       const images = [...document.querySelectorAll<HTMLImageElement>(
         '.catalog-strip__thumb, .product-card__thumb',

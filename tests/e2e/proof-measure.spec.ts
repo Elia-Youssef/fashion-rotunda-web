@@ -1,7 +1,7 @@
 import { expect, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
+import { openShowroom } from './support/showroom';
 
-const SCENE_READY_TIMEOUT_MS = 60_000;
 // Each real orbit lasts ten seconds; allow another ten for a loaded test machine.
 const ORBIT_TIMEOUT_MS = 20_000;
 // A load and two bounded orbit runs, with slack for assertions and input dispatch.
@@ -45,14 +45,10 @@ function expectOrbitResult(text: string): void {
   // Budget and status are printed context, not performance acceptance thresholds.
 }
 
-test('Measure runs the proof orbit and replaces its frame-time result', async ({ page }, testInfo) => {
+test('Measure runs the proof orbit and replaces its frame-time result', async ({ page, request }) => {
   test.setTimeout(TEST_TIMEOUT_MS);
-  const fallback = testInfo.project.name === 'webgl2' ? '&webgl=1' : '';
   // Disable the idle tour so only Measure can move the proof-initialized camera.
-  await page.goto(`/?e2e=1&proof=1&tier=base&attract=0&music=off${fallback}`);
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT_MS });
-  await expect(canvas).toHaveAttribute('data-backend', testInfo.project.name);
+  await openShowroom(page, request, '/?e2e=1&proof=1&tier=base&attract=0&music=off');
   const panel = page.getByRole('region', { name: 'Proof', exact: true });
   const button = panel.getByRole('button', { name: 'Measure', exact: true });
   const status = panel.locator('.proof-panel__status');

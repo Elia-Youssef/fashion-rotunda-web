@@ -1,5 +1,5 @@
 import { expect, test } from './support/fixtures';
-import { backendPath, projectBackend } from './support/backend';
+import { openShowroom } from './support/showroom';
 import { LOOP_STATE_POLL_MS, waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 
 const SCENE_READY_TIMEOUT = 60_000;
@@ -10,13 +10,10 @@ const INPUT_FRAME_TIMEOUT = 5_000;
 // any input, then the loop stops scheduling frames. canvas#scene[data-frames] counts rendered frames,
 // and the shared helper verifies the owner state and a fresh frame.
 // Both projects default to headless, so only synthetic input wakes the page after it settles.
-test('stops drawing when idle and wakes on input', async ({ page }) => {
-  await page.goto(backendPath('/?gate=off&e2e=1'));
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-backend', projectBackend(), { timeout: 30_000 });
+test('stops drawing when idle and wakes on input', async ({ page, request }) => {
+  const { canvas } = await openShowroom(page, request, '/?gate=off&e2e=1');
 
   // Wait for content and final initialization before observing the idle frame counter.
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
   await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
 
   const readFrames = async (): Promise<number> => Number(await canvas.getAttribute('data-frames'));
@@ -31,14 +28,8 @@ test('stops drawing when idle and wakes on input', async ({ page }) => {
   }).toBeGreaterThan(previous);
 });
 
-test('loop diagnostic acknowledges idle and a requested frame', async ({ page }) => {
-  const fallback = test.info().project.name === 'webgl2' ? '&webgl=1' : '';
-  await page.goto(`/?e2e=1&tier=base&post=off&music=off&attract=0${fallback}`);
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-backend', test.info().project.name, {
-    timeout: SCENE_READY_TIMEOUT,
-  });
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+test('loop diagnostic acknowledges idle and a requested frame', async ({ page, request }) => {
+  await openShowroom(page, request, '/?e2e=1&tier=base&post=off&music=off&attract=0');
   await waitForLoopIdle(page);
 
   // The request and pending-state snapshot share one browser task, before RAF can deliver it.
