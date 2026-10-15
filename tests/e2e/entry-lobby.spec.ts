@@ -1,13 +1,17 @@
 import { expect, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
 
+import { backendPath, projectBackend } from './support/backend';
 import { holdFirstRequest } from './support/held-request';
 import { waitForSceneInitialization } from './support/ready';
 
-// Entry lobby E2E verification.
-// Shared lobby checks run once on the WebGL2 project and verify the deferred boot contract,
-// zero network activity before user gesture, responsive viewports,
-// focus containment, hit-test blocking, and music preferences.
+// Entry lobby E2E verification: the deferred boot contract, zero network activity before the
+// user gesture, responsive viewports, focus containment, hit-test blocking and music
+// preferences. The cases that press the load control and read the boot that follows run on both
+// projects, each opening through backendPath and pinning canvas[data-backend] to the project's
+// backend right after the press, so a silent fallback fails the run. The cases whose every
+// reading ends before the press stay on the WebGL 2 project: no renderer exists until the press
+// (main() parks at lobby.waitForLoadRequest()), so the webgpu project would repeat the same run.
 
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
@@ -20,6 +24,19 @@ const VIEWPORTS = [
 // checks observe; the budget is the same one the reveal waits in this file share.
 const INITIALIZED_TIMEOUT = 60_000;
 
+// The backend pin's budget: the load action creates the renderer (src/renderer/create.ts
+// publishes canvas[data-backend] once it initializes), and on the software WebGL 2 project under
+// the configured workers that creation can outlast the five-second assertion default.
+const BACKEND_PIN_TIMEOUT = 60_000;
+
+// The press is the first moment the backends can differ: pin the canvas to the project's own
+// backend before any reading that follows the press, so a silent fallback fails the run there.
+async function expectProjectBackendAfterLoad(page: Page): Promise<void> {
+  await expect(page.locator('canvas#scene')).toHaveAttribute('data-backend', projectBackend(), {
+    timeout: BACKEND_PIN_TIMEOUT,
+  });
+}
+
 // The held half-set rotunda keeps the touch Base load observable; 30 s covers a slow boot start
 // under four software workers, the same budget the loading spec's hold uses.
 const HALF_ROTUNDA_HOLD_TIMEOUT_MS = 30_000;
@@ -29,8 +46,14 @@ const HALF_ROTUNDA_HOLD_TIMEOUT_MS = 30_000;
 // provable by wall time, so the length is kept; the anchor decides where it starts.
 const PRE_GESTURE_QUIET_WINDOW_MS = 1_000;
 
-function skipUnlessWebgl2(): void {
-  test.skip(test.info().project.name !== 'webgl2', 'the shared lobby DOM and boot checks run once on webgl2');
+// Cases whose every reading ends before the load action stay on the WebGL 2 project: main()
+// parks at lobby.waitForLoadRequest() until that press and creates the renderer only after it,
+// so no reading they take can see the backend and the webgpu project would repeat the same run.
+function skipWhenNoReadingFollowsTheLoadAction(): void {
+  test.skip(
+    test.info().project.name !== 'webgl2',
+    'every reading ends before the load action, when no renderer exists, so the webgpu project would repeat the same run',
+  );
 }
 
 function watchRequests(page: Page): {
@@ -98,12 +121,11 @@ test('releases page keyboard navigation after the lobby reveal', async ({ page }
 });
 
 test('proves deferred load: zero /content/ or music requests before user gesture', async ({ page }) => {
-  skipUnlessWebgl2();
   const watcher = watchRequests(page);
 
   // freeze=ready-hidden holds the intermediate lobby phase at the test seam, so the ready-hidden
   // assertion below observes the phase itself instead of racing its automatic 250 ms advance.
-  await page.goto('/?webgl=1&e2e=1&gate=on&freeze=ready-hidden');
+  await page.goto(backendPath('/?e2e=1&gate=on&freeze=ready-hidden'));
   const lobby = page.locator('#entry-lobby');
   await expect(lobby).toHaveAttribute('data-state', 'idle');
 
@@ -132,6 +154,8 @@ test('proves deferred load: zero /content/ or music requests before user gesture
   const loadBtn = lobby.locator('#lobby-load-btn');
   await loadBtn.click();
 
+  await expectProjectBackendAfterLoad(page);
+
   // Now requests must begin
   await expect
     .poll(() => watcher.contentUrls().length, { message: 'content requests start after click' })
@@ -143,7 +167,7 @@ test('proves deferred load: zero /content/ or music requests before user gesture
 });
 
 test('proves hit-test blocking: underlying shell cannot receive pointer events', async ({ page }) => {
-  skipUnlessWebgl2();
+  skipWhenNoReadingFollowsTheLoadAction();
 
   await page.goto('/?webgl=1&gate=on');
   const lobby = page.locator('#entry-lobby');
@@ -164,7 +188,7 @@ test('proves hit-test blocking: underlying shell cannot receive pointer events',
 });
 
 test('proves no page scroll at all 4 target viewports', async ({ page }) => {
-  skipUnlessWebgl2();
+  skipWhenNoReadingFollowsTheLoadAction();
 
   for (const vp of VIEWPORTS) {
     await page.setViewportSize({ width: vp.width, height: vp.height });
@@ -199,12 +223,11 @@ test('proves no page scroll at all 4 target viewports', async ({ page }) => {
 });
 
 test('proves music preference persistence: Music off fetches no audio during or after boot', async ({ page }) => {
-  skipUnlessWebgl2();
   const watcher = watchRequests(page);
 
   // freeze=ready-hidden holds the intermediate lobby phase at the test seam; after the assertion
   // below the unfreeze lets the boot run on to the real revealed and initialized state.
-  await page.goto('/?webgl=1&e2e=1&gate=on&freeze=ready-hidden');
+  await page.goto(backendPath('/?e2e=1&gate=on&freeze=ready-hidden'));
   const lobby = page.locator('#entry-lobby');
   const musicSwitch = lobby.locator('.entry-lobby__music-switch');
 
@@ -215,6 +238,8 @@ test('proves music preference persistence: Music off fetches no audio during or 
   // Click Load Experience
   const loadBtn = lobby.locator('#lobby-load-btn');
   await loadBtn.click();
+
+  await expectProjectBackendAfterLoad(page);
 
   // The held phase: ready-hidden stays observable until the test releases it.
   await expect(lobby).toHaveAttribute('data-state', 'ready-hidden', { timeout: 60_000 });
@@ -234,7 +259,7 @@ test('proves music preference persistence: Music off fetches no audio during or 
 });
 
 test('safe area insets do not clip interactive controls', async ({ page }) => {
-  skipUnlessWebgl2();
+  skipWhenNoReadingFollowsTheLoadAction();
 
   // Install custom safe area insets
   await page.setViewportSize({ width: 390, height: 844 });
@@ -268,8 +293,6 @@ test.describe('lobby progress on the touch half set', () => {
   });
 
   test('tracks the half set a touch Base device loads: the bar rises before ready', async ({ page }) => {
-    skipUnlessWebgl2();
-
     // The held half-set rotunda keeps the lobby in its loading phase while the other tracked files
     // arrive, so the bar has a window in which a real rise is observable.
     const rotunda = await holdFirstRequest(page, '**/content/half/rotunda.glb', HALF_ROTUNDA_HOLD_TIMEOUT_MS);
@@ -279,10 +302,12 @@ test.describe('lobby progress on the touch half set', () => {
       if (pathname.endsWith('.glb')) glbPaths.push(pathname);
     });
 
-    await page.goto('/?webgl=1&e2e=1&gate=on&tier=base&music=off');
+    await page.goto(backendPath('/?e2e=1&gate=on&tier=base&music=off'));
     const lobby = page.locator('#entry-lobby');
     await expect(lobby).toHaveAttribute('data-state', 'idle');
     await lobby.locator('#lobby-load-btn').click();
+
+    await expectProjectBackendAfterLoad(page);
     await expect(lobby).toHaveAttribute('data-state', 'loading');
     await rotunda.waitUntilEntered();
 
@@ -314,8 +339,6 @@ test.describe('lobby progress on the touch half set', () => {
 // text, so the readout's total is checked against the shipped manifest there. The bar after the
 // release cannot prove the count: setReady forces the bar to 1 whatever the tracker counted.
 test('counts the deep-linked look: the bar rises and reaches its total', async ({ page, request }) => {
-  skipUnlessWebgl2();
-
   // The same files the tracker counts: rotunda, plinth and the deep-linked look, no environment
   // under the default sky. The deep-linked look and the first look differ by about 1 MB, so a
   // tracker that counted the wrong look would publish a different readout total.
@@ -349,10 +372,12 @@ test('counts the deep-linked look: the bar rises and reaches its total', async (
     if (pathname.endsWith('.glb')) glbPaths.push(pathname);
   });
 
-  await page.goto('/?webgl=1&e2e=1&gate=on&music=off&look=zoot-suit');
+  await page.goto(backendPath('/?e2e=1&gate=on&music=off&look=zoot-suit'));
   const lobby = page.locator('#entry-lobby');
   await expect(lobby).toHaveAttribute('data-state', 'idle');
   await lobby.locator('#lobby-load-btn').click();
+
+  await expectProjectBackendAfterLoad(page);
   await expect(lobby).toHaveAttribute('data-state', 'loading');
   await rotunda.waitUntilEntered();
 
