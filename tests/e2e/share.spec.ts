@@ -1,5 +1,4 @@
 import { expect, test } from './support/fixtures';
-import { backendPath, projectBackend } from './support/backend';
 import { openShowroom, readCatalog } from './support/showroom';
 import { waitForLoopIdle } from './support/ready';
 import type { Page } from '@playwright/test';
@@ -7,11 +6,10 @@ import { PNG } from 'pngjs';
 
 // Sharing e2e test suite: deep linking, URL synchronization, and 2x screenshot capture.
 // Every check reads DOM, URL and history state that the renderer backend does not change, so
-// both projects run all three. The deep-link and URL cases open through the shared showroom
-// helper, and the still capture, which resizes the backing store and reads pixels back, pins
-// the backend it actually got.
+// both projects run all three. All three open through the shared showroom helper, whose
+// backend pin matters most to the still capture: it resizes the backing store and reads
+// pixels back, so a project that silently fell back would measure the wrong renderer.
 
-const READY_TIMEOUT_MS = 60_000;
 const SWITCH_TIMEOUT_MS = 30_000;
 // The turntable publishes its yaw from rendered frames (mount.ts writeYaw inside update), so the
 // restored deep link's progress is polled past an earlier reading, never sampled after a fixed gap.
@@ -89,15 +87,14 @@ test('restores look, variant, camera pose, yaw and turntable from deep link', as
   }
 });
 
-test('captures and downloads a still at twice the canvas dimensions', async ({ page }) => {
-  await page.goto(backendPath('/?e2e=1'));
-  const canvas = page.locator('canvas#scene');
+test('captures and downloads a still at twice the canvas dimensions', async ({
+  page,
+  request,
+}) => {
   // The capture resizes the backing store and reads it back, so a project that silently fell back
-  // to another backend would measure the wrong renderer: pin the one this project names.
-  await expect(canvas).toHaveAttribute('data-backend', projectBackend(), {
-    timeout: READY_TIMEOUT_MS,
-  });
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: READY_TIMEOUT_MS });
+  // to another backend would measure the wrong renderer: the shared opening pins the backend its
+  // project names before the scene-ready wait.
+  await openShowroom(page, request, '/?e2e=1');
 
   // Prerequisite: an idle render loop, so no scaler step can move the drawing buffer before the
   // click; the PNG and restore assertions below bind to this reading, not to a scene-ready-time one.

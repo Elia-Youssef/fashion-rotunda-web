@@ -1,6 +1,7 @@
 import { browserReports, expect, expectConsoleError, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
 import { backendPath } from './support/backend';
+import { openShowroom } from './support/showroom';
 
 // The music switch in the header on both backends. Both projects default to headless and muted
 // output; the WebGPU project also explicitly supplies --mute-audio. A Playwright click is a trusted
@@ -25,13 +26,6 @@ function switchButton(page: Page) {
   return page.locator('header button.music-switch');
 }
 
-async function openWithScene(page: Page, path: string) {
-  await page.goto(path);
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
-  return canvas;
-}
-
 /**
  * Every request the page made for a music file or the manifest. "Music off" has to be free: not a
  * quiet page that fetched 1.2 MB of Opus anyway, which is what a switch wired to the gain alone
@@ -53,11 +47,11 @@ function watchMusicRequests(page: Page): { seen: () => string[]; clear: () => vo
   };
 }
 
-test('starts on the switch, stops on it, and remembers the stop', async ({ page }) => {
+test('starts on the switch, stops on it, and remembers the stop', async ({ page, request }) => {
   // Two scene loads in one test, the second one warm: the file's own budget, not the config's.
   test.setTimeout(90_000);
   const musicRequests = watchMusicRequests(page);
-  await openWithScene(page, backendPath('/?e2e=1&music=off'));
+  await openShowroom(page, request, '/?e2e=1&music=off');
   const button = switchButton(page);
 
   await expect(button).toHaveAttribute('data-music', 'off');
@@ -84,7 +78,7 @@ test('starts on the switch, stops on it, and remembers the stop', async ({ page 
   // Back without the music parameter, so the stored value is the only source left: the reload has
   // to come back off, and an off page is one that fetched no music.
   musicRequests.clear();
-  await openWithScene(page, backendPath('/?e2e=1'));
+  await openShowroom(page, request, '/?e2e=1');
   await expect(button).toHaveAttribute('data-music', 'off');
   await expect(button).toHaveAttribute('aria-pressed', 'false');
   expect(musicRequests.seen(), 'the remembered stop fetches nothing either').toEqual([]);
@@ -118,8 +112,8 @@ test('arms until the first gesture anywhere on the page', async ({ page }) => {
   await expect(button).toHaveAttribute('data-music', 'playing', { timeout: PLAYING_TIMEOUT });
 });
 
-test('keeps the position across a pause and a resume', async ({ page }) => {
-  await openWithScene(page, backendPath('/?e2e=1&music=off'));
+test('keeps the position across a pause and a resume', async ({ page, request }) => {
+  await openShowroom(page, request, '/?e2e=1&music=off');
   const button = switchButton(page);
   await button.click();
   await expect(button).toHaveAttribute('data-music', 'playing', { timeout: PLAYING_TIMEOUT });
@@ -190,12 +184,13 @@ test('keeps the position across a pause and a resume', async ({ page }) => {
 
 test('reports a failed load as Music unavailable, the cause only in the console', async ({
   page,
+  request,
 }) => {
   // Cutting the manifest request is the same class of failure as a 404 or an undecodable file:
   // play() rejects and the switch lands in error. No audio output is needed, so the case runs on
   // both backends.
   await page.route('**/content/music/music.json', (route) => route.abort());
-  await openWithScene(page, backendPath('/?e2e=1&music=off'));
+  await openShowroom(page, request, '/?e2e=1&music=off');
   const button = switchButton(page);
   await expect(button).toHaveAttribute('data-music', 'off');
 
