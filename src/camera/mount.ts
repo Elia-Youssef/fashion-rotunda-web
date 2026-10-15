@@ -2,9 +2,7 @@
 // Integrates the orbit inspection camera, turntable, walkthrough camera with capsule collision,
 // blended mode transitions, catalogue view presets, and the idle attract tour.
 
-import { BufferGeometry } from 'three';
 import type { PerspectiveCamera } from 'three/webgpu';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 import type { CatalogView } from '../catalog/catalog';
 import { prefersReducedMotion } from '../ui/announce';
@@ -12,18 +10,17 @@ import { ATTRACT_HOLD_MS, ATTRACT_IDLE_MS, ATTRACT_MOVE_MS, createAttract } from
 import type { AttractHandle } from './attract';
 import { BLEND_MS, blendPoseInto, copyPose } from './blend';
 import type { Pose } from './blend';
-import { mountJoystick } from './joystick';
-import type { JoystickHandle } from './joystick';
 import { createOrbit } from './orbit';
 import type { OrbitHandle, OrbitLimits } from './orbit';
 import { createPresets } from './presets';
 import type { PresetsHandle } from './presets';
 import { createTurntable } from './turntable';
 import type { Turntable } from './turntable';
-import { createWalkthrough } from './walkthrough';
-import type { WalkthroughHandle } from './walkthrough';
+import type { CameraMode, WalkthroughHandle } from './contracts';
+import { WALK_EYE_HEIGHT } from './walk-settings';
+import { createWalkSession } from './walk-session';
 
-export type CameraMode = 'orbit' | 'walk';
+export type { CameraMode } from './contracts';
 
 export interface CameraMountOptions {
   camera: PerspectiveCamera;
@@ -77,11 +74,6 @@ const YAW_HALF_STEP = 0.5 * 10 ** -YAW_DECIMALS;
 // Cover rounding in both the parsed decimal centre and the subtraction from the live yaw.
 const YAW_ROUNDING_ERROR_SCALE = 2;
 
-interface JoystickLayer {
-  root: HTMLElement;
-  dispose(): void;
-}
-
 /** True when two poses hold the same six numbers. */
 function samePose(a: Pose, b: Pose): boolean {
   return (
@@ -92,34 +84,6 @@ function samePose(a: Pose, b: Pose): boolean {
     a.target[1] === b.target[1] &&
     a.target[2] === b.target[2]
   );
-}
-
-/** Keeps the touch control inside the canvas rect when the shell flattens #shell-stage on tablet. */
-function mountJoystickLayer(canvas: HTMLCanvasElement): JoystickLayer {
-  const root = document.createElement('div');
-  root.className = 'archviz-joystick-layer';
-  document.body.appendChild(root);
-
-  function place(): void {
-    const rect = canvas.getBoundingClientRect();
-    root.style.left = `${rect.left}px`;
-    root.style.top = `${rect.top}px`;
-    root.style.width = `${rect.width}px`;
-    root.style.height = `${rect.height}px`;
-  }
-
-  place();
-  window.addEventListener('resize', place, { passive: true });
-  const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
-  observer?.observe(canvas);
-  return {
-    root,
-    dispose(): void {
-      window.removeEventListener('resize', place);
-      observer?.disconnect();
-      root.remove();
-    },
-  };
 }
 
 export function attractIdleMsFromSearch(search: string): number {
@@ -249,124 +213,20 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
   let storedWalkYaw = 0;
   let storedWalkPitch = 0;
 
-  // Collision and walkthrough setup.
-  let isWalkReady = false;
-  let collisionGeometry: BufferGeometry | null = null;
-  const walkReadyListeners = new Set<() => void>();
-
-  // Initialize walkthrough with placeholder geometry so handle is never null.
-  let currentWalk: WalkthroughHandle = createWalkthrough({
+  const walkSession = createWalkSession({
     camera,
-    element: canvas,
-    collision: new BufferGeometry(),
-    eyeHeight: 1.65,
-    radius: 0.3,
-    walkSpeed: 1.4,
+    canvas,
+    collisionUrl,
     isTouch,
     now: clock,
     onChange: () => {
-      if (currentWalk.moving) {
+      if (walkSession.walk.moving) {
         hold();
       } else {
         loop.invalidate();
       }
     },
   });
-
-  let joystick: JoystickHandle | null = null;
-  let joystickLayer: JoystickLayer | null = null;
-  if (isTouch) {
-    joystickLayer = mountJoystickLayer(canvas);
-    joystick = mountJoystick(joystickLayer.root, (x, y) => {
-      currentWalk.setJoystickVector(x, y);
-    });
-  }
-
-  function setupCollision(geometry: BufferGeometry): void {
-    collisionGeometry = geometry;
-    const previousFoot = currentWalk.foot;
-    const previousYaw = currentWalk.yaw;
-    const previousPitch = currentWalk.pitch;
-    const wasEnabled = currentWalk.enabled;
-
-    currentWalk.dispose();
-    currentWalk = createWalkthrough({
-      camera,
-      element: canvas,
-      collision: geometry,
-      eyeHeight: 1.65,
-      radius: 0.3,
-      walkSpeed: 1.4,
-      isTouch,
-      now: clock,
-      onChange: () => {
-        if (currentWalk.moving) {
-          hold();
-        } else {
-          loop.invalidate();
-        }
-      },
-    });
-
-    currentWalk.setPose(previousFoot, previousYaw, previousPitch);
-    if (wasEnabled) {
-      currentWalk.enable();
-    }
-    isWalkReady = true;
-    for (const listener of walkReadyListeners) {
-      listener();
-    }
-  }
-
-  // Fetch collision after the first frame as instructed. GLTFLoader.load() does not expose the
-  // underlying request, so fetch owns the AbortController and GLTFLoader parses the response.
-  let collisionTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  let collisionAbort: AbortController | null = null;
-  let disposed = false;
-  if (collisionUrl) {
-    collisionTimeoutId = setTimeout(() => {
-      try {
-        collisionAbort = new AbortController();
-        const loader = new GLTFLoader();
-        void fetch(collisionUrl, { signal: collisionAbort.signal })
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error(`collision mesh answered ${response.status}`);
-            }
-            return response.arrayBuffer();
-          })
-          .then((data) => {
-            if (disposed) {
-              return;
-            }
-            loader.parse(
-              data,
-              '',
-              (gltf) => {
-                const mesh = gltf.scene.children[0] as { geometry?: BufferGeometry };
-                if (disposed) {
-                  mesh?.geometry?.dispose();
-                } else if (mesh?.geometry) {
-                  setupCollision(mesh.geometry);
-                }
-              },
-              (err) => {
-                if (!disposed) {
-                  console.warn('[archviz] failed to parse collision mesh', err);
-                }
-              },
-            );
-          })
-          .catch((err: unknown) => {
-            if (!disposed && !(err instanceof DOMException && err.name === 'AbortError')) {
-              console.warn('[archviz] failed to load collision mesh', err);
-            }
-          });
-      } catch {
-        // Ignored if loader URL resolution fails in test environments
-      }
-    }, 0);
-  }
 
   // Presets
   const presets = createPresets(views, orbit, prefersReducedMotion);
@@ -433,7 +293,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     lookYaw: number,
     lookPitch: number,
   ): Pose {
-    const eyeY = footPos[1] + 1.65;
+    const eyeY = footPos[1] + WALK_EYE_HEIGHT;
     const targetX = footPos[0] + Math.sin(lookYaw) * Math.cos(lookPitch);
     const targetY = eyeY + Math.sin(lookPitch);
     const targetZ = footPos[2] - Math.cos(lookYaw) * Math.cos(lookPitch);
@@ -448,12 +308,12 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     canvas.dataset['camera'] = mode;
     if (mode === 'walk') {
       orbit.setEnabled(false);
-      currentWalk.enable();
-      joystick?.setVisible(true);
+      walkSession.walk.enable();
+      walkSession.setJoystickVisible(true);
     } else {
-      currentWalk.disable();
+      walkSession.walk.disable();
       orbit.setEnabled(true);
-      joystick?.setVisible(false);
+      walkSession.setJoystickVisible(false);
     }
     for (const listener of modeListeners) {
       listener(mode);
@@ -478,9 +338,9 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
         target: [...orbit.target],
       };
     } else {
-      storedWalkFoot = currentWalk.foot;
-      storedWalkYaw = currentWalk.yaw;
-      storedWalkPitch = currentWalk.pitch;
+      storedWalkFoot = walkSession.walk.foot;
+      storedWalkYaw = walkSession.walk.yaw;
+      storedWalkPitch = walkSession.walk.pitch;
     }
 
     const fromPose: Pose = {
@@ -511,7 +371,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
       camera.position.set(...toPose.position);
       camera.lookAt(...toPose.target);
       if (mode === 'walk') {
-        currentWalk.setPose(targetFoot!, targetYaw!, targetPitch!);
+        walkSession.walk.setPose(targetFoot!, targetYaw!, targetPitch!);
       } else {
         orbit.moveTo(toPose.position, toPose.target);
       }
@@ -522,8 +382,8 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
 
     // Disable controls during blend.
     orbit.setEnabled(false);
-    currentWalk.disable();
-    joystick?.setVisible(false);
+    walkSession.walk.disable();
+    walkSession.setJoystickVisible(false);
     hold();
 
     return new Promise<void>((resolve) => {
@@ -549,7 +409,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
       orbit,
       turntable,
       get walk(): WalkthroughHandle {
-        return currentWalk;
+        return walkSession.walk;
       },
       get mode(): CameraMode {
         return currentMode;
@@ -564,7 +424,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     orbit,
     turntable,
     get walk(): WalkthroughHandle {
-      return currentWalk;
+      return walkSession.walk;
     },
     get mode(): CameraMode {
       return currentMode;
@@ -578,12 +438,11 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     attract,
 
     get walkReady(): boolean {
-      return isWalkReady;
+      return walkSession.ready;
     },
 
     onWalkReady(listener: () => void): () => void {
-      walkReadyListeners.add(listener);
-      return () => walkReadyListeners.delete(listener);
+      return walkSession.onReady(listener);
     },
 
     update(dtMs: number): void {
@@ -603,7 +462,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
             const blend = activeBlend;
             activeBlend = null;
             if (blend.targetMode === 'walk') {
-              currentWalk.setPose(blend.targetFoot!, blend.targetYaw!, blend.targetPitch!);
+              walkSession.walk.setPose(blend.targetFoot!, blend.targetYaw!, blend.targetPitch!);
             } else {
               orbit.moveTo(blend.toPose.position, blend.toPose.target);
             }
@@ -617,7 +476,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
 
       // Normal mode updates.
       const orbitMoving = orbit.update(step);
-      const walkMoving = currentMode === 'walk' ? currentWalk.update(step) : false;
+      const walkMoving = currentMode === 'walk' ? walkSession.walk.update(step) : false;
       const yaw = turntable.update(step);
 
       if (turntable.running && yaw !== appliedYaw) {
@@ -661,19 +520,14 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
       return (
         orbit.moving ||
         turntable.running ||
-        currentWalk.moving ||
+        walkSession.walk.moving ||
         activeBlend !== null ||
         attract.running
       );
     },
 
     dispose(): void {
-      disposed = true;
       release();
-      if (collisionTimeoutId !== null) {
-        clearTimeout(collisionTimeoutId);
-      }
-      collisionAbort?.abort();
       window.removeEventListener('pointerdown', onWindowInput);
       window.removeEventListener('pointermove', onWindowInput);
       window.removeEventListener('keydown', onWindowInput);
@@ -687,10 +541,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
 
       orbit.dispose();
       turntable.stop();
-      currentWalk.dispose();
-      joystick?.dispose();
-      joystickLayer?.dispose();
-      collisionGeometry?.dispose();
+      walkSession.dispose();
 
       canvas.style.touchAction = hadTouchAction;
       if (hadTabIndex === null) {

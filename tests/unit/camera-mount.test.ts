@@ -188,6 +188,16 @@ describe('mountCamera', () => {
     expect(canvas.getAttribute('tabindex')).toBe('3');
   });
 
+  it('disposes owned Walk input and touch controls through the camera mount', () => {
+    const { mount: current } = make({ isTouch: true });
+    const walk = current.walk;
+    walk.enable();
+    expect(document.querySelector('.archviz-joystick-layer')).not.toBeNull();
+    current.dispose();
+    expect(walk.enabled).toBe(false);
+    expect(document.querySelector('.archviz-joystick-layer')).toBeNull();
+  });
+
   it('reports moving while the turntable runs and while the orbit glides', () => {
     const { mount: current } = make();
     expect(current.moving).toBe(false);

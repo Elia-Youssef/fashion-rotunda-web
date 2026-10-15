@@ -5,37 +5,13 @@
 
 import { MeshBVH } from 'three-mesh-bvh';
 import { Vector3 } from 'three';
-import type { BufferGeometry, PerspectiveCamera } from 'three';
 
 import { createCapsuleResolver } from './collide';
 import type { CapsuleResolver } from './collide';
+import type { WalkthroughHandle, WalkthroughOptions } from './contracts';
 import { capturePointer, releasePointer } from './pointer-capture';
 
-export interface WalkthroughOptions {
-  camera: PerspectiveCamera;
-  element: HTMLCanvasElement;
-  collision: BufferGeometry; // the collision mesh's geometry, metres, Y up
-  eyeHeight: number; // 1.65
-  radius: number; // 0.3
-  walkSpeed: number; // 1.4 m/s; Shift doubles it
-  isTouch: boolean;
-  onChange: () => void;
-  now?: () => number;
-}
-
-export interface WalkthroughHandle {
-  enable(): void; // binds its input, requests nothing yet
-  disable(): void; // unbinds, exits pointer lock if held
-  readonly enabled: boolean;
-  update(dtMs: number): boolean; // true when the camera moved this frame
-  setPose(foot: [number, number, number], yaw: number, pitch: number): void;
-  readonly foot: [number, number, number];
-  readonly yaw: number;
-  readonly pitch: number;
-  readonly moving: boolean;
-  setJoystickVector(x: number, y: number): void;
-  dispose(): void;
-}
+export type { WalkthroughHandle, WalkthroughOptions } from './contracts';
 
 const ROTATE_PER_PIXEL = 0.005;
 const MAX_PITCH = (80 * Math.PI) / 180;
