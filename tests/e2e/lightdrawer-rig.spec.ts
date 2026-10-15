@@ -1,29 +1,33 @@
 import { expect, test } from './support/fixtures';
 import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import { nextProofReading, stableDrawCalls } from './support/preservation';
+import { openShowroom } from './support/showroom';
 import {
   SCENE_READY_TIMEOUT,
   STUDIO_LIGHTS,
-  openScene,
   setNativeInput,
   expectRigAndUrl,
   expectDefaultRigWithoutUrl,
   proofDrawCalls,
 } from './support/lightdrawer-helpers';
 
+// Every case here reads serialized rig state, the light panel controls, or the draw-call census.
+// None of that must precede the late chrome mount in src/main.ts: the rig and its URL parameter
+// are runtime state, the panel assertions wait on their own elements, and the proof panel and the
+// test handle are polled for directly. The shared opening also pins each page to its project's
+// backend through the canvas data-backend attribute before any reading.
+const DRAWER_PATH = '/?gate=off&e2e=1&proof=1&music=off';
+
 test.describe('simplified Light Control drawer and rig', () => {
 
-  test('warm and cool colors round-trip exactly for every studio light on each backend', async ({ page }) => {
+  test('warm and cool colors round-trip exactly for every studio light on each backend', async ({
+    page,
+    request,
+  }) => {
     test.setTimeout(120_000);
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    const backend = test.info().project.name;
-    const scenePath =
-      backend === 'webgl2'
-        ? '/?webgl=1&gate=off&e2e=1&proof=1&music=off'
-        : '/?gate=off&e2e=1&proof=1&music=off';
-    let canvas = await openScene(page, scenePath);
-    await expect(canvas).toHaveAttribute('data-backend', backend);
+    await openShowroom(page, request, DRAWER_PATH);
 
     const defaults = { key: '#ffffff', fill: '#ffffff', back: '#ffffff' };
     const colors = { ...defaults };
@@ -55,8 +59,7 @@ test.describe('simplified Light Control drawer and rig', () => {
 
     for (const id of STUDIO_LIGHTS) await applyColor(id, '#ff9a3c', 'warm');
     const warmRig = expectedRig();
-    canvas = await openScene(page, `${scenePath}&rig=${encodeURIComponent(warmRig)}`);
-    await expect(canvas).toHaveAttribute('data-backend', backend);
+    await openShowroom(page, request, `${DRAWER_PATH}&rig=${encodeURIComponent(warmRig)}`);
     await expectRigAndUrl(page, warmRig);
     await page.locator('#shell-light-toggle').click();
     await expect(panel).toBeVisible();
@@ -64,8 +67,7 @@ test.describe('simplified Light Control drawer and rig', () => {
 
     for (const id of STUDIO_LIGHTS) await applyColor(id, '#3c9aff', 'cool');
     const coolRig = expectedRig();
-    canvas = await openScene(page, `${scenePath}&rig=${encodeURIComponent(coolRig)}`);
-    await expect(canvas).toHaveAttribute('data-backend', backend);
+    await openShowroom(page, request, `${DRAWER_PATH}&rig=${encodeURIComponent(coolRig)}`);
     await expectRigAndUrl(page, coolRig);
     await page.locator('#shell-light-toggle').click();
     await expect(panel).toBeVisible();
@@ -74,18 +76,14 @@ test.describe('simplified Light Control drawer and rig', () => {
     await waitForLoopIdle(page);
   });
 
-  test('daylight drag serializes coordinated exposure exactly on each backend', async ({ page }) => {
+  test('daylight drag serializes coordinated exposure exactly on each backend', async ({
+    page,
+    request,
+  }) => {
     test.setTimeout(120_000);
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    const backend = test.info().project.name;
-    const canvas = await openScene(
-      page,
-      backend === 'webgl2'
-        ? '/?webgl=1&gate=off&e2e=1&proof=1&music=off'
-        : '/?gate=off&e2e=1&proof=1&music=off',
-    );
-    await expect(canvas).toHaveAttribute('data-backend', backend);
+    await openShowroom(page, request, DRAWER_PATH);
 
     const panel = page.locator('#shell-light-panel');
     await page.locator('#shell-light-toggle').click();
@@ -113,17 +111,12 @@ test.describe('simplified Light Control drawer and rig', () => {
 
   test('three-point states and intensity endpoints retain one draw-call census on each backend', async ({
     page,
+    request,
   }) => {
     test.setTimeout(120_000);
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    const backend = test.info().project.name;
-    const scenePath =
-      backend === 'webgl2'
-        ? '/?webgl=1&gate=off&e2e=1&proof=1&music=off'
-        : '/?gate=off&e2e=1&proof=1&music=off';
-    const canvas = await openScene(page, scenePath);
-    await expect(canvas).toHaveAttribute('data-backend', backend);
+    const { canvas } = await openShowroom(page, request, DRAWER_PATH);
 
     const enabled = { key: true, fill: false, back: false };
     const intensities = { key: 15, fill: 7, back: 7 };
@@ -197,12 +190,14 @@ test.describe('simplified Light Control drawer and rig', () => {
     await waitForLoopIdle(page);
   });
 
-  test('WebGPU smoke opens the drawer and updates serialized rig when available', async ({ page }) => {
+  test('WebGPU smoke opens the drawer and updates serialized rig when available', async ({
+    page,
+    request,
+  }) => {
     test.skip(test.info().project.name !== 'webgpu', 'WebGPU smoke belongs to the WebGPU project');
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    const canvas = await openScene(page, '/?gate=off&e2e=1&proof=1&music=off');
-    await expect(canvas).toHaveAttribute('data-backend', 'webgpu');
+    await openShowroom(page, request, DRAWER_PATH);
     await page.locator('#shell-light-toggle').click();
     const key = page.locator('[data-light="key"] .lightpanel__switch');
     // `data-scene=ready` is published by the first drawn content frame. On the actual WebGPU

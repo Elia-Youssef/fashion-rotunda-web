@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures';
+import { expect } from './fixtures';
 import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 
 
@@ -42,20 +42,6 @@ export interface DesktopBar {
   /** null when the selector matched nothing, which the tests treat as a failure. */
   overlaps: Record<string, boolean | null>;
   controls: BarControl[];
-}
-
-export function skipUnlessWebgl2(): void {
-  test.skip(test.info().project.name !== 'webgl2', 'DOM behavior is covered once on WebGL2');
-}
-
-export async function openScene(
-  page: Page,
-  path = '/?webgl=1&gate=off&e2e=1&proof=1&music=off',
-): Promise<Locator> {
-  await page.goto(path);
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
-  return canvas;
 }
 
 export async function installSafeArea(page: Page): Promise<void> {
