@@ -12,6 +12,11 @@ import {
   snapshotSurfaces, validateSurfaceShape,
 } from '../../pipeline/gltf/lib/garment-shape.mjs';
 
+// The two full contact fits below run the whole solver over the cylinder fixture: about 1.1 to 1.2 s
+// each on the desktop (2026-10-15, under the 50 percent CPU cap), so the 5 s default has passed only
+// under heavy parallel load. Their budget leaves that load room without hiding a real slowdown.
+const HEAVY_FIT_TIMEOUT_MS = 20_000;
+
 function fixture() {
   const doc = new Document(), buffer = doc.createBuffer(), scene = doc.createScene();
   function group(name: string, geometries: BufferGeometry[]) {
@@ -91,7 +96,7 @@ describe('shape-preserving garment fitting', () => {
       if (protectedBody[i][j]) expect(point.toArray()).toEqual(before.body[i].points[j].toArray());
     }
     expect(measureNormalVertices(surfaceParts(doc, 'garment'), surfaceParts(doc, 'mannequin')).outsideVertices).toBe(0);
-  });
+  }, HEAVY_FIT_TIMEOUT_MS);
 
   it.each(['full', 'half'])('measures zero penetration in each shipped %s fitted look', async set => {
     await MeshoptDecoder.ready;
@@ -203,5 +208,5 @@ describe('shape-preserving fit refusals', () => {
     const [x = 0, y = 0, z = 0] = positions.getElement(index, [0, 0, 0]);
     positions.setElement(index, [x * 1.8, y, z * 1.8]);
     expect(() => validateFitOutput(doc, fit)).toThrow(/Serialized garment fit failed: \d+ outside vertices/);
-  });
+  }, HEAVY_FIT_TIMEOUT_MS);
 });
