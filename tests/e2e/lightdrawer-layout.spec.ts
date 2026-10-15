@@ -1,28 +1,33 @@
 import { expect, test } from './support/fixtures';
 import { waitForSceneInitialization } from './support/ready';
 import { assertCanvasPreserved, nextProofReading } from './support/preservation';
+import { openShowroom } from './support/showroom';
 import type { Locator } from '@playwright/test';
 import {
   SCENE_READY_TIMEOUT,
   STUDIO_LIGHTS,
   VIEWPORTS,
   DESKTOP_BAR_VIEWPORTS,
-  skipUnlessWebgl2,
-  openScene,
   installSafeArea,
   assertHitAndSafe,
   readDesktopBar,
 } from './support/lightdrawer-helpers';
 
+// Every case here reads DOM, geometry, target sizes or preserved canvas identity, none of which
+// the backend changes, so both projects run the file and each page is pinned to its project's
+// backend through the canvas data-backend attribute before any reading. The proof panel is on in
+// production only with proof=1, e2e=1 exposes the handles the proof readings need, and music=off
+// keeps the drawer timings free of the audio unlock.
+const DRAWER_OPEN_PATH = '/?gate=off&e2e=1&proof=1&music=off';
+
 test.describe('simplified Light Control drawer and rig', () => {
   for (const viewport of VIEWPORTS) {
     test(`closed/open contract and preservation at ${viewport.name} ${viewport.width}x${viewport.height}`, async ({
       page,
+      request,
     }) => {
-      skipUnlessWebgl2();
-
       await page.setViewportSize(viewport);
-      await openScene(page);
+      await openShowroom(page, request, DRAWER_OPEN_PATH);
       const toggle = page.locator('#shell-light-toggle');
       const panel = page.locator('#shell-light-panel');
       await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
@@ -58,12 +63,12 @@ test.describe('simplified Light Control drawer and rig', () => {
   for (const viewport of VIEWPORTS.filter((entry) => entry.sheet || entry.name === 'tablet')) {
     test(`safe-area, 44px and hit ownership for every control at ${viewport.width}x${viewport.height}`, async ({
       page,
+      request,
     }) => {
-      skipUnlessWebgl2();
       test.setTimeout(120_000);
 
       await page.setViewportSize(viewport);
-      await openScene(page);
+      await openShowroom(page, request, DRAWER_OPEN_PATH);
       await installSafeArea(page);
       const toggle = page.locator('#shell-light-toggle');
       await assertHitAndSafe(toggle, viewport, 'closed launcher');
@@ -123,12 +128,12 @@ test.describe('simplified Light Control drawer and rig', () => {
   for (const viewport of DESKTOP_BAR_VIEWPORTS) {
     test(`desktop fine-pointer bar at ${viewport.width}x${viewport.height}: four columns, 24px targets, no overlap`, async ({
       page,
+      request,
     }) => {
-      skipUnlessWebgl2();
       test.setTimeout(120_000);
 
       await page.setViewportSize(viewport);
-      await openScene(page);
+      await openShowroom(page, request, DRAWER_OPEN_PATH);
       expect(await page.evaluate(() => matchMedia('(pointer: fine)').matches), 'fine pointer').toBe(true);
       const toggle = page.locator('#shell-light-toggle');
       const closedToggle = await toggle.boundingBox();
@@ -168,8 +173,10 @@ test.describe('simplified Light Control drawer and rig', () => {
     });
   }
 
-  test('desktop coarse-pointer bar keeps 44px targets with every column visible', async ({ guardedBrowser: browser }) => {
-    skipUnlessWebgl2();
+  test('desktop coarse-pointer bar keeps 44px targets with every column visible', async ({
+    guardedBrowser: browser,
+    request,
+  }) => {
     test.setTimeout(120_000);
     const context = await browser.newContext({
       baseURL: 'http://localhost:4173',
@@ -180,7 +187,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     const page = await context.newPage();
 
     try {
-      await openScene(page);
+      await openShowroom(page, request, DRAWER_OPEN_PATH);
       expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches), 'coarse pointer').toBe(true);
       const toggle = page.locator('#shell-light-toggle');
       const closedToggle = await toggle.boundingBox();
@@ -210,13 +217,15 @@ test.describe('simplified Light Control drawer and rig', () => {
     }
   });
 
-  test('desktop forced colours keep native controls at 24px with hit ownership', async ({ page }) => {
-    skipUnlessWebgl2();
+  test('desktop forced colours keep native controls at 24px with hit ownership', async ({
+    page,
+    request,
+  }) => {
     test.setTimeout(120_000);
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.emulateMedia({ forcedColors: 'active' });
-    await openScene(page);
+    await openShowroom(page, request, DRAWER_OPEN_PATH);
     await page.locator('#shell-light-toggle').click();
     const panel = page.locator('#shell-light-panel');
     await expect(panel).toBeVisible();
