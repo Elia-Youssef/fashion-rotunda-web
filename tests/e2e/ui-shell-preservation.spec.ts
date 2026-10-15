@@ -1,22 +1,18 @@
 import { expect, test } from './support/fixtures';
 import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import { assertRendererPreserved, nextProofReading } from './support/preservation';
+import { openShowroom } from './support/showroom';
 import type { Page } from '@playwright/test';
 
 // UI12-AUDIT-06: opening a purely presentational shell disclosure must not reset or otherwise
 // perturb renderer state. This lives apart from the layout suite because it is deliberately about
-// the runtime handles and drawing buffer, not the disclosure's geometry.
+// the runtime handles and drawing buffer, not the disclosure's geometry. The case reads the DOM,
+// the runtime handles and the canvas, none of which the backend changes, so both projects run it
+// against the backend their project promises.
 
 const SCENE_READY_TIMEOUT = 60_000;
 
 type RendererState = Omit<Awaited<ReturnType<typeof nextProofReading>>, 'drawCalls'>;
-
-function skipUnlessWebgl2(): void {
-  test.skip(
-    test.info().project.name !== 'webgl2',
-    'the shared shell-preservation contract runs once on the WebGL 2 fallback',
-  );
-}
 
 async function readRendererState(page: Page): Promise<RendererState> {
   const { drawCalls, ...state } = await nextProofReading(page);
@@ -26,15 +22,13 @@ async function readRendererState(page: Page): Promise<RendererState> {
 
 test('opening and closing Light Control preserves renderer state and returns to idle', async ({
   page,
+  request,
 }) => {
-  skipUnlessWebgl2();
   test.setTimeout(120_000);
 
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('/?webgl=1&gate=off&e2e=1&proof=1');
-  const canvas = page.locator('canvas#scene');
+  const { canvas } = await openShowroom(page, request, '/?gate=off&e2e=1&proof=1');
   const toggle = page.locator('#shell-light-toggle');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
   await expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
   await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
