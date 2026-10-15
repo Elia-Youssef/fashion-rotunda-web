@@ -52,8 +52,8 @@ export interface CameraMount {
   /** Call from the loop's render callback with the frame's dt. */
   update(dtMs: number): void;
   /**
-   * True while the orbit glides, the turntable runs, a walk step or a blend or a preset glide
-   * is in flight.
+   * True while the orbit glides, the turntable runs, a walk step, a blend or a preset glide is in
+   * flight, or the attract tour runs.
    */
   readonly moving: boolean;
   readonly pendingMode: CameraMode | null;

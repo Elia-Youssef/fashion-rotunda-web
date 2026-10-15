@@ -3,7 +3,8 @@
 // frame, update integrates the damping). Written against three.js primitives directly: the addon
 // OrbitControls owns pointer events and schedules its own animation frames, which this page's
 // render loop cannot hand over. The spherical convention is three's own: phi is the angle from
-// +y and theta is atan2(x, z), so a yaw of 0 looks down +z, which is the proof pose.
+// +y and theta is atan2(x, z), so a yaw of 0 puts the camera on the +z side of the target, which is
+// the proof pose.
 
 import { MathUtils, Spherical, Vector3 } from 'three/webgpu';
 import type { PerspectiveCamera } from 'three/webgpu';
@@ -12,7 +13,7 @@ import { capturePointer, releasePointer } from './pointer-capture';
 export interface OrbitLimits {
   minDistance: number; // metres from the target
   maxDistance: number;
-  minPolar: number; // radians from straight up; 0.1 keeps the camera off the zenith
+  minPolar: number; // radians from straight up; 0.15 keeps the camera off the zenith
   maxPolar: number; // Math.PI / 2 - 0.05 keeps it above the floor
 }
 

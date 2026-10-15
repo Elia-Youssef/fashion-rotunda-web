@@ -1,5 +1,5 @@
 // Virtual on-screen joystick for touch walkthrough.
-// Mounted on the canvas's parent, left half. Translates touch drags into a normalized vector
+// Mounted on a fixed layer over the canvas, lower left. Translates touch drags into a normalized vector
 // (x: strafe left/right, y: forward/back), and resets to center on touch release.
 
 import './joystick.css';

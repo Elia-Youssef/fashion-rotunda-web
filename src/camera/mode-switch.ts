@@ -17,7 +17,7 @@ export interface ModeSwitchOptions {
 
 const WALK_LABELS = { idle: 'Walk', loading: 'Loading Walk...', error: 'Retry Walk' };
 
-/** Two camera-mode buttons plus the Walk pointer-lock escape guidance. */
+/** Two camera-mode buttons plus the Walk pointer-lock escape guidance and load-failure notice. */
 export function mountModeSwitch(
   root: HTMLElement,
   mount: ModeSwitchMount,

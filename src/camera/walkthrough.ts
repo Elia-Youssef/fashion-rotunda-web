@@ -27,9 +27,9 @@ export function createWalkthrough(options: WalkthroughOptions): WalkthroughHandl
     collision.getAttribute('position').count > 0;
   const bvh = hasGeometry ? new MeshBVH(collision) : null;
 
-  // Collision workspace, owned by this walkthrough: the proposed foot vector, the capsule
-  // record and the resolver are built once and reset from the input on every step, so a
-  // walking step allocates nothing on the collision path.
+  // Collision workspace, owned by this walkthrough: the proposed foot vector and the resolver
+  // are built once and reset from the input on every step, so a walking step allocates nothing
+  // on the collision path.
   const proposedFoot = new Vector3();
   const resolver: CapsuleResolver | null =
     bvh !== null ? createCapsuleResolver(bvh, { radius, height: eyeHeight }) : null;
