@@ -240,7 +240,7 @@ export async function createRenderer(options: CreateRendererOptions): Promise<Re
 
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, options.pixelRatioCap));
   // Owner's 2026-10-14 choice: ACES raised measured RMS contrast about 18 percent in the frame
-  // and 32 percent on walls; the combined marble choice awaits per-view review.
+  // and 32 percent on walls; the combined look was accepted per view on 2026-10-14.
   renderer.toneMapping = ACESFilmicToneMapping;
   // outputColorSpace stays at the default SRGBColorSpace (Renderer.js line 184).
 

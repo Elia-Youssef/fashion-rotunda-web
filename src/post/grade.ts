@@ -1,7 +1,7 @@
 // The showroom colour grade. Pure, typed arrays only, no three.js, so the
 // lookup table, its monotonicity and its identity round-trip are testable in node.
 //
-// The grade applies in display space after AgX tone mapping and sRGB conversion:
+// The grade applies in display space after ACES filmic tone mapping and sRGB conversion:
 // 1. A gentle S-curve enhancing midtone contrast.
 // 2. A subtle warm lift in the shadows (slight red and green boost, zero at highlight).
 // 3. Monotonic per channel so gradients never reverse or band.

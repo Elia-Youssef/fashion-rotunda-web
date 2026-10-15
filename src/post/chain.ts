@@ -11,7 +11,7 @@
 // 6. Bloom extracted from the HDR beauty above luminance 1.15 and added back to the HDR composite.
 // 7. Composite of beauty + GI + SSR + bloom fed to TRAA (reprojected along velocity) or MSAA.
 // 8. Depth of field applied to the anti-aliased beauty on high tier at rest on WebGPU.
-// 9. Tone mapping (AgX) and output color space conversion (sRGB) transforming HDR to display space.
+// 9. Tone mapping (ACES filmic) and output color space conversion (sRGB) transforming HDR to display space.
 // 10. Color grade through a 3D LUT (Data3DTexture) applied in display space.
 // 11. Aspect-aware vignette darkening the corners by at most 0.25 in display space.
 // 12. Output quad rendered through RenderPipeline with outputColorTransform disabled.
