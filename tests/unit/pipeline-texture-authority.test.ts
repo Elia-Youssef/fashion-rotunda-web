@@ -52,4 +52,18 @@ describe('texture authority', () => {
     expect(second.created).toBe(false);
     expect(second.texture).toBe(first.texture);
   });
+
+  it('refuses canonical bytes that are not a non-empty PNG payload', () => {
+    const replaced = new Document();
+    replaced.createTexture('T_ZootSuit_Hat_NM').setMimeType('image/png').setImage(PLACEHOLDER_BYTES);
+    expect(() => canonicalizeSourceTextures(replaced, new Set(['T_ZootSuit_Hat_NM']), () => new Uint8Array()))
+      .toThrow('Canonical texture T_ZootSuit_Hat_NM did not provide PNG bytes.');
+    expect(bytesOf(replaced.getRoot().listTextures()[0]!)).toEqual([...PLACEHOLDER_BYTES]);
+
+    const created = new Document();
+    const { byName } = canonicalizeSourceTextures(created, new Set(), () => SOURCE_BYTES);
+    expect(() => getOrCreateSourceTexture(created, byName, 'T_Mondrian_Dress_ORM', () => new Uint8Array(0)))
+      .toThrow('Canonical texture T_Mondrian_Dress_ORM did not provide PNG bytes.');
+    expect(created.getRoot().listTextures()[0]!.getImage()).toBeNull();
+  });
 });

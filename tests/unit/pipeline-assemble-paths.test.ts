@@ -1,6 +1,15 @@
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { posix, resolve, win32 } from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { isWithinExportRoot, resolveExportFile } from '../../pipeline/gltf/assemble.mjs';
+import { afterEach, describe, expect, it } from 'vitest';
+import { assemble, isWithinExportRoot, plainText, resolveExportFile } from '../../pipeline/gltf/assemble.mjs';
+
+const temporaryDirectories: string[] = [];
+afterEach(() => {
+  for (const directory of temporaryDirectories.splice(0)) {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 describe.each([
   { name: 'win32', paths: win32, root: 'C:\\export' },
@@ -58,5 +67,36 @@ describe('resolveExportFile', () => {
 
   it('rejects an empty recorded path', () => {
     expect(() => resolveExportFile(root, '')).toThrow('must stay below');
+  });
+});
+
+describe('plainText', () => {
+  it('returns an empty string for non-string catalogue metadata', () => {
+    expect(plainText(42)).toBe('');
+    expect(plainText(null)).toBe('');
+  });
+
+  it('unwraps the NSLOCTEXT wrapper to its source text', () => {
+    expect(plainText('NSLOCTEXT("a","b","hi there")')).toBe('hi there');
+  });
+});
+
+describe('assemble', () => {
+  it('rejects an unknown look selection before writing anything', async () => {
+    const exportRoot = mkdtempSync(resolve(tmpdir(), 'fashion-rotunda-assemble-'));
+    const out = mkdtempSync(resolve(tmpdir(), 'fashion-rotunda-assembled-'));
+    temporaryDirectories.push(exportRoot, out);
+    // The seven catalogue identities with no geometry at all: the selection check runs
+    // after the catalogue validates and before any look, copy or directory is written.
+    writeFileSync(resolve(exportRoot, 'catalog-source.json'), JSON.stringify({
+      looks: ['wallis-dress', 'zoot-suit', 'new-look-dress', 'mondrian-dress', 'jumpsuit-dress',
+        'blue-silk-dress', 'geoffrey-beene'].map((slug) => ({ slug })),
+      rotunda: { file: 'rotunda.glb' },
+      plinth: { file: 'plinth.glb' },
+    }));
+
+    await expect(assemble({ only: 'no-such-look', exportRoot, out, log: () => {} }))
+      .rejects.toThrow('Unknown look selection no-such-look');
+    expect(readdirSync(out)).toEqual([]);
   });
 });

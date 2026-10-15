@@ -75,6 +75,32 @@ describe('emitted output contracts', () => {
       .toThrow('MI_Mondrian_Dress.roughnessFactor must be 1');
   });
 
+  it('fails closed when a contracted material is missing from the document', () => {
+    const document = contractedDocument('looks/zoot-suit.glb');
+    document.getRoot().listMaterials().find((material) => material.getName() === 'MI_ZootSuit')!.dispose();
+
+    expect(() => validateOutputContract(document, { set: 'full', file: 'looks/zoot-suit.glb' }))
+      .toThrow('missing material MI_ZootSuit');
+  });
+
+  it('fails closed when a serialized base colour factor is not neutral', () => {
+    const document = contractedDocument('looks/zoot-suit.glb');
+    document.getRoot().listMaterials().find((material) => material.getName() === 'MI_ZootSuit')!
+      .setBaseColorFactor([0, 0, 0, 0]);
+
+    expect(() => validateOutputContract(document, { set: 'full', file: 'looks/zoot-suit.glb' }))
+      .toThrow('MI_ZootSuit.baseColorFactor must be [1, 1, 1, 1]');
+  });
+
+  it('fails closed when a serialized metallic factor is not neutral', () => {
+    const document = contractedDocument('looks/zoot-suit.glb');
+    document.getRoot().listMaterials().find((material) => material.getName() === 'MI_ZootSuit')!
+      .setMetallicFactor(0);
+
+    expect(() => validateOutputContract(document, { set: 'half', file: 'looks/zoot-suit.glb' }))
+      .toThrow('MI_ZootSuit.metallicFactor must be 1');
+  });
+
   it('fails closed when a serialized authored specular factor is lost', () => {
     const document = contractedDocument('rotunda.glb');
     document.getRoot().listMaterials().find((material) => material.getName() === 'MI_Metal_Brass_02')!

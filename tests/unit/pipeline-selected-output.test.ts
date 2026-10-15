@@ -38,4 +38,11 @@ describe('one look regeneration', () => {
     });
     expect(() => updateSelectedCatalog(before, candidate, 'missing')).toThrow('one existing');
   });
+
+  it('rejects a before-catalogue that already holds the look twice', () => {
+    const before = { looks: [{ id: 'mondrian-dress', name: 'old' }, { id: 'mondrian-dress', name: 'repeat' }] };
+    const candidate = { looks: [{ id: 'mondrian-dress', name: 'new' }] };
+    expect(() => updateSelectedCatalog(before, candidate, 'mondrian-dress'))
+      .toThrow('Selected rebuild requires one existing catalogue entry for mondrian-dress');
+  });
 });

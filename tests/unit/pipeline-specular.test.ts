@@ -23,4 +23,9 @@ describe('KHR_materials_specular optimizer policy', () => {
     expect(shouldPreserveSpecular({ hasSpecularTexture: true })).toBe(true);
     expect(shouldPreserveSpecular({ hasSpecularColorTexture: true })).toBe(true);
   });
+
+  it('preserves a malformed colour length rather than guessing its meaning', () => {
+    expect(shouldPreserveSpecular({ color: [1, 1] })).toBe(true);
+    expect(shouldPreserveSpecular({ color: [1, 1, 1, 1] })).toBe(true);
+  });
 });

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -53,6 +53,31 @@ describe('Unreal export provenance safeguards', () => {
     expect(assertNewIsolatedOutput(allowed)).toBe(allowed);
     expect(() => assertNewIsolatedOutput(exportEvidenceRoot)).toThrow(/child/);
     expect(() => assertNewIsolatedOutput(resolve(exportEvidenceRoot, '..', 'not-evidence'))).toThrow(/child/);
+  });
+
+  it('refuses an export output that already exists, without overwriting it', async () => {
+    const evidence = mkdtempSync(resolve(tmpdir(), 'fashion-rotunda-provenance-'));
+    temporaryDirectories.push(evidence);
+    mkdirSync(resolve(evidence, 'existing-run'));
+    writeFileSync(resolve(evidence, 'existing-run', 'evidence.txt'), 'kept', 'utf8');
+    vi.stubEnv('FR_PROVENANCE_DIR', evidence);
+    vi.resetModules();
+    const provenance = await import('../../pipeline/unreal/provenance.mjs');
+    expect(() => provenance.assertNewIsolatedOutput(resolve(evidence, 'existing-run')))
+      .toThrow(`export output already exists; refusing to overwrite ${resolve(evidence, 'existing-run')}`);
+  });
+
+  it('refuses a colliding evidence run directory', async () => {
+    const evidence = mkdtempSync(resolve(tmpdir(), 'fashion-rotunda-provenance-'));
+    temporaryDirectories.push(evidence);
+    vi.stubEnv('FR_PROVENANCE_DIR', evidence);
+    vi.resetModules();
+    const provenance = await import('../../pipeline/unreal/provenance.mjs');
+    const now = new Date('2026-10-15T12:00:00.000Z');
+    const first = provenance.createEvidenceRun(now, 'cafe01');
+    expect(first.runDirectory).toBe(resolve(evidence, 'export-20261015T120000000Z-cafe01'));
+    expect(() => provenance.createEvidenceRun(now, 'cafe01'))
+      .toThrow(`evidence directory already exists; refusing to overwrite ${first.runDirectory}`);
   });
 
   it('hashes a stable tree and fails closed when its manifest changes', () => {

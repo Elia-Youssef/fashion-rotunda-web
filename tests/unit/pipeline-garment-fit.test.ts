@@ -24,8 +24,58 @@ function shell() {
   return g;
 }
 
+/** The shell with its +x side removed: the reference shell still covers that direction. */
+function openedShell() {
+  const g = shell();
+  const index = g.getIndex()!;
+  g.setIndex(Array.from(index.array).slice(0, index.count - 6));
+  return g;
+}
+
+/**
+ * A three-ring tube whose middle ring is pinched to 0.2 mm exits. A body vertex capped at the
+ * one-millimetre fit margin can never clear an exit below 0.9 mm, so the fit must refuse.
+ */
+function pinchedTube() {
+  const rings = [{ y: -1, x: 1 }, { y: 0, x: 0.0002 }, { y: 1, x: 1 }]
+    .map(({ y, x }) => [[x, y, 1], [x, y, -1], [-x, y, -1], [-x, y, 1]]);
+  const indices: number[] = [];
+  for (let ring = 0; ring < rings.length - 1; ring++) {
+    for (let side = 0; side < 4; side++) {
+      const a = ring * 4 + side, b = ring * 4 + (side + 1) % 4;
+      const c = (ring + 1) * 4 + (side + 1) % 4, d = (ring + 1) * 4 + side;
+      indices.push(a, b, c, a, c, d);
+    }
+  }
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute(rings.flat(2), 3));
+  g.setIndex(indices);
+  return g;
+}
+
 function body() {
   return new BoxGeometry(2.2, 1.6, 1.2);
+}
+
+/** A garment group whose single primitive violates one static-geometry requirement. */
+function invalidGarmentDocument(kind: 'points' | 'skinned' | 'morph' | 'bare') {
+  const doc = new Document(), scene = doc.createScene(), buffer = doc.createBuffer();
+  const position = doc.createAccessor().setBuffer(buffer).setType('VEC3')
+    .setArray(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]));
+  const primitive = doc.createPrimitive();
+  if (kind !== 'bare') primitive.setAttribute('POSITION', position);
+  if (kind === 'points') primitive.setMode(0);
+  if (kind === 'morph') {
+    primitive.addTarget(doc.createPrimitiveTarget().setAttribute('POSITION',
+      doc.createAccessor().setBuffer(buffer).setType('VEC3')
+        .setArray(new Float32Array([0, 0, 0.001, 1, 0, 0.001, 0, 1, 0.001]))));
+  }
+  const node = doc.createNode().setMesh(doc.createMesh().addPrimitive(primitive));
+  if (kind === 'skinned') node.setSkin(doc.createSkin());
+  const group = doc.createNode('garment');
+  group.addChild(node);
+  scene.addChild(group);
+  return doc;
 }
 
 describe('covered surface fitting', () => {
@@ -128,5 +178,44 @@ describe('covered surface fitting', () => {
     const mapping = surfaceParts(doc, 'mannequin')[0].primitive.getExtension<MappingList>('KHR_materials_variants')!;
     expect(mapping.listMappings().flatMap((m: { listVariants(): { getName(): string }[] }) => m.listVariants().map((v) => v.getName())))
       .toEqual(['base', 'light', 'dark']);
+  });
+});
+
+describe('covered surface fitting refusals', () => {
+  it.each(['points', 'skinned', 'morph', 'bare'] as const)('rejects %s garment geometry', (kind) => {
+    const expected = kind === 'points'
+      ? 'Garment coverage requires triangle primitives'
+      : 'Garment coverage requires static position geometry';
+    expect(() => surfaceParts(invalidGarmentDocument(kind), 'garment')).toThrow(expected);
+  });
+
+  it('rejects a garment group absent from every scene', () => {
+    const doc = new Document();
+    doc.createScene().addChild(doc.createNode('mannequin'));
+    expect(() => surfaceParts(doc, 'garment')).toThrow('Missing surface group garment');
+  });
+
+  it('rejects a fit that opens a direction the reference shell covered', () => {
+    const bodyParts = [part(body())];
+    const reference = createCoverage(combinedSurface([part(shell())]), combinedSurface(bodyParts));
+    const opened = createCoverage(combinedSurface([part(openedShell())]), combinedSurface(bodyParts), reference);
+    expect(() => opened.query(new Vector3(1.1, 0, 0)))
+      .toThrow('Fitting opened a previously covered garment direction');
+  });
+
+  it('rejects an unknown fit method before touching any geometry', () => {
+    expect(() => fitCoveredSurface([part(shell())], [part(body())],
+      // @ts-expect-error The unknown method name is exactly what the refusal under test receives.
+      'sideways')).toThrow('Unknown fit method sideways');
+  });
+
+  it('refuses a body that can never clear a sub-millimetre shell exit', () => {
+    expect(() => fitCoveredSurface([part(pinchedTube())], [part(body())], 'body-inward'))
+      .toThrow('Garment fit did not converge');
+  });
+
+  it('skips serialized validation for a look the fit policy did not touch', () => {
+    const fit = applyLookFit(new Document(), 'unaffected');
+    expect(validateFitOutput(new Document(), fit)).toEqual({ checked: false });
   });
 });

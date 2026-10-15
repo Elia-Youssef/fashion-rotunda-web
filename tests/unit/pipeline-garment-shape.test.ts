@@ -4,11 +4,12 @@ import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { MeshoptDecoder } from 'meshoptimizer';
 import { describe, expect, it } from 'vitest';
 import { combinedSurface, createCoverage, measureSurface, surfaceParts } from '../../pipeline/gltf/lib/garment-coverage.mjs';
-import { applyLookFit, fitCoveredSurface, LOOK_FIT_POLICIES } from '../../pipeline/gltf/lib/garment-fit.mjs';
+import { applyLookFit, fitCoveredSurface, LOOK_FIT_POLICIES, validateFitOutput } from '../../pipeline/gltf/lib/garment-fit.mjs';
 import { assertNoSurfaceIntersections } from '../../pipeline/gltf/lib/garment-intersection.mjs';
 import { measureNormalVertices } from '../../pipeline/gltf/lib/garment-measurement.mjs';
 import {
-  fitSmoothGarment, MAX_GARMENT_DISPLACEMENT, MAX_GARMENT_EDGE_RATIO, snapshotSurfaces, validateSurfaceShape,
+  constrainGarmentFalloff, fitSmoothGarment, MAX_GARMENT_DISPLACEMENT, MAX_GARMENT_EDGE_RATIO,
+  snapshotSurfaces, validateSurfaceShape,
 } from '../../pipeline/gltf/lib/garment-shape.mjs';
 
 function fixture() {
@@ -117,4 +118,90 @@ describe('shape-preserving garment fitting', () => {
     expect(() => assertNoSurfaceIntersections(garment)).toThrow('Garment self-intersection');
   });
 
+});
+
+/** A garment group and a mannequin group with authored normals, the shape the solver reads. */
+function normalDocument(garment: BufferGeometry, body: BufferGeometry[]) {
+  const doc = new Document(), buffer = doc.createBuffer(), scene = doc.createScene();
+  for (const [name, geometries] of [['garment', [garment]], ['mannequin', body]] as const) {
+    const group = doc.createNode(name); scene.addChild(group);
+    for (const geometry of geometries) {
+      const primitive = doc.createPrimitive();
+      for (const [attribute, field] of [['POSITION', 'position'], ['NORMAL', 'normal']] as const) {
+        primitive.setAttribute(attribute, doc.createAccessor().setType('VEC3').setBuffer(buffer)
+          .setArray(new Float32Array(geometry.getAttribute(field).array)));
+      }
+      primitive.setIndices(doc.createAccessor().setType('SCALAR').setBuffer(buffer)
+        .setArray(new Uint32Array(geometry.getIndex()!.array)));
+      group.addChild(doc.createNode().setMesh(doc.createMesh().addPrimitive(primitive)));
+    }
+  }
+  return doc;
+}
+
+describe('shape-preserving fit refusals', () => {
+  it('rejects a contact probe when the filtered body surface is empty', () => {
+    // The mannequin surrounds the shell, so every vertex is covered and none is protected:
+    // the protected-vertex contact body contains no triangle for the closest-point query.
+    const doc = normalDocument(new CylinderGeometry(0.1, 0.1, 0.4, 24, 4, true),
+      [new CylinderGeometry(0.2, 0.2, 0.3, 16, 4)]);
+    const garment = surfaceParts(doc, 'garment'), body = surfaceParts(doc, 'mannequin');
+    const protectedBody = body.map(part => part.points.map(() => false));
+    const adjustment = {
+      reference: createCoverage(combinedSurface(garment), combinedSurface(body)),
+      referenceBody: combinedSurface(body),
+      protectedBody,
+      update: () => {},
+    };
+    expect(() => fitSmoothGarment(garment, body, {}, adjustment))
+      .toThrow('Body contact has no nearest surface');
+  });
+
+  it('rejects a topology or opening change even when positions are untouched', () => {
+    const { garment, body } = fixture(), before = snapshotSurfaces(garment, body);
+    const indices = garment[0].indices;
+    [indices[0], indices[1]] = [indices[1], indices[0]];
+    expect(() => validateSurfaceShape(garment, body, before))
+      .toThrow('Garment fitting changed topology or openings');
+  });
+
+  it('rejects a face collapsed onto its own edge', () => {
+    const { garment, body } = fixture(), before = snapshotSurfaces(garment, body);
+    const [a, b, c] = garment[0].indices.slice(0, 3);
+    garment[0].points[c].copy(garment[0].points[a].clone().lerp(garment[0].points[b], 0.5));
+    expect(() => validateSurfaceShape(garment, body, before)).toThrow('Garment fitting collapsed a face');
+  });
+
+  it('refuses falloff offsets that cannot satisfy a pinned edge', () => {
+    // Both endpoints are pinned at their original places, two units apart along an edge whose
+    // gradient bound is 47.5 percent: no projection can ever satisfy it.
+    const points = [new Vector3(0, 0, 0), new Vector3(2, 0, 0)];
+    const neighbors = [new Map([[1, 1]]), new Map([[0, 1]])];
+    expect(() => constrainGarmentFalloff([new Vector3(), new Vector3()], neighbors, points, new Set([0, 1])))
+      .toThrow('Garment falloff did not meet the edge gradient bound');
+  });
+
+  it('refuses a smooth fit whose every shell vertex is pinned at the openings', () => {
+    // A one-ring shell pins all of its vertices at the two opening loops, so the falloff
+    // constraint zeroes every offset: the two-millimetre poke can never be cleared.
+    const doc = normalDocument(new CylinderGeometry(0.1, 0.1, 0.4, 24, 1, true),
+      [new CylinderGeometry(0.075, 0.075, 0.3, 16, 4)]);
+    const garment = surfaceParts(doc, 'garment'), body = surfaceParts(doc, 'mannequin');
+    const poke = body[0].points.findIndex(point => point.y === 0 && point.z > 0.07 && point.x === 0);
+    body[0].points[poke].set(0, 0, 0.102);
+    expect(() => fitSmoothGarment(garment, body))
+      .toThrow('Smooth garment fitting did not converge');
+  });
+
+  it('rejects a serialized contact fit whose mannequin pokes back through the shell', () => {
+    const { doc } = fixture();
+    const fit = applyLookFit(doc, 'mondrian-dress');
+    expect(validateFitOutput(doc, fit)).toMatchObject({ checked: true });
+    const torso = surfaceParts(doc, 'mannequin')[0];
+    const positions = torso.primitive.getAttribute('POSITION')!;
+    const index = torso.points.findIndex(point => point.x < -0.05);
+    const [x = 0, y = 0, z = 0] = positions.getElement(index, [0, 0, 0]);
+    positions.setElement(index, [x * 1.8, y, z * 1.8]);
+    expect(() => validateFitOutput(doc, fit)).toThrow(/Serialized garment fit failed: \d+ outside vertices/);
+  });
 });
