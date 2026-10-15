@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { CANDELA_RANGE, DAYLIGHT_RANGE, DEFAULT_RIG } from '../../src/lighting/rig';
+import { CANDELA_RANGE, DAYLIGHT_RANGE, DAYLIGHT_STEP, DEFAULT_RIG } from '../../src/lighting/rig';
 import type { Rig } from '../../src/lighting/rig';
 import { mountLightPanel } from '../../src/ui/lightpanel';
 import type { LightPanelHandle } from '../../src/ui/lightpanel';
@@ -238,5 +238,123 @@ describe('mountLightPanel', () => {
     range.value = '10';
     range.dispatchEvent(new Event('input', { bubbles: true }));
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('names the daylight phase on both sides of every boundary', () => {
+    const handle = mount();
+    const phase = (daylight: number): string => {
+      handle.setRig({ ...DEFAULT_RIG, daylight });
+      return daylightReadout();
+    };
+    expect(phase(0.34)).toBe('Dawn');
+    expect(phase(0.35)).toBe('Day');
+    expect(phase(0.64)).toBe('Day');
+    expect(phase(0.65)).toBe('Day');
+    expect(phase(0.66)).toBe('Noon');
+  });
+
+  it('steps the daylight range at the authored resolution', () => {
+    mount();
+    expect(daylightControl().step).toBe(String(DAYLIGHT_STEP));
+  });
+
+  it('renders every studio switch as a native checkbox', () => {
+    mount();
+    for (const id of ['key', 'fill', 'back']) {
+      expect(studioControl(id, 'on').type).toBe('checkbox');
+    }
+  });
+
+  it('names the panel landmark and hides the guidance marks from assistive technology', () => {
+    mount();
+    expect(root.querySelector('section.lightpanel')?.getAttribute('aria-label')).toBe(
+      'Studio lights',
+    );
+    expect(root.querySelector('.lightpanel__guidance')?.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('anchors the daylight range to its Dawn, Day, Noon datalist', () => {
+    mount();
+    const listId = daylightControl().getAttribute('list');
+    expect(listId).toBeTruthy();
+    const options = [
+      ...(document.getElementById(listId ?? '')?.querySelectorAll('option') ?? []),
+    ];
+    expect(options.map((option) => option.value)).toEqual(['0', '0.5', '1.0']);
+    expect(options.map((option) => option.label)).toEqual(['Dawn', 'Day', 'Noon']);
+  });
+
+  it('carries a tooltip on every control', () => {
+    mount();
+    const controls = [
+      ...(['key', 'fill', 'back'] as const).flatMap((id) => [
+        studioControl(id, 'on'),
+        studioControl(id, 'intensity'),
+        studioControl(id, 'color'),
+      ]),
+      daylightControl(),
+    ];
+    expect(controls).toHaveLength(10);
+    for (const control of controls) {
+      expect(control.dataset['tooltip'] ?? '').not.toBe('');
+    }
+  });
+
+  it('setRig moves every input value, not only the readouts', () => {
+    const handle = mount();
+    handle.setRig({
+      lights: [
+        { ...DEFAULT_RIG.lights[0], intensity: 40, color: '#123456' },
+        DEFAULT_RIG.lights[1],
+        DEFAULT_RIG.lights[2],
+      ],
+      daylight: 0.9,
+      exposure: 1,
+    });
+    expect(studioControl('key', 'intensity').value).toBe('40');
+    expect(studioControl('key', 'color').value).toBe('#123456');
+    expect(daylightControl().value).toBe('0.9');
+  });
+
+  it('setRig leaves a row untouched when the incoming rig lacks that light', () => {
+    const handle = mount();
+    handle.setRig({
+      lights: [
+        { ...DEFAULT_RIG.lights[0], intensity: 40 },
+        { ...DEFAULT_RIG.lights[1], intensity: 20 },
+      ],
+      daylight: 0.2,
+      exposure: 1,
+    });
+    expect(studioReadout('key', 'intensity')).toBe('40.0 cd');
+    expect(studioReadout('fill', 'intensity')).toBe('20.0 cd');
+    expect(studioReadout('back', 'intensity')).toBe('7.0 cd');
+    expect(studioControl('back', 'on').checked).toBe(false);
+    expect(daylightReadout()).toBe('Dawn');
+  });
+
+  it('gives every mounted panel its own control ids', () => {
+    mount();
+    const other = document.createElement('div');
+    document.body.appendChild(other);
+    const second = mountLightPanel(other, { rig: DEFAULT_RIG, onChange: vi.fn() });
+    try {
+      const ids = (scope: HTMLElement): string[] =>
+        [...scope.querySelectorAll('[id]')].map((node) => node.id);
+      const firstIds = ids(root);
+      const secondIds = ids(other);
+      expect(firstIds.length).toBeGreaterThan(0);
+      expect(new Set([...firstIds, ...secondIds]).size).toBe(firstIds.length + secondIds.length);
+
+      const labelsResolveWithin = (scope: HTMLElement): boolean =>
+        [...scope.querySelectorAll<HTMLLabelElement>('label[for]')].every((label) =>
+          scope.contains(document.getElementById(label.htmlFor)),
+        );
+      expect(labelsResolveWithin(root)).toBe(true);
+      expect(labelsResolveWithin(other)).toBe(true);
+    } finally {
+      second.dispose();
+      other.remove();
+    }
   });
 });
