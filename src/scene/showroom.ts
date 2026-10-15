@@ -8,7 +8,6 @@
 // the lighting, which main.ts composes from src/lighting around this scene.
 
 import {
-  Box3,
   Color,
   Euler,
   Group,
@@ -35,6 +34,7 @@ import { createLookOwner } from './look-owner';
 import type { LookOwner } from './look-owner';
 import { applyTunings } from './materials';
 import type { TuningAcquire } from './materials';
+import { loadStatics } from './statics';
 import { listVariants, selectVariant } from './variants';
 import type { VariantTarget } from './variants';
 
@@ -106,12 +106,6 @@ interface LoadedLook {
   casters: Caster[];
   /** The look's own opacity uniform; while it fades, its value is written once per frame. */
   opacity: FadeUniform;
-}
-
-/** One parsed GLTF paired with the owner that releases it if it never reaches the scene. */
-interface OwnedGltf {
-  gltf: GLTF;
-  owner: LookOwner;
 }
 
 /** The directory a file was fetched from, which is what GLTFLoader.parse resolves relative URIs against. */
@@ -328,18 +322,6 @@ export function createShowroom(options: ShowroomOptions): Showroom {
     };
   }
 
-  /**
-   * A parsed static and the owner of its resources. Statics are page-lifetime once mounted, but
-   * the owner is what frees a parse that never gets there: its own load failing is nothing to
-   * clean up, while the other static of the pair failing after this one parsed is.
-   */
-  async function loadOwned(url: string, signal: AbortSignal): Promise<OwnedGltf> {
-    const gltf = await loadGltf(url, signal);
-    const owner = createLookOwner();
-    owner.collect(gltf.scene);
-    return { gltf, owner };
-  }
-
   function disposeLook(loaded: LoadedLook): void {
     loaded.root.removeFromParent();
     loaded.owner.retire();
@@ -373,53 +355,20 @@ export function createShowroom(options: ShowroomOptions): Showroom {
     scene,
     camera,
 
-    async loadStatics(): Promise<void> {
-      // Neither static is ever replaced, so neither needs an abort route; the controller exists
-      // only because loadGltf takes a signal.
-      const forever = new AbortController().signal;
-      const loads = [
-        loadOwned(contentUrl(contentBase, catalog.rotunda.file), forever),
-        loadOwned(contentUrl(contentBase, catalog.plinth.file), forever),
-      ];
-      try {
-        const [rotunda, plinth] = await Promise.all(loads);
-        await options.beforeMount?.('statics');
-        tuneHierarchy(
-          rotunda.gltf.scene,
-          (material: Material) => rotunda.owner.register(material),
-          catalog.rotunda.file,
-        );
-        tuneHierarchy(
-          plinth.gltf.scene,
-          (material: Material) => plinth.owner.register(material),
-          catalog.plinth.file,
-        );
-        // The level origin is the room centre at floor height and the plinth stands on it, so
-        // both keep the transform they were exported with.
-        decorate(rotunda.gltf.scene);
-        decorate(plinth.gltf.scene);
-        scene.add(rotunda.gltf.scene);
-        turntable.add(plinth.gltf.scene);
-        plinthRoot = plinth.gltf.scene;
-        plinthTopY = new Box3().setFromObject(plinth.gltf.scene).max.y;
-        if (onScreen !== null) {
-          // A look that arrived before the plinth was measured is standing at floor height.
-          onScreen.root.position.y = plinthTopY;
-        }
-        onChange();
-      } catch (error) {
-        // Whatever failed, nothing parsed stays on the heap: each load releases its own parse,
-        // including a sibling that settles only after the pair has already failed. Tuning may
-        // have replaced parsed materials with upgraded instances by then, so each root is
-        // collected as it is now, keeping the upgrade owned with the parse it came from.
-        for (const load of loads) {
-          void load.then((owned: OwnedGltf) => {
-            owned.owner.collect(owned.gltf.scene);
-            owned.owner.retire();
-          }, (): undefined => undefined);
-        }
-        throw error;
-      }
+    loadStatics(): Promise<void> {
+      return loadStatics({
+        loadGltf, catalog, contentBase, decorate, tune: tuneHierarchy,
+        beforeMount: options.beforeMount, scene, turntable,
+        mounted: (statics): void => {
+          plinthRoot = statics.plinthRoot;
+          plinthTopY = statics.plinthTopY;
+          if (onScreen !== null) {
+            // A look that arrived before the plinth was measured is standing at floor height.
+            onScreen.root.position.y = plinthTopY;
+          }
+          onChange();
+        },
+      });
     },
 
     async showLook(id: string): Promise<void> {
