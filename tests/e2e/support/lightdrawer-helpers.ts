@@ -4,6 +4,14 @@ import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 
 export const SCENE_READY_TIMEOUT = 60_000;
 
+// The polls behind expectRigAndUrl and expectDefaultRigWithoutUrl: after a light control
+// changes, the serialized rig must reach both places the test reads, the rigState() test handle
+// and the page URL's rig parameter. The runtime read lands within an event-loop turn, but the
+// share mount writes the URL through history.replaceState throttled to at most 4 Hz, and the
+// software-rendered webgl2 workers can stall a page for seconds at a time; 30 s spans many of
+// both intervals and stays inside the 120 s per-test budget the rig spec sets.
+export const RIG_SERIALIZATION_TIMEOUT = 30_000;
+
 export const SAFE_AREA = { top: 19, right: 23, bottom: 29, left: 17 } as const;
 
 export const STUDIO_LIGHTS = ['key', 'fill', 'back'] as const;
@@ -156,16 +164,24 @@ export async function setNativeInput(locator: Locator, value: string): Promise<v
 
 export async function expectRigAndUrl(page: Page, expected: string): Promise<void> {
   await expect
-    .poll(() => page.evaluate(() => window.archvizE2E?.rigState() ?? null), { timeout: 30_000 })
+    .poll(() => page.evaluate(() => window.archvizE2E?.rigState() ?? null), {
+      timeout: RIG_SERIALIZATION_TIMEOUT,
+    })
     .toBe(expected);
-  await expect.poll(() => new URL(page.url()).searchParams.get('rig'), { timeout: 30_000 }).toBe(expected);
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('rig'), { timeout: RIG_SERIALIZATION_TIMEOUT })
+    .toBe(expected);
 }
 
 export async function expectDefaultRigWithoutUrl(page: Page, expected: string): Promise<void> {
   await expect
-    .poll(() => page.evaluate(() => window.archvizE2E?.rigState() ?? null), { timeout: 30_000 })
+    .poll(() => page.evaluate(() => window.archvizE2E?.rigState() ?? null), {
+      timeout: RIG_SERIALIZATION_TIMEOUT,
+    })
     .toBe(expected);
-  await expect.poll(() => new URL(page.url()).searchParams.get('rig'), { timeout: 30_000 }).toBeNull();
+  await expect
+    .poll(() => new URL(page.url()).searchParams.get('rig'), { timeout: RIG_SERIALIZATION_TIMEOUT })
+    .toBeNull();
 }
 
 export async function proofDrawCalls(page: Page): Promise<number | null> {

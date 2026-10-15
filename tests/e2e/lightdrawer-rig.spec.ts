@@ -11,6 +11,27 @@ import {
   proofDrawCalls,
 } from './support/lightdrawer-helpers';
 
+// The whole-test budget: the colour round-trip alone opens the showroom three times, and every
+// opening is a full page load whose steps share a 60 s budget inside openShowroom, while the 90 s
+// suite default covers one load plus a look switch (playwright.config.ts). The census case adds
+// its proof-panel refresh polls and the closing render-loop idle wait, so these cases carry
+// 120 s.
+const RIG_TEST_TIMEOUT = 120_000;
+
+// The proof panel rewrites its draw-call census only across rendered frames and can still show
+// one stale warm-up reading after initialization, so each poll waits for the census to reflect
+// the rig state the test just set. Render-on-demand draws only when work exists, and the
+// software-rendered webgl2 project under four workers lands frames seconds apart, so the poll
+// spans many frame intervals while staying inside the 120 s test budget.
+const PROOF_CENSUS_TIMEOUT = 30_000;
+
+// The WebGPU smoke case waits for the rig state's first publication through the rigState() test
+// handle. The handle mounts after shader compilation, which the canvas data-scene=ready
+// attribute (published by the first drawn frame) does not cover, so the poll starts only after
+// the opening has pinned readiness; 30 s leaves many multiples of the compilation delay while
+// staying inside the 120 s test budget.
+const RIG_HANDLE_PUBLISH_TIMEOUT = 30_000;
+
 // Every case here reads serialized rig state, the light panel controls, or the draw-call census.
 // None of that must precede the late chrome mount in src/main.ts: the rig and its URL parameter
 // are runtime state, the panel assertions wait on their own elements, and the proof panel and the
@@ -24,7 +45,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     page,
     request,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(RIG_TEST_TIMEOUT);
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await openShowroom(page, request, DRAWER_PATH);
@@ -80,7 +101,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     page,
     request,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(RIG_TEST_TIMEOUT);
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await openShowroom(page, request, DRAWER_PATH);
@@ -113,7 +134,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     page,
     request,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(RIG_TEST_TIMEOUT);
 
     await page.setViewportSize({ width: 1440, height: 900 });
     const { canvas } = await openShowroom(page, request, DRAWER_PATH);
@@ -134,7 +155,7 @@ test.describe('simplified Light Control drawer and rig', () => {
       baselineDrawCalls = stableDrawCalls(previous, current);
       previous = current;
       return baselineDrawCalls;
-    }, { timeout: 30_000 }).not.toBeNull();
+    }, { timeout: PROOF_CENSUS_TIMEOUT }).not.toBeNull();
     if (baselineDrawCalls === null) throw new Error('missing Key-only draw-call baseline');
 
     const panel = page.locator('#shell-light-panel');
@@ -156,7 +177,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     await toggle('fill').click();
     enabled.fill = true;
     await expectRigAndUrl(page, expectedRig());
-    await expect.poll(() => proofDrawCalls(page), { timeout: 30_000 }).toBe(baselineDrawCalls);
+    await expect.poll(() => proofDrawCalls(page), { timeout: PROOF_CENSUS_TIMEOUT }).toBe(baselineDrawCalls);
 
     for (const id of STUDIO_LIGHTS) {
       const range = panel.locator(`[data-light="${id}"] .lightpanel__range`);
@@ -167,7 +188,7 @@ test.describe('simplified Light Control drawer and rig', () => {
       await expect(readout, `${id} minimum intensity readout`).toHaveText('0.0 cd');
       await expectRigAndUrl(page, expectedRig());
       await expect(canvas).toHaveAttribute('data-scene', 'ready');
-      await expect.poll(() => proofDrawCalls(page), { timeout: 30_000 }).toBeGreaterThan(0);
+      await expect.poll(() => proofDrawCalls(page), { timeout: PROOF_CENSUS_TIMEOUT }).toBeGreaterThan(0);
 
       await setNativeInput(range, '50');
       intensities[id] = 50;
@@ -175,7 +196,7 @@ test.describe('simplified Light Control drawer and rig', () => {
       await expect(readout, `${id} maximum intensity readout`).toHaveText('50.0 cd');
       await expectRigAndUrl(page, expectedRig());
       await expect(canvas).toHaveAttribute('data-scene', 'ready');
-      await expect.poll(() => proofDrawCalls(page), { timeout: 30_000 }).toBeGreaterThan(0);
+      await expect.poll(() => proofDrawCalls(page), { timeout: PROOF_CENSUS_TIMEOUT }).toBeGreaterThan(0);
     }
 
     for (const id of STUDIO_LIGHTS) {
@@ -204,7 +225,9 @@ test.describe('simplified Light Control drawer and rig', () => {
     // path, shader compilation and final test-handle mounting can still follow it, so wait for
     // the handle rather than treating that transient null as the pre-toggle rig state.
     await expect
-      .poll(() => page.evaluate(() => window.archvizE2E?.rigState() ?? null), { timeout: 30_000 })
+      .poll(() => page.evaluate(() => window.archvizE2E?.rigState() ?? null), {
+        timeout: RIG_HANDLE_PUBLISH_TIMEOUT,
+      })
       .toMatch(/^v2;/);
     const before = await page.evaluate(() => window.archvizE2E?.rigState() ?? null);
     await key.click();
