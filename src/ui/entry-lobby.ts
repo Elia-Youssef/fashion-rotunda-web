@@ -3,15 +3,18 @@
 // Owns the branded lobby, state machine, focus trap, truthful progress,
 // audio preference contract, and deferred boot trigger.
 // Does NOT import renderer, scene, camera, material, lighting, or post-processing modules.
+// The markup and the progress tracker live in entry-lobby/markup and entry-lobby/progress,
+// re-exported here, so this module stays the single import point for the lobby.
 
 import './entry-lobby.css';
 
 import { resolveMusicPreference, storeMusicPreference } from '../audio/preference';
 import type { KeyValueStore } from '../audio/preference';
-import { contentUrl, loadCatalog } from '../catalog/catalog';
-import { expectedBytes, formatProgress, progressRatio } from '../loading/progress';
+import { formatProgress, progressRatio } from '../loading/progress';
 import { skySourceFromSearch } from '../lighting/sky';
-import type { ManifestFile, ResourceEntry } from '../loading/progress';
+import { buildLobbyMarkup } from './entry-lobby/markup';
+import { trackFirstFrameProgress } from './entry-lobby/progress';
+import type { ProgressReading } from './entry-lobby/progress';
 
 export type LobbyState =
   | 'idle'
@@ -24,13 +27,8 @@ export type LobbyState =
   | 'error'
   | 'disposed';
 
-export interface ProgressReading {
-  received: number;
-  expected: number;
-  ended: number;
-  totalFiles: number;
-  fromCache: boolean;
-}
+export { trackFirstFrameProgress };
+export type { ProgressReading };
 
 export interface EntryLobbyOptions {
   /** Where to find or mount the lobby. Default: document.body */
@@ -112,35 +110,6 @@ export function lobbyWanted(search: string): boolean {
   return true;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
-function readManifestFiles(json: unknown, setName: string): Record<string, ManifestFile> | null {
-  if (!isRecord(json) || !isRecord(json['sets'])) {
-    return null;
-  }
-  const set = json['sets'][setName];
-  if (!isRecord(set) || !isRecord(set['files'])) {
-    return null;
-  }
-  const files: Record<string, ManifestFile> = {};
-  for (const [name, value] of Object.entries(set['files'])) {
-    if (isRecord(value) && typeof value['bytes'] === 'number' && Number.isFinite(value['bytes'])) {
-      files[name] = { bytes: value['bytes'] };
-    }
-  }
-  return files;
-}
-
-function resourceUrl(name: string): string {
-  try {
-    return new URL(name, window.location.href).href;
-  } catch {
-    return name;
-  }
-}
-
 /** Fallback helper to safely read window.localStorage */
 function safeLocalStorage(): KeyValueStore | null {
   try {
@@ -148,125 +117,6 @@ function safeLocalStorage(): KeyValueStore | null {
   } catch {
     return null;
   }
-}
-
-/**
- * `countEnvironment` is true only under the ?sky=hdr diagnostic: the default sky is generated in
- * memory and requests no environment file.
- */
-export function trackFirstFrameProgress(
-  contentBase: string,
-  onProgress: (reading: ProgressReading) => void,
-  countEnvironment = false,
-): () => void {
-  let expected = 0;
-  let expectedPaths: string[] = [];
-  let fromCache = false;
-  let stopped = false;
-
-  function contentEntries(): ResourceEntry[] {
-    const readings: ResourceEntry[] = [];
-    if (typeof performance === 'undefined' || !performance.getEntriesByType) {
-      return readings;
-    }
-    for (const measured of performance.getEntriesByType('resource')) {
-      const resource: {
-        entryType?: string;
-        name?: string;
-        transferSize?: number;
-        responseEnd?: number;
-      } = measured;
-      if (resource.entryType !== 'resource' || typeof resource.name !== 'string') {
-        continue;
-      }
-      readings.push({
-        name: resource.name,
-        transferSize: typeof resource.transferSize === 'number' ? resource.transferSize : 0,
-        responseEnd: typeof resource.responseEnd === 'number' ? resource.responseEnd : 0,
-      });
-    }
-    return readings;
-  }
-
-  function countEnded(mine: ResourceEntry[]): number {
-    const arrived = new Set(mine.map((one) => resourceUrl(one.name)));
-    return expectedPaths.filter((path) => arrived.has(path)).length;
-  }
-
-  function update(): void {
-    if (stopped) {
-      return;
-    }
-    const mine = contentEntries().filter((one) => expectedPaths.includes(resourceUrl(one.name)));
-    const received = mine.reduce((total, entry) => total + entry.transferSize, 0);
-    if (!fromCache && mine.length > 0) {
-      const first = mine.reduce((left, right) => (right.responseEnd < left.responseEnd ? right : left));
-      if (first.transferSize === 0) {
-        fromCache = true;
-      }
-    }
-    const ended = countEnded(mine);
-    onProgress({
-      received,
-      expected,
-      ended,
-      totalFiles: expectedPaths.length,
-      fromCache,
-    });
-  }
-
-  let observer: PerformanceObserver | null = null;
-  if (typeof PerformanceObserver !== 'undefined') {
-    try {
-      observer = new PerformanceObserver(() => {
-        update();
-      });
-      observer.observe({ type: 'resource', buffered: true });
-    } catch {
-      // PerformanceObserver type resource may not be supported in some environments
-    }
-  }
-
-  const ticker = window.setInterval(update, 250);
-
-  void (async () => {
-    try {
-      // One manifest document at the content root holds both sets (sets.full, sets.half); the
-      // half folder ships no manifest of its own, so the document is read from the root and the
-      // set is picked by name below.
-      const manifestBase = contentBase.endsWith('/half')
-        ? contentBase.slice(0, -'/half'.length)
-        : contentBase;
-      const [manifestResponse, catalog] = await Promise.all([
-        fetch(contentUrl(manifestBase, 'manifest.json')),
-        loadCatalog(contentUrl(contentBase, 'catalog.json')),
-      ]);
-      if (manifestResponse.ok) {
-        const setName = contentBase.endsWith('/half') ? 'half' : 'full';
-        const files = readManifestFiles(await manifestResponse.json(), setName);
-        const firstLook = catalog.looks[0]?.file ?? '';
-        const environmentFile = countEnvironment ? catalog.environment.file : null;
-        expected = files === null ? 0 : expectedBytes(files, firstLook, environmentFile);
-        expectedPaths = [
-          catalog.rotunda.file,
-          catalog.plinth.file,
-          firstLook,
-        ].map((file) => resourceUrl(contentUrl(contentBase, file)));
-        if (environmentFile !== null) {
-          expectedPaths.push(resourceUrl(contentUrl(manifestBase, environmentFile)));
-        }
-        update();
-      }
-    } catch (err) {
-      console.warn('[archviz] progress tracker could not load manifest', err);
-    }
-  })();
-
-  return () => {
-    stopped = true;
-    observer?.disconnect();
-    window.clearInterval(ticker);
-  };
 }
 
 export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
@@ -278,115 +128,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
   const isHydrating = lobbyElement !== null;
 
   if (lobbyElement === null) {
-    lobbyElement = doc.createElement('div');
-    lobbyElement.id = 'entry-lobby';
-    lobbyElement.className = 'entry-lobby';
-    lobbyElement.setAttribute('role', 'dialog');
-    lobbyElement.setAttribute('aria-modal', 'true');
-    lobbyElement.setAttribute('aria-labelledby', 'entry-lobby-title');
-    lobbyElement.dataset['state'] = 'idle';
-
-    lobbyElement.innerHTML = `
-      <div class="entry-lobby__scrim" aria-hidden="true"></div>
-      <div class="entry-lobby__poster" aria-hidden="true">
-        <img src="/poster/hero.jpg" alt="" class="entry-lobby__poster-img" />
-      </div>
-
-      <header class="entry-lobby__header">
-        <div class="entry-lobby__brand-lockup">
-          <div class="entry-lobby__mark" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
-              <circle cx="50" cy="50" r="45" stroke="currentColor" stroke-width="2.5" />
-              <circle cx="50" cy="50" r="40" stroke="currentColor" stroke-width="1" stroke-dasharray="2 2" opacity="0.75" />
-              <path d="M 23 48 A 27 27 0 0 1 77 48" stroke="currentColor" stroke-width="2" />
-              <line x1="50" y1="13" x2="50" y2="21" stroke="currentColor" stroke-width="2" />
-              <line x1="33" y1="20" x2="39" y2="27" stroke="currentColor" stroke-width="1.8" />
-              <line x1="67" y1="20" x2="61" y2="27" stroke="currentColor" stroke-width="1.8" />
-              <path d="M 45 25 L 50 19 L 55 25 L 55 69 L 45 69 Z" fill="currentColor" />
-              <path d="M 33 35 L 41 35 L 41 69 L 33 69 Z" fill="currentColor" />
-              <path d="M 59 35 L 67 35 L 67 69 L 59 69 Z" fill="currentColor" />
-              <path d="M 21 47 L 29 47 L 29 69 L 21 69 Z" fill="currentColor" />
-              <path d="M 71 47 L 79 47 L 79 69 L 71 69 Z" fill="currentColor" />
-              <path d="M 19 75 L 23 72 L 77 72 L 81 75 L 77 78 L 23 78 Z" fill="currentColor" />
-              <path d="M 27 81 L 73 81 L 71 85 L 29 85 Z" fill="currentColor" />
-              <line x1="50" y1="88" x2="50" y2="92" stroke="currentColor" stroke-width="2" />
-              <line x1="37" y1="88" x2="33" y2="91" stroke="currentColor" stroke-width="1.5" />
-              <line x1="63" y1="88" x2="67" y2="91" stroke="currentColor" stroke-width="1.5" />
-            </svg>
-          </div>
-          <div class="entry-lobby__divider" aria-hidden="true"></div>
-          <div class="entry-lobby__wordmark-text">
-            <span class="entry-lobby__title" id="entry-lobby-title">FASHION ROTUNDA</span>
-            <span class="entry-lobby__subtitle">HAUTE COUTURE ARCHIVE</span>
-          </div>
-        </div>
-        <div class="entry-lobby__header-controls">
-          <button type="button" class="entry-lobby__music-switch" data-music="armed" aria-pressed="true">
-            <svg class="music-switch__glyph" viewBox="0 0 16 16" aria-hidden="true">
-              <ellipse cx="5.2" cy="12.3" rx="3.1" ry="2.3" transform="rotate(-14 5.2 12.3)"></ellipse>
-              <rect x="7.6" y="2.6" width="1.3" height="9.8"></rect>
-              <path d="M8.9 2.6c2.7 1.6 3.9 3.8 3.2 6.7-.3-2.4-1.5-3.9-3.2-4.6z"></path>
-            </svg>
-            <span class="music-switch__label">Music on</span>
-          </button>
-        </div>
-      </header>
-
-      <div class="entry-lobby__content">
-        <div class="entry-lobby__card">
-          <div class="entry-lobby__card-inner-frame" aria-hidden="true"></div>
-          <div class="entry-lobby__corner-accent entry-lobby__corner-accent--tl" aria-hidden="true"></div>
-          <div class="entry-lobby__corner-accent entry-lobby__corner-accent--tr" aria-hidden="true"></div>
-          <div class="entry-lobby__corner-accent entry-lobby__corner-accent--bl" aria-hidden="true"></div>
-          <div class="entry-lobby__corner-accent entry-lobby__corner-accent--br" aria-hidden="true"></div>
-
-          <div class="entry-lobby__idle-pane">
-            <p class="entry-lobby__eyebrow">AN INTERACTIVE EXHIBITION OF HAUTE COUTURE &amp; ARCHITECTURE</p>
-            <p class="entry-lobby__desc">Step inside the glazed rotunda to explore archival couture silhouettes beneath the daylight dome.</p>
-            <noscript>
-              <p class="entry-lobby__noscript">JavaScript is required to load and interact with the 3D Fashion Rotunda exhibition.</p>
-            </noscript>
-            <div class="entry-lobby__action-area">
-              <button type="button" class="entry-lobby__load-btn" id="lobby-load-btn">
-                <span class="entry-lobby__btn-corner entry-lobby__btn-corner--tl" aria-hidden="true"></span>
-                <span class="entry-lobby__btn-corner entry-lobby__btn-corner--tr" aria-hidden="true"></span>
-                <span class="entry-lobby__btn-corner entry-lobby__btn-corner--bl" aria-hidden="true"></span>
-                <span class="entry-lobby__btn-corner entry-lobby__btn-corner--br" aria-hidden="true"></span>
-                LOAD EXPERIENCE
-              </button>
-            </div>
-            <p class="entry-lobby__telemetry" aria-hidden="true">WEBGPU NATIVE &bull; WEBGL 2 FALLBACK &bull; THREE-LIGHT STUDIO RIG &bull; KTX2</p>
-          </div>
-
-          <div class="entry-lobby__loading-pane" hidden>
-            <h2 class="entry-lobby__loading-title">LOADING YOUR EXPERIENCE</h2>
-            <div class="entry-lobby__bar-container">
-              <progress class="entry-lobby__progress-bar" max="1" value="0" aria-label="Exhibition loading progress"></progress>
-            </div>
-            <p class="entry-lobby__status" aria-live="polite">Loading your experience</p>
-            <p class="entry-lobby__progress-readout">0.0 MB of 0.0 MB</p>
-            <div class="entry-lobby__fact-container">
-              <div class="entry-lobby__fact-diamond" aria-hidden="true"></div>
-              <span class="entry-lobby__fact-heading">ARCHITECTURAL &amp; GRAPHICS PROVENANCE</span>
-              <p class="entry-lobby__fact-text">"Built on WebGPU for next-generation hardware rasterization, with seamless automatic fallback to WebGL 2."</p>
-            </div>
-          </div>
-
-          <div class="entry-lobby__error-pane" hidden>
-            <div class="entry-lobby__error-icon" aria-hidden="true">
-              <svg viewBox="0 0 44 44" fill="none">
-                <polygon points="22,4 40,38 4,38" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" />
-                <line x1="22" y1="16" x2="22" y2="28" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-                <circle cx="22" cy="33" r="1.5" fill="currentColor" />
-              </svg>
-            </div>
-            <h2 class="entry-lobby__error-title">SHOWROOM INITIALIZATION FAILED</h2>
-            <p class="entry-lobby__error-message">We were unable to load the 3D showroom assets. Please verify your internet connection and select retry below.</p>
-            <button type="button" class="entry-lobby__retry-btn" id="lobby-retry-btn">RETRY LOADING</button>
-          </div>
-        </div>
-      </div>
-    `;
+    lobbyElement = buildLobbyMarkup(doc);
     root.appendChild(lobbyElement);
   }
 
