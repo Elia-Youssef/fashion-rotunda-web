@@ -1,0 +1,51 @@
+import { existsSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { backendPath } from './support/backend';
+import { expect, test } from './support/fixtures';
+
+// The Basis transcoder pair is served content: the page points KTX2Loader at /content/basis/
+// (src/scene/loaders.ts), and the build must not emit a second, hashed copy of either file into
+// dist/assets. The first test reads the build output the preview server serves (the webServer
+// config runs the production build before these tests); the second traces the requests the page
+// actually makes once a look has been decoded.
+
+const SCENE_READY_TIMEOUT = 60_000;
+
+test('builds no basis transcoder copy into dist/assets', async () => {
+  const emitted = readdirSync(join(process.cwd(), 'dist', 'assets'));
+  expect(
+    emitted.filter((name) => name.includes('basis_transcoder')),
+    'basis transcoder files in the bundle output',
+  ).toEqual([]);
+  for (const basename of ['basis_transcoder.js', 'basis_transcoder.wasm']) {
+    expect(
+      existsSync(join(process.cwd(), 'dist', 'content', 'basis', basename)),
+      `the served copy dist/content/basis/${basename}`,
+    ).toBe(true);
+  }
+});
+
+test('fetches the transcoder from content, never from the bundle', async ({ page }) => {
+  await page.goto(backendPath('/?gate=off&e2e=1&music=off&attract=0'));
+  if (test.info().project.name === 'webgpu') {
+    // navigator.gpu is exposed only in secure contexts, so this runs on the page after the goto.
+    test.skip(!(await page.evaluate(() => 'gpu' in navigator)), 'WebGPU not available in this browser');
+  }
+
+  // data-scene turns ready in the frame that draws the look; the room's KTX2 textures have been
+  // transcoded by then, so the transcoder fetch is in the resource timing buffer.
+  const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+
+  const transcoderRequests = await page.evaluate(() =>
+    performance
+      .getEntriesByType('resource')
+      .map((entry) => new URL(entry.name).pathname)
+      .filter((pathname) => pathname.includes('basis_transcoder')),
+  );
+  expect(transcoderRequests.sort(), 'transcoder request paths').toEqual([
+    '/content/basis/basis_transcoder.js',
+    '/content/basis/basis_transcoder.wasm',
+  ]);
+});
