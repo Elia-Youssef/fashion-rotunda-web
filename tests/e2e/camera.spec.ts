@@ -1,6 +1,7 @@
 import { expect, expectConsoleError, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
 import { backendPath } from './support/backend';
+import { openShowroom } from './support/showroom';
 import { waitForLoopIdle } from './support/ready';
 
 const SCENE_READY_TIMEOUT = 60_000;
@@ -45,7 +46,7 @@ const WALL_MOVE_TIMEOUT_MS = 15_000;
 // Only delivery of a latched event observation is polled, never the transient stopped-tour state.
 const ATTRACT_INPUT_TIMEOUT_MS = 5_000;
 
-test('a failed Walk uses exactly one live region for its failure notice', async ({ page }) => {
+test('a failed Walk uses exactly one live region for its failure notice', async ({ page, request }) => {
   let fail!: () => void;
   const held = new Promise<void>((resolve) => { fail = resolve; });
   expectConsoleError(page, /Failed to load resource: the server responded with a status of 503/,
@@ -55,8 +56,7 @@ test('a failed Walk uses exactly one live region for its failure notice', async 
     await route.fulfill({ status: 503, body: 'unavailable' });
   });
   try {
-    await page.goto(backendPath('/?e2e=1&attract=0&music=off'));
-    await page.waitForFunction(() => window.archvizE2E !== undefined, null, { timeout: SCENE_READY_TIMEOUT });
+    await openShowroom(page, request, '/?e2e=1&attract=0&music=off');
     const announcer = page.locator('.a11y-live-region');
     await expect(announcer).toHaveCount(1);
     const walk = page.locator('button[data-mode="walk"]');
@@ -80,7 +80,7 @@ test('Walk states preserve header layout and show one visible failure notice', a
   let fail!: () => void;
   const held = new Promise<void>((resolve) => { fail = resolve; });
   let requested!: () => void;
-  const request = new Promise<void>((resolve) => { requested = resolve; });
+  const collisionRequested = new Promise<void>((resolve) => { requested = resolve; });
   expectConsoleError(page, /Failed to load resource: the server responded with a status of 503/,
     'the held collision request deliberately returns HTTP 503 after the loading reading');
   await page.route('**/collision.glb', async (route) => {
@@ -99,10 +99,12 @@ test('Walk states preserve header layout and show one visible failure notice', a
   };
   try {
     // Keep the Music label stable so the camera state is the only header layout input changing.
+    // This case keeps its own opening: behind the shared opening's longer wait its hover tooltip
+    // failed to show in two of three WebGPU runs, and the opening stays until that is explained.
     await page.goto(backendPath('/?e2e=1&attract=0&music=off'));
     await page.waitForFunction(() => window.archvizE2E !== undefined, null, { timeout: SCENE_READY_TIMEOUT });
     await page.evaluate(async () => document.fonts.ready.then(() => undefined));
-    await request;
+    await collisionRequested;
     await expect(walk).toHaveText('Walk');
     await expect(walk).toHaveAccessibleName('Walk');
     const idle = await readBoxes();
@@ -158,11 +160,11 @@ async function expectOrbitInteraction(page: Page): Promise<void> {
   expect(Math.hypot(...after.position.map((value, axis) => value - before[axis]))).toBeGreaterThan(1);
 }
 
-test('delayed collision keeps Orbit interactive and Orbit cancels pending Walk', async ({ page }) => {
+test('delayed collision keeps Orbit interactive and Orbit cancels pending Walk', async ({ page, request }) => {
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
   let requested!: () => void;
-  const request = new Promise<void>((resolve) => { requested = resolve; });
+  const collisionRequested = new Promise<void>((resolve) => { requested = resolve; });
   let delivered!: () => void;
   const delivery = new Promise<void>((resolve) => { delivered = resolve; });
   await page.route('**/collision.glb', async (route) => {
@@ -173,9 +175,8 @@ test('delayed collision keeps Orbit interactive and Orbit cancels pending Walk',
     finally { delivered(); }
   });
   try {
-    await page.goto(backendPath('/?e2e=1&attract=0'));
-    await page.waitForFunction(() => window.archvizE2E !== undefined, null, { timeout: SCENE_READY_TIMEOUT });
-    await request;
+    await openShowroom(page, request, '/?e2e=1&attract=0');
+    await collisionRequested;
     const before = await page.evaluate(() => [...window.archvizCamera!.orbit.position]);
     await page.locator('button[data-mode="walk"]').click();
     await expect(page.locator('button[data-mode="walk"]')).toHaveAttribute('aria-disabled', 'true');
@@ -195,7 +196,7 @@ test('delayed collision keeps Orbit interactive and Orbit cancels pending Walk',
   } finally { release(); }
 });
 
-test('failed collision preserves Orbit input and an explicit retry restores real collision', async ({ page }) => {
+test('failed collision preserves Orbit input and an explicit retry restores real collision', async ({ page, request }) => {
   let requests = 0;
   let fail!: () => void;
   const failure = new Promise<void>((resolve) => { fail = resolve; });
@@ -209,8 +210,7 @@ test('failed collision preserves Orbit input and an explicit retry restores real
     } else await route.continue();
   });
   try {
-    await page.goto(backendPath('/?e2e=1&attract=0'));
-    await page.waitForFunction(() => window.archvizE2E !== undefined, null, { timeout: SCENE_READY_TIMEOUT });
+    await openShowroom(page, request, '/?e2e=1&attract=0');
     const before = await page.evaluate(() => [...window.archvizCamera!.orbit.position]);
     await page.locator('button[data-mode="walk"]').click();
     fail();
@@ -236,7 +236,7 @@ test('failed collision preserves Orbit input and an explicit retry restores real
   } finally { fail(); }
 });
 
-test('delayed collision captures the final Orbit pose and hands over only after readiness', async ({ page }) => {
+test('delayed collision captures the final Orbit pose and hands over only after readiness', async ({ page, request }) => {
   let release!: () => void;
   const held = new Promise<void>((resolve) => { release = resolve; });
   await page.route('**/collision.glb', async (route) => {
@@ -245,8 +245,7 @@ test('delayed collision captures the final Orbit pose and hands over only after 
     await route.fulfill({ response });
   });
   try {
-    await page.goto(backendPath('/?e2e=1&attract=0'));
-    await page.waitForFunction(() => window.archvizE2E !== undefined, null, { timeout: SCENE_READY_TIMEOUT });
+    await openShowroom(page, request, '/?e2e=1&attract=0');
     await page.locator('button[data-mode="walk"]').click();
     await expectOrbitInteraction(page);
     // End the release glide at its current pose before observing the saved return location.
@@ -266,17 +265,12 @@ test('delayed collision captures the final Orbit pose and hands over only after 
 
 // Camera and turntable through the real page: a drag orbits the inspection camera, the turntable turns the
 // look while it runs, and the loop goes back to sleep once both are still. Reads and the toggle go
-// through window.archvizCamera, which ?e2e=1 mounts; the frame-settling wait mirrors idle.spec.ts.
+// through window.archvizCamera, which ?e2e=1 mounts; the openings share openShowroom, which pins the
+// project's backend and waits past the late chrome mount the camera belongs to.
 // Both projects run headless by default, so synthetic input controls when the camera and loop wake.
 
-test('a drag across the canvas orbits the camera', async ({ page }) => {
-  await page.goto(backendPath('/?e2e=1'));
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
-  // Scene-ready can publish during the native High benchmark; wait for the camera mount itself.
-  await page.waitForFunction(() => window.archvizCamera !== undefined, null, {
-    timeout: SCENE_READY_TIMEOUT,
-  });
+test('a drag across the canvas orbits the camera', async ({ page, request }) => {
+  const { canvas } = await openShowroom(page, request, '/?e2e=1');
 
   const before = await page.evaluate((): number[] => window.archvizCamera?.orbit.position ?? []);
   expect(before.length).toBe(3);
@@ -301,14 +295,8 @@ test('a drag across the canvas orbits the camera', async ({ page }) => {
   expect(moved, 'the drag moved the camera').toBeGreaterThan(2.0);
 });
 
-test('the turntable turns the look and the loop settles once it stops', async ({ page }) => {
-  await page.goto(backendPath('/?e2e=1'));
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
-  // The first ready frame does not guarantee the turntable handle has mounted yet.
-  await page.waitForFunction(() => window.archvizCamera !== undefined, null, {
-    timeout: SCENE_READY_TIMEOUT,
-  });
+test('the turntable turns the look and the loop settles once it stops', async ({ page, request }) => {
+  const { canvas } = await openShowroom(page, request, '/?e2e=1');
 
   const readYaw = async (): Promise<number> => Number((await canvas.getAttribute('data-yaw')) ?? '0');
   // The e2e handle mounts after archvizCamera, so an early read reports the window as open rather
@@ -377,10 +365,8 @@ test('the turntable turns the look and the loop settles once it stops', async ({
   expect(await readYaw(), 'the look holds where the turntable stopped').toBe(stopped);
 });
 
-test('walk mode stops at walls and stays above floor', async ({ page }) => {
-  await page.goto(backendPath('/?e2e=1'));
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+test('walk mode stops at walls and stays above floor', async ({ page, request }) => {
+  const { canvas } = await openShowroom(page, request, '/?e2e=1');
 
   const walkBtn = page.locator('button[data-mode="walk"]');
   await expect(walkBtn).toBeEnabled({ timeout: 10_000 });
@@ -447,10 +433,8 @@ test('walk mode stops at walls and stays above floor', async ({ page }) => {
   expect(foot[2], 'foot was stopped by the wall').toBeLessThan(7.5);
 });
 
-test('the real collision GLB blocks normal and sprint routes around the plinth and every wall', async ({ page }) => {
-  await page.goto(backendPath('/?e2e=1&attract=0'));
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+test('the real collision GLB blocks normal and sprint routes around the plinth and every wall', async ({ page, request }) => {
+  await openShowroom(page, request, '/?e2e=1&attract=0');
   await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
   await page.evaluate(async () => {
     await window.archvizCamera?.setMode('walk');
@@ -516,7 +500,7 @@ test.describe('touch walkthrough controls', () => {
   // software WebGL loader cannot boot this scene with a touch-emulation GPU profile, but the
   // synthetic PointerEvents below still exercise its `pointerType: 'touch'` production path.
 
-  test('keeps joystick movement and right-side look separate', async ({ page }) => {
+  test('keeps joystick movement and right-side look separate', async ({ page, request }) => {
     await page.addInitScript(() => {
       const nativeMatchMedia = window.matchMedia.bind(window);
       window.matchMedia = ((query: string) => {
@@ -527,9 +511,7 @@ test.describe('touch walkthrough controls', () => {
         return result;
       }) as typeof window.matchMedia;
     });
-    await page.goto(backendPath('/?e2e=1&attract=0'));
-    const canvas = page.locator('canvas#scene');
-    await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+    const { canvas } = await openShowroom(page, request, '/?e2e=1&attract=0');
     await page.setViewportSize({ width: 767, height: 430 });
     await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
     await page.evaluate(async () => {
@@ -598,10 +580,8 @@ test.describe('touch walkthrough controls', () => {
   });
 });
 
-test('two round trips orbit-walk-orbit end at starting orbit position within 1 mm', async ({ page }) => {
-  await page.goto(backendPath('/?e2e=1'));
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+test('two round trips orbit-walk-orbit end at starting orbit position within 1 mm', async ({ page, request }) => {
+  const { canvas } = await openShowroom(page, request, '/?e2e=1');
 
   const walkBtn = page.locator('button[data-mode="walk"]');
   await expect(walkBtn).toBeEnabled({ timeout: 10_000 });
@@ -640,11 +620,18 @@ test('attract loop tours presets when idle and cancels on input', async ({ page 
   await page.goto(backendPath('/?e2e=1&attract=1&attractIdle=500'));
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+  // Scene-ready can publish during the native High benchmark; wait for the camera mount itself.
+  await page.waitForFunction(() => window.archvizCamera !== undefined, null, {
+    timeout: SCENE_READY_TIMEOUT,
+  });
 
   // The pose at rest, before the tour has started. The camera mounts on the proof view and
   // nothing else moves it, and the tour starts ATTRACT_IDLE_MS (500 ms here) after the camera
-  // mounts, one or two frames after the scene reports ready, so this reading precedes the
-  // first placement.
+  // mounts, so the read at the mount itself precedes the first placement. A read at scene-ready
+  // can land during the benchmark instead, before the camera exists: the [0, 0, 0] fallback then
+  // sits about 4.5 m from the proof view, and the movement poll below would pass at once without
+  // the tour ever moving the camera. This opening stays hand-rolled for the same reason:
+  // openShowroom's chrome waits could push the read past the idle window it must precede.
   const restPose = await page.evaluate((): [number, number, number] => {
     const pos = window.archvizCamera?.orbit.position ?? [0, 0, 0];
     return [pos[0], pos[1], pos[2]];
