@@ -15,6 +15,7 @@ import {
 } from '../../src/ui/entry-lobby';
 import type { EntryLobby, ProgressReading } from '../../src/ui/entry-lobby';
 import { lobbyWanted as gateWanted } from '../../src/ui/entry-lobby/gate';
+import { createLobbyMusicSwitch } from '../../src/ui/entry-lobby/music-switch';
 
 class FakeStorage {
   private data = new Map<string, string>();
@@ -246,6 +247,43 @@ describe('one-shot Load activation and input modes', () => {
 });
 
 describe('Music preference contract in lobby', () => {
+  it('exposes the live switch preference, persists toggles and stops toggling after abort', () => {
+    const button = document.createElement('button');
+    button.innerHTML = '<span class="music-switch__label"></span>';
+    root.appendChild(button);
+    store.setItem('fashion-rotunda.music', 'off');
+    const controller = new AbortController();
+    try {
+      const music = createLobbyMusicSwitch(button, '?music=on', store, controller.signal);
+      expect(music.preference).toBe('on');
+      expect(button.dataset.music).toBe('armed');
+      expect(button.getAttribute('aria-pressed')).toBe('true');
+      expect(button.textContent).toBe('Music on');
+
+      button.click();
+      expect(music.preference).toBe('off');
+      expect(store.getItem('fashion-rotunda.music')).toBe('off');
+      expect(button.dataset.music).toBe('off');
+      expect(button.getAttribute('aria-pressed')).toBe('false');
+      expect(button.textContent).toBe('Music off');
+
+      button.click();
+      expect(music.preference).toBe('on');
+      expect(store.getItem('fashion-rotunda.music')).toBe('on');
+      expect(button.dataset.music).toBe('armed');
+      expect(button.getAttribute('aria-pressed')).toBe('true');
+      expect(button.textContent).toBe('Music on');
+
+      controller.abort();
+      button.click();
+      expect(music.preference).toBe('on');
+      expect(store.getItem('fashion-rotunda.music')).toBe('on');
+      expect(button.textContent).toBe('Music on');
+    } finally {
+      controller.abort();
+    }
+  });
+
   it('initializes to on by default and allows toggling without audio engine startup', () => {
     const { element } = mountLobby();
     const musicBtn = element.querySelector<HTMLButtonElement>('.entry-lobby__music-switch')!;

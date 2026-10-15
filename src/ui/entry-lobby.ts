@@ -10,11 +10,11 @@
 
 import './entry-lobby.css';
 
-import { resolveMusicPreference, storeMusicPreference } from '../audio/preference';
 import type { KeyValueStore } from '../audio/preference';
 import { formatProgress, progressRatio } from '../loading/progress';
 import { skySourceFromSearch } from '../lighting/sky';
 import { buildLobbyMarkup } from './entry-lobby/markup';
+import { createLobbyMusicSwitch } from './entry-lobby/music-switch';
 import { trackFirstFrameProgress } from './entry-lobby/progress';
 import type { ProgressReading } from './entry-lobby/progress';
 
@@ -122,7 +122,6 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
 
   const loadBtn = lobby.querySelector<HTMLButtonElement>('#lobby-load-btn');
   const musicSwitchBtn = lobby.querySelector<HTMLButtonElement>('.entry-lobby__music-switch');
-  const musicLabel = musicSwitchBtn?.querySelector<HTMLElement>('.music-switch__label') ?? null;
   const idlePane = lobby.querySelector<HTMLElement>('.entry-lobby__idle-pane');
   const loadingPane = lobby.querySelector<HTMLElement>('.entry-lobby__loading-pane');
   const errorPane = lobby.querySelector<HTMLElement>('.entry-lobby__error-pane');
@@ -138,21 +137,8 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
   let currentState: LobbyState = 'idle';
   lobby.dataset['state'] = currentState;
 
-  // Music preference state resolution
-  let currentMusicPreference = resolveMusicPreference(options.search, store);
-
-  function syncMusicSwitchUI(): void {
-    if (musicSwitchBtn === null) {
-      return;
-    }
-    const isPlaying = currentMusicPreference === 'on';
-    musicSwitchBtn.dataset['music'] = isPlaying ? 'armed' : 'off';
-    musicSwitchBtn.setAttribute('aria-pressed', isPlaying ? 'true' : 'false');
-    if (musicLabel !== null) {
-      musicLabel.textContent = isPlaying ? 'Music on' : 'Music off';
-    }
-  }
-  syncMusicSwitchUI();
+  const listeners = new AbortController();
+  const musicSwitch = createLobbyMusicSwitch(musicSwitchBtn, options.search, store, listeners.signal);
 
   /**
    * The unsupported surface, shared by the mount-time knowledge (no API even exists) and the
@@ -214,22 +200,8 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
 
   renderFact();
 
-  const listeners = new AbortController();
   // Global focus containment belongs to the modal input phase, which ends at reveal.
   const inputListeners = new AbortController();
-
-  // Toggle music preference before Load Experience
-  if (musicSwitchBtn !== null) {
-    musicSwitchBtn.addEventListener(
-      'click',
-      () => {
-        currentMusicPreference = currentMusicPreference === 'on' ? 'off' : 'on';
-        storeMusicPreference(store, currentMusicPreference);
-        syncMusicSwitchUI();
-      },
-      { signal: listeners.signal },
-    );
-  }
 
   function triggerLoadExperience(): void {
     if (currentState !== 'idle' || loadBtn?.disabled) {
@@ -254,7 +226,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
     }
 
     if (loadRequestResolver !== null) {
-      loadRequestResolver({ musicPreference: currentMusicPreference });
+      loadRequestResolver({ musicPreference: musicSwitch.preference });
       loadRequestResolver = null;
     }
   }
@@ -357,7 +329,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
 
     waitForLoadRequest(): Promise<{ musicPreference: 'on' | 'off' }> {
       if (currentState !== 'idle') {
-        return Promise.resolve({ musicPreference: currentMusicPreference });
+        return Promise.resolve({ musicPreference: musicSwitch.preference });
       }
       return loadRequestPromise;
     },
