@@ -18,7 +18,9 @@ export const LOOP_STATE_POLL_MS = 100;
 const LOOP_IDLE_TIMEOUT_MS = 60_000;
 // Matches the existing input-to-drawn-frame handshake budget.
 const LOOP_FRESH_FRAME_TIMEOUT_MS = 5_000;
-// More than seven 30 fps touch-frame intervals, after owner-confirmed idle and a fresh frame.
+// The quiet observation: after the requested frame the idle loop must draw nothing new, and only
+// wall time can show that absence. More than seven 30 fps touch-frame intervals, so any render
+// scheduled behind the requested one would have run inside it.
 const LOOP_QUIET_MS = 250;
 
 /** Proves owner-confirmed idle, live frame delivery, then a short no-new-frame interval. */

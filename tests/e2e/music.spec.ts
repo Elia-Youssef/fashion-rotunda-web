@@ -19,7 +19,9 @@ const INITIAL_PROGRESS_S = 1;
 // synchronous freeze in the click handler is a few milliseconds, so 0.6 s no longer has to hide
 // protocol round-trip latency.
 const PAUSE_LATENCY_S = 0.6;
-// A deliberate interval the frozen position must survive unchanged.
+// A deliberate interval the frozen position must survive unchanged: while the source runs, the
+// loop position advances one audio second per wall second, the same span the progress polls read
+// as proof the clock runs, so a freeze that did not happen moves the reading inside this window.
 const PAUSE_OBSERVE_MS = 1_000;
 
 function switchButton(page: Page) {

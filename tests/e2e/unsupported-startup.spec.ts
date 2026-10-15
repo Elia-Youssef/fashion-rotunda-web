@@ -17,6 +17,13 @@ const DISABLED_GRAPHICS_FLAGS = ['--disable-webgl', '--disable-webgl2', '--disab
 // run inside the window once it is anchored on the published state.
 const UNSUPPORTED_QUIET_WINDOW_MS = 1_000;
 
+// The no-fetch absence window: on a page that must not request anything under /content/ (the
+// idle lobby before the press, the unsupported surface at mount), a wrongly eager startup fetch
+// has this long to appear in the request watcher before the zero-request reading. Absence is
+// only provable by wall time, so the length is kept; it is the same deliberate span as the
+// post-error window above.
+const NO_FETCH_QUIET_WINDOW_MS = 1_000;
+
 function skipUnlessWebgl2(): void {
   test.skip(
     test.info().project.name !== 'webgl2',
@@ -74,8 +81,9 @@ test('flags: unsupported surface after Load, no retry drawn, no content request'
     const lobby = page.locator('#entry-lobby');
     await expect(lobby).toHaveAttribute('data-state', 'idle');
 
-    // The deferred-load contract: nothing leaves the page before the gesture.
-    await page.waitForTimeout(1000);
+    // The deferred-load contract: nothing leaves the page before the gesture. A premature fetch
+    // must appear inside the no-fetch window, so the reading waits out the whole window.
+    await page.waitForTimeout(NO_FETCH_QUIET_WINDOW_MS);
     expect(contentUrls(), 'zero content requests before the press').toEqual([]);
 
     await lobby.locator('#lobby-load-btn').click();
@@ -152,8 +160,9 @@ test('deleted APIs: unsupported surface at mount, retry button not drawn', async
     expect(surface.retryHidden).toBe(true);
     expect(surface.retryDrawn, 'the hidden retry button must not be drawn').toBe(false);
 
-    // The Load action is dead on this surface and nothing may be fetched.
-    await page.waitForTimeout(1000);
+    // The Load action is dead on this surface and nothing may be fetched: a wrongly scheduled
+    // fetch must appear inside the no-fetch window, so the reading waits out the whole window.
+    await page.waitForTimeout(NO_FETCH_QUIET_WINDOW_MS);
     expect(contentUrls(), 'zero content requests without a startable backend').toEqual([]);
   } finally {
     await browser.close();

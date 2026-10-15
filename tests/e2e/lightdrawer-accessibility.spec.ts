@@ -17,6 +17,12 @@ import { openShowroom } from './support/showroom';
 // waits past the late chrome mount before any DOM reading.
 const DRAWER_PATH = '/?gate=off&e2e=1&proof=1&music=off';
 
+// The mouse-open absence window: nothing but wall time proves the focus tooltip never appears
+// after a mouse-opened focus, since the tooltip module's :focus-visible check is the behavior
+// under test. A wrong show is raised in the focus dispatch itself, so the window only has to let
+// a deferred show land, and it is twice the module's longest timer, the 150 ms hover transit delay.
+const MOUSE_OPEN_TOOLTIP_QUIET_WINDOW_MS = 300;
+
 test.describe('simplified Light Control drawer and rig', () => {
 
   test('exact control census, labels, and removed-control absence', async ({ page, request }) => {
@@ -88,7 +94,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     await toggle.click();
     await expect(panel).toBeVisible();
     await expect(keySwitch).toBeFocused();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(MOUSE_OPEN_TOOLTIP_QUIET_WINDOW_MS);
     await expect(tooltip, 'mouse opening shows no focus tooltip').toBeHidden();
     expect(await keySwitch.getAttribute('aria-describedby')).toBeNull();
     await toggle.click();
