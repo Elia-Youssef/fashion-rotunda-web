@@ -1,6 +1,7 @@
 import { expect, test, browserReports } from './support/fixtures';
 import { PNG } from 'pngjs';
 import { CONTENT_SECURITY_POLICY } from '../../src/content-security-policy';
+import { backendPath, projectBackend } from './support/backend';
 import { waitForSceneInitialization } from './support/ready';
 
 interface PolicyViolation {
@@ -38,13 +39,11 @@ test('production policy permits loading, interaction, music and screenshot witho
     });
   });
 
-  const backend = test.info().project.name === 'webgpu' ? 'webgpu' : 'webgl2';
-  const params = new URLSearchParams({ e2e: '1', gate: 'on', music: 'off', attract: '0' });
-  if (backend === 'webgl2') params.set('webgl', '1');
+  const backend = projectBackend();
   await page.setViewportSize({ width: 1440, height: 900 });
 
   try {
-    await page.goto(`/?${params.toString()}`);
+    await page.goto(backendPath('/?e2e=1&gate=on&music=off&attract=0'));
     await test.step('delivered policy matches the source before resource elements', async () => {
       const meta = page.locator('head meta[http-equiv="Content-Security-Policy" i]');
       await expect(meta).toHaveCount(1);

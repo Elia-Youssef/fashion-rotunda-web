@@ -3,6 +3,7 @@ import type { Locator, Page } from '@playwright/test';
 
 import { holdFirstRequest } from './support/held-request';
 import { assertDisruptionReset, assertFreshStableFrames } from './support/reveal-disruption';
+import { backendPath, projectBackend } from './support/backend';
 
 // E2E transition verification suite for two-stage stable-frame black reveal.
 // Tests run on WebGL2 and WebGPU projects where available.
@@ -17,22 +18,12 @@ const VIEWPORTS = [
 type Backend = 'webgpu' | 'webgl2';
 type FreezeState = 'ready-hidden' | 'cover-to-black' | 'black-hold' | 'revealing';
 
-function expectedBackend(): Backend {
-  return test.info().project.name === 'webgpu' ? 'webgpu' : 'webgl2';
-}
-
 function transitionPath(options: {
-  backend: Backend;
   freeze?: FreezeState;
   onboarding?: boolean;
   music?: 'on' | 'off';
 }): string {
   const params = new URLSearchParams({ e2e: '1', gate: 'on' });
-  // Only the fallback project receives this flag. The WebGPU project must exercise the real
-  // backend rather than quietly falling through to WebGL2 on machines where both are present.
-  if (options.backend === 'webgl2') {
-    params.set('webgl', '1');
-  }
   if (options.freeze !== undefined) {
     params.set('freeze', options.freeze);
   }
@@ -42,7 +33,7 @@ function transitionPath(options: {
   if (options.music !== undefined) {
     params.set('music', options.music);
   }
-  return `/?${params.toString()}`;
+  return backendPath(`/?${params.toString()}`);
 }
 
 async function skipWhenWebGPUUnavailable(page: Page, backend: Backend): Promise<void> {
@@ -67,10 +58,10 @@ async function skipWhenWebGPUUnavailable(page: Page, backend: Backend): Promise<
 
 async function openTransition(
   page: Page,
-  options: Omit<Parameters<typeof transitionPath>[0], 'backend'> = {},
+  options: Parameters<typeof transitionPath>[0] = {},
 ): Promise<{ backend: Backend; lobby: Locator; veil: Locator; canvas: Locator }> {
-  const backend = expectedBackend();
-  await page.goto(transitionPath({ backend, ...options }));
+  const backend = projectBackend();
+  await page.goto(transitionPath(options));
   await skipWhenWebGPUUnavailable(page, backend);
 
   const lobby = page.locator('#entry-lobby');

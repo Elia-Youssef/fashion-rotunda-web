@@ -4,6 +4,7 @@ import type { Page } from '@playwright/test';
 import { backendPath, projectBackend } from './support/backend';
 import { holdFirstRequest } from './support/held-request';
 import { waitForSceneInitialization } from './support/ready';
+import { readCatalog } from './support/showroom';
 
 // Entry lobby E2E verification: the deferred boot contract, zero network activity before the
 // user gesture, responsive viewports, focus containment, hit-test blocking and music
@@ -84,16 +85,13 @@ function watchRequests(page: Page): {
 }
 
 test('releases page keyboard navigation after the lobby reveal', async ({ page }) => {
-  const backend = test.info().project.name === 'webgpu' ? 'webgpu' : 'webgl2';
-  const params = new URLSearchParams({ e2e: '1', gate: 'on', music: 'off' });
-  if (backend === 'webgl2') params.set('webgl', '1');
-  await page.goto(`/?${params.toString()}`);
+  await page.goto(backendPath('/?e2e=1&gate=on&music=off'));
   const lobby = page.locator('#entry-lobby');
   await expect(lobby).toHaveAttribute('data-state', 'idle');
   await lobby.locator('#lobby-load-btn').click();
   await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
   await expect(lobby).toBeHidden();
-  await expect(page.locator('canvas#scene')).toHaveAttribute('data-backend', backend);
+  await expect(page.locator('canvas#scene')).toHaveAttribute('data-backend', projectBackend());
 
   // The reveal hands focus to main. Tab must reach a real page control without cancellation.
   const main = page.locator('main');
@@ -342,11 +340,7 @@ test('counts the deep-linked look: the bar rises and reaches its total', async (
   // The same files the tracker counts: rotunda, plinth and the deep-linked look, no environment
   // under the default sky. The deep-linked look and the first look differ by about 1 MB, so a
   // tracker that counted the wrong look would publish a different readout total.
-  const catalog = (await (await request.get('/content/catalog.json')).json()) as {
-    rotunda: { file: string };
-    plinth: { file: string };
-    looks: Array<{ id: string; file: string }>;
-  };
+  const catalog = await readCatalog(request);
   const manifest = (await (await request.get('/content/manifest.json')).json()) as {
     sets: { full: { files: Record<string, { bytes: number }> } };
   };
