@@ -57,6 +57,28 @@ describe('room fallback loading', () => {
     expect(roomImports).toBe(1);
     environments.forEach((environment) => environment.dispose());
   });
+
+  it('forgets a failed room import, so the next fallback factory retries it', async () => {
+    let failNext = true;
+    vi.doMock('three/addons/environments/RoomEnvironment.js', async () => {
+      roomImports += 1;
+      if (failNext) {
+        failNext = false;
+        throw new Error('chunk unavailable');
+      }
+      return { RoomEnvironment: class { dispose() {} } };
+    });
+    const { createRoomEnvironment } = await import('../../src/lighting/environment');
+
+    // A failing vi.doMock factory surfaces as vitest's wrapped mocking error, so the assertion is
+    // on the rejection reaching the caller; the original error rides along as its cause.
+    await expect(createRoomEnvironment(renderer())).rejects.toThrow();
+    expect(roomImports).toBe(1);
+
+    const environment = await createRoomEnvironment(renderer());
+    expect(roomImports).toBe(2);
+    environment.dispose();
+  });
 });
 
 function renderer(): WebGPURenderer {
@@ -84,5 +106,35 @@ describe('HDR loader loading', () => {
     ]);
     expect(hdrImports).toBe(1);
     environments.forEach((environment) => environment.dispose());
+  });
+
+  it('forgets a failed HDR loader import, so the next diagnostic retries it', async () => {
+    let failNext = true;
+    vi.doMock('three/addons/loaders/HDRLoader.js', async () => {
+      hdrImports += 1;
+      if (failNext) {
+        failNext = false;
+        throw new Error('chunk unavailable');
+      }
+      return {
+        HDRLoader: class {
+          load(_url: string, resolve: (texture: DataTexture) => void) {
+            const source = new DataTexture(new Float32Array(8 * 4 * 4), 8, 4, undefined, FloatType);
+            source.flipY = true;
+            queueMicrotask(() => resolve(source));
+            return source;
+          }
+        },
+      };
+    });
+    const { createHdrEnvironment } = await import('../../src/lighting/environment');
+
+    // Same wrapped-error shape as the room import test above.
+    await expect(createHdrEnvironment(renderer(), '/sky.hdr')).rejects.toThrow();
+    expect(hdrImports).toBe(1);
+
+    const environment = await createHdrEnvironment(renderer(), '/sky.hdr');
+    expect(hdrImports).toBe(2);
+    environment.dispose();
   });
 });

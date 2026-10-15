@@ -100,6 +100,31 @@ describe('screenshot loading', () => {
     expect(deliver).toHaveBeenCalledTimes(2);
   });
 
+  it('forgets a failed screenshot import, so the next action retries and succeeds', async () => {
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let failNext = true;
+    vi.doMock('../../src/share/screenshot', async () => {
+      imports += 1;
+      if (failNext) {
+        failNext = false;
+        throw new Error('chunk unavailable');
+      }
+      return { captureStill: capture, deliverStill: deliver };
+    });
+    await mount();
+
+    await actions.screenshot();
+    expect(imports).toBe(1);
+    expect(notify).toHaveBeenCalledExactlyOnceWith('Screenshot failed');
+
+    await actions.screenshot();
+    expect(imports).toBe(2);
+    expect(capture).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenCalledWith('Still saved');
+    errorLog.mockRestore();
+  });
+
   it.each(['resolve', 'reject'] as const)('retires a pending import on disposal before %s', async (outcome) => {
     let finish!: () => void;
     let fail!: (error: Error) => void;

@@ -28,6 +28,7 @@ import type { Scene, Texture } from 'three';
 import { PMREMGenerator } from 'three/webgpu';
 import type { WebGPURenderer } from 'three/webgpu';
 
+import { lazyImport } from '../ui/lazy-import';
 import { createGradientSkyTexture, environmentSkyPalette, visibleSkyPalette } from './sky';
 
 export interface Environment {
@@ -296,11 +297,11 @@ export function fromRenderTarget(
  * and loads the HDR only under ?sky=hdr; this keeps a failed environment build lit instead of
  * aborting the showroom.
  */
-let roomReady: Promise<typeof import('three/addons/environments/RoomEnvironment.js')> | null = null;
+const loadRoomModule = lazyImport(() => import('three/addons/environments/RoomEnvironment.js'));
 
 export async function createRoomEnvironment(renderer: WebGPURenderer): Promise<Environment> {
   await renderer.init();
-  const { RoomEnvironment } = await (roomReady ??= import('three/addons/environments/RoomEnvironment.js'));
+  const { RoomEnvironment } = await loadRoomModule();
   const resources = environmentResources();
   try {
     const generator = resources.own(new PMREMGenerator(renderer));
@@ -356,11 +357,11 @@ export async function createProceduralEnvironment(renderer: WebGPURenderer): Pro
  * deprecation. UltraHDRLoader was the other candidate and is not used: the authored asset is a linear
  * EXR and the deterministic pipeline converts it to the Radiance HDR both render backends already read.
  */
-let hdrLoaderReady: Promise<typeof import('three/addons/loaders/HDRLoader.js')> | null = null;
+const loadHdrLoader = lazyImport(() => import('three/addons/loaders/HDRLoader.js'));
 
 export async function createHdrEnvironment(renderer: WebGPURenderer, url: string): Promise<Environment> {
   await renderer.init();
-  const { HDRLoader } = await (hdrLoaderReady ??= import('three/addons/loaders/HDRLoader.js'));
+  const { HDRLoader } = await loadHdrLoader();
   const resources = environmentResources();
   try {
     // DataTextureLoader.load returns the texture before its request settles (three r186 lines
