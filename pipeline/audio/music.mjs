@@ -202,7 +202,7 @@ function buildLoop(trimWav, cutFrames, loopWav) {
 }
 
 /** The measured block loudnorm prints with print_format=json, the only machine-readable output. */
-function parseLoudnessJson(stderr) {
+export function parseLoudnessJson(stderr) {
   const text = stderr.toString('utf8');
   const match = text.match(/\{[^{}]*"input_i"[^{}]*\}/s);
   if (match === null) {
