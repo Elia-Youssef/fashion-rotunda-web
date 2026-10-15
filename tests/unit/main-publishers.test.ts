@@ -2,19 +2,19 @@ import { readFileSync } from 'node:fs';
 import ts from 'typescript';
 import { describe, expect, it, vi } from 'vitest';
 
-// The three publishing bridges the composition root extracts from src/main.ts, executed here
+// The three publishing bridges the composition root imports from src/proof/publishers.ts, executed here
 // without importing the page's renderer and boot side effects, the way the governor publication
 // test does. The features and memory publishers must keep their published strings byte-identical
 // while touching the dataset only when a published value changes; the timestamp bridge must keep
 // at most one resolve in flight without ever delaying the frame that asks for it.
 
-const source = ts.createSourceFile('main.ts', readFileSync('src/main.ts', 'utf8'), ts.ScriptTarget.Latest, true);
+const source = ts.createSourceFile('publishers.ts', readFileSync('src/proof/publishers.ts', 'utf8'), ts.ScriptTarget.Latest, true);
 
 function evaluate<T>(name: string): T {
   const found = source.statements.find((node): node is ts.FunctionDeclaration =>
     ts.isFunctionDeclaration(node) && node.name?.text === name);
-  if (found === undefined) throw new Error(`missing ${name} in src/main.ts`);
-  const compiled = ts.transpileModule(found.getText(source), {
+  if (found === undefined) throw new Error(`missing ${name} in src/proof/publishers.ts`);
+  const compiled = ts.transpileModule(found.getText(source).replace('export ', ''), {
     compilerOptions: { target: ts.ScriptTarget.ES2022 },
   }).outputText;
   return new Function(`${compiled}\nreturn ${name};`)() as T;

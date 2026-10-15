@@ -5,11 +5,11 @@ import { createGovernor, GOVERNOR_EVENT_LOG_CAP, RECOVERY_QUALIFICATION_MS } fro
 import type { Governor, GovernorDiagnostics, GovernorState } from '../../src/post/governor';
 
 // Execute the production publisher itself without importing the page's renderer and boot side effects.
-const source = ts.createSourceFile('main.ts', readFileSync('src/main.ts', 'utf8'), ts.ScriptTarget.Latest, true);
+const source = ts.createSourceFile('publishers.ts', readFileSync('src/proof/publishers.ts', 'utf8'), ts.ScriptTarget.Latest, true);
 const publisher = source.statements.find((node): node is ts.FunctionDeclaration =>
   ts.isFunctionDeclaration(node) && node.name?.text === 'createGovernorPublisher');
 if (publisher === undefined) throw new Error('missing governor publisher');
-const compiled = ts.transpileModule(publisher.getText(source), {
+const compiled = ts.transpileModule(publisher.getText(source).replace('export ', ''), {
   compilerOptions: { target: ts.ScriptTarget.ES2022 },
 }).outputText;
 const createPublisher = new Function(`${compiled}\nreturn createGovernorPublisher;`)() as

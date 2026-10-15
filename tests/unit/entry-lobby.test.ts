@@ -4,9 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import ts from 'typescript';
-import { contentUrl, loadCatalog } from '../../src/catalog/catalog';
-import type { Catalog } from '../../src/catalog/catalog';
+import { loadContentSet } from '../../src/catalog/bootstrap';
 
 import {
   APPROVED_FACTS,
@@ -831,18 +829,6 @@ describe('first-frame byte total and the sky source', () => {
     [true, true, false], [true, true, true],
   ])('shares tracker requests with content selection (half=%s, missing=%s, hdr=%s)',
     async (half, missing, hdr) => {
-      // Execute the content-set selection itself, including the half-to-full failure fallback.
-      const main = ts.createSourceFile('main.ts', readFileSync('src/main.ts', 'utf8'), ts.ScriptTarget.Latest, true);
-      const fn = main.statements.find((node): node is ts.FunctionDeclaration =>
-        ts.isFunctionDeclaration(node) && node.name?.text === 'loadContentSet');
-      if (fn === undefined) throw new Error('missing content-set selection');
-      const code = ts.transpileModule(fn.getText(main), {
-        compilerOptions: { target: ts.ScriptTarget.ES2022 },
-      }).outputText;
-      const select = new Function('loadCatalog', 'contentUrl', `
-        const FULL_CONTENT_BASE = '/content', HALF_CONTENT_BASE = '/content/half';
-        ${code} return loadContentSet;
-      `)(loadCatalog, contentUrl) as (half: boolean) => Promise<{ base: string; catalog: Catalog }>;
       let resolve!: (response: Response) => void;
       const full = new Promise<Response>((yes) => { resolve = yes; });
       const fetchFn = vi.fn((input: RequestInfo | URL) => {
@@ -870,12 +856,12 @@ describe('first-frame byte total and the sky source', () => {
       try {
         expect(fetchFn).not.toHaveBeenCalled();
         stop = trackFirstFrameProgress('/content', (reading) => readings.push(reading), hdr);
-        const selected = select(half);
+        const selected = loadContentSet(half);
         resolve(new Response(catalogText));
         expect((await selected).base).toBe(half && !missing ? '/content/half' : '/content');
         await vi.waitFor(() => expect(readings.some((reading) => reading.expected > 0)).toBe(true));
         // A later consumer also reuses the settled request.
-        await select(half);
+        await loadContentSet(half);
         const reading = readings.find((one) => one.expected > 0)!;
         expect(reading).toEqual({ received: hdr ? 1010 : 606,
           expected: withoutEnvironment + (hdr ? bytes(catalog.environment.file) : 0),

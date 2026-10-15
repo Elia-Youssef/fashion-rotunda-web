@@ -9,8 +9,8 @@ import { mountMusic } from './audio/mount';
 import { mountCamera } from './camera/mount';
 import type { CameraMount } from './camera/mount';
 import { mountModeSwitch } from './camera/mode-switch';
-import { contentUrl, loadCatalog } from './catalog/catalog';
-import type { Catalog, CatalogLook } from './catalog/catalog';
+import { contentUrl } from './catalog/catalog';
+import { FULL_CONTENT_BASE, loadContentSet, chooseLook, chooseVariant, switchOrder } from './catalog/bootstrap';
 import { composeLighting, enableShadows } from './lighting/compose';
 import { createLoop } from './loop/loop';
 import type { LoopDiagnostics } from './loop/loop';
@@ -21,6 +21,9 @@ import type { PostChain } from './post/chain';
 import { postChainRebuildAllowed } from './post/chain';
 import type { GovernorDiagnostics } from './post/governor';
 import { FrameTimes } from './proof/frametime';
+import {
+  createGovernorPublisher, createPostStatePublisher, createMemoryPublisher, createTimestampResolveBridge,
+} from './proof/publishers';
 import { latestLookSwitchMs, markFirstFrame, snapshot } from './proof/marks';
 import { overlayWanted } from './proof/overlay';
 import { loadProof } from './proof/load';
@@ -123,10 +126,6 @@ const BENCHMARK_MS = 2000;
 const UNSUPPORTED_BROWSER_MESSAGE =
   'This exhibition requires WebGPU or WebGL 2. Your graphics browser does not support these features.';
 
-/** The two content sets. The half set is the phone build, written by the optimize pass. */
-const FULL_CONTENT_BASE = '/content';
-const HALF_CONTENT_BASE = '/content/half';
-
 const search = location.search;
 const params = new URLSearchParams(search);
 /** `?webgl=1` forces the WebGL 2 backend on a machine that has WebGPU, so the fallback stays testable. */
@@ -155,214 +154,6 @@ function readDeviceMemoryGB(): number | null {
     return nav.deviceMemory;
   }
   return null;
-}
-
-/**
- * The half set does not exist until the optimize pass writes it, and a phone must still get a
- * page. A failed fetch of the half catalogue is therefore a warning and a fall back to the full
- * set, not a dead screen.
- */
-async function loadContentSet(wantHalf: boolean): Promise<{ base: string; catalog: Catalog }> {
-  if (wantHalf) {
-    try {
-      const catalog = await loadCatalog(contentUrl(HALF_CONTENT_BASE, 'catalog.json'));
-      return { base: HALF_CONTENT_BASE, catalog };
-    } catch (error) {
-      console.warn(
-        `[archviz] no content set at ${HALF_CONTENT_BASE}, using ${FULL_CONTENT_BASE}`,
-        error,
-      );
-    }
-  }
-  const catalog = await loadCatalog(contentUrl(FULL_CONTENT_BASE, 'catalog.json'));
-  return { base: FULL_CONTENT_BASE, catalog };
-}
-
-/** `?look=<id>`, falling back to the first look in the catalogue with one warning. */
-function chooseLook(catalog: Catalog): CatalogLook {
-  const first = catalog.looks[0];
-  const wanted = params.get('look');
-  if (wanted === null) {
-    return first;
-  }
-  const found = catalog.looks.find((look) => look.id === wanted);
-  if (found === undefined) {
-    console.warn(`[archviz] no look "${wanted}" in the catalogue, showing "${first.id}"`);
-    return first;
-  }
-  return found;
-}
-
-/** `?variant=<name>`, falling back to the look's own default with one warning. */
-function chooseVariant(look: CatalogLook): string {
-  const wanted = params.get('variant');
-  if (wanted === null) {
-    return look.defaultVariant;
-  }
-  if (!look.variants.includes(wanted)) {
-    console.warn(
-      `[archviz] the look "${look.id}" has no variant "${wanted}", showing "${look.defaultVariant}"`,
-    );
-    return look.defaultVariant;
-  }
-  return wanted;
-}
-
-/**
- * The switch order for the e2e memory check: every step is a real change of look and the last
- * one returns to where the run started, so the two readings of renderer.info.memory compare the
- * same scene with itself.
- */
-function switchOrder(ids: string[], startId: string, count: number): string[] {
-  const others = ids.filter((id) => id !== startId);
-  if (count < 1 || others.length === 0) {
-    return [];
-  }
-  const order: string[] = [];
-  for (let step = 0; step < count - 1; step += 1) {
-    order.push(others[step % others.length]);
-  }
-  order.push(startId);
-  return order;
-}
-
-/**
- * The data-governor bridge: fixed-order, bounded tokens read by the proof snapshot, the panel and
- * the e2e suite. 'off' means no governor runs this page (WebGL 2, a forced `?post=` slice, or
- * pass-through). Scalar readings are formatted only when they change, and the immutable event
- * history is serialized once per history version instead of on every frame.
- */
-function createGovernorPublisher(dataset: DOMStringMap): (diagnostics: GovernorDiagnostics | null) => void {
-  let previousVersion = -1;
-  let historyText = '[]';
-  let previousBudget: number | null = null;
-  let previousThreshold: number | null = null;
-  let budgetText = '';
-  let thresholdText = '';
-
-  return (diagnostics): void => {
-    let status = 'off';
-    if (diagnostics !== null) {
-      if (previousBudget !== diagnostics.budgetMs) {
-        previousBudget = diagnostics.budgetMs;
-        budgetText = diagnostics.budgetMs.toFixed(1);
-      }
-      if (previousThreshold !== diagnostics.recoveryThresholdMs) {
-        previousThreshold = diagnostics.recoveryThresholdMs;
-        thresholdText = diagnostics.recoveryThresholdMs.toFixed(2);
-      }
-      const p95 = diagnostics.lastP95Ms === null ? 'none' : diagnostics.lastP95Ms.toFixed(1);
-      status = `level=${diagnostics.level};activity=${diagnostics.activity}` +
-        `;eligible=${diagnostics.recoveryEligible ? '1' : '0'}` +
-        `;cooldown=${Math.ceil(diagnostics.cooldownRemainingMs)}` +
-        `;patience=${diagnostics.consecutiveOverBudget}/${diagnostics.patience}` +
-        `;qualify=${Math.floor(diagnostics.recoveryElapsedMs)}/${diagnostics.recoveryQualificationMs}` +
-        `;p95=${p95};budget=${budgetText};threshold=${thresholdText}`;
-      if (previousVersion !== diagnostics.historyVersion) {
-        previousVersion = diagnostics.historyVersion;
-        historyText = JSON.stringify(diagnostics.events);
-      }
-    }
-    if (dataset['governor'] !== status) {
-      dataset['governor'] = status;
-    }
-    const log = diagnostics === null ? '[]' : historyText;
-    if (dataset['governorLog'] !== log) {
-      dataset['governorLog'] = log;
-    }
-  };
-}
-
-/**
- * The post-state publisher: the features string in its fixed order, built only when the chain
- * hands out a features record this publisher has not seen. The chain reuses one record until a
- * published value would change (a graph rebuild, a fallback, or a motion or depth-of-field
- * transition), so an ordinary frame formats nothing; the governor record still rides every call.
- * The starting sentinel is undefined, so even a first null call writes 'off' exactly as the
- * per-frame formatting this replaces did.
- */
-function createPostStatePublisher(
-  dataset: DOMStringMap,
-  publishGovernor: (diagnostics: GovernorDiagnostics | null) => void,
-): (features: PostChain['features'] | null, diagnostics: GovernorDiagnostics | null) => void {
-  let published: PostChain['features'] | null | undefined;
-  return (features, diagnostics) => {
-    if (features !== published) {
-      published = features;
-      const value =
-        features === null
-          ? 'off'
-          : [
-              features.ao ? 'ao' : '',
-              features.traa ? 'traa' : '',
-              features.msaa ? 'msaa' : '',
-              features.ssgi === 'half' ? 'ssgi-half' : features.ssgi === 'full' ? 'ssgi' : '',
-              features.ssr ? 'ssr' : '',
-              features.bloom ? 'bloom' : '',
-              features.lut ? 'lut' : '',
-              features.vignette ? 'vignette' : '',
-              features.dof === 'on' ? 'dof' : '',
-            ]
-              .filter((feature) => feature !== '')
-              .join(',') || 'off';
-      if (dataset['post'] !== value) {
-        dataset['post'] = value;
-      }
-    }
-    publishGovernor(diagnostics);
-  };
-}
-
-/**
- * The memory attribute as the e2e switch test reads it: geometries/textures. Both counts are
- * lifetime totals of live objects and only move when a resource is uploaded or disposed, so the
- * counts are compared as numbers and the string is built only for a change; a still page touches
- * the dataset neither to read nor to write. The sentinels are negative, so the first call always
- * writes, exactly as the compare-against-the-attribute form this replaces did.
- */
-function createMemoryPublisher(
-  dataset: DOMStringMap,
-): (geometries: number, textures: number) => void {
-  let lastGeometries = -1;
-  let lastTextures = -1;
-  return (geometries, textures) => {
-    if (geometries === lastGeometries && textures === lastTextures) {
-      return;
-    }
-    lastGeometries = geometries;
-    lastTextures = textures;
-    dataset['memory'] = `${geometries}/${textures}`;
-  };
-}
-
-/**
- * The proof timestamp bridge: at most one resolve in flight. Both query pools already coalesce a
- * resolve issued while one is running and answer it with the same duration
- * (WebGPUTimestampQueryPool.js lines 104-106; the WebGL pool keeps the same flag at lines
- * 190-196), and the backend writes exactly what the pool returned into info.render.timestamp
- * (Backend.js, resolveTimestampsAsync), so a call skipped here cannot make the standing reading
- * staler: it only skips a duplicate write of the same number and its promise chain. The reading
- * is pushed before the resolve is requested, so what the series records is unchanged either way.
- */
-function createTimestampResolveBridge(
-  resolve: () => Promise<unknown>,
-  onError: (error: unknown) => void,
-): () => void {
-  let inFlight = false;
-  const settled = (): void => {
-    inFlight = false;
-  };
-  const failed = (error: unknown): void => {
-    inFlight = false;
-    onError(error);
-  };
-  return () => {
-    if (inFlight) {
-      return;
-    }
-    inFlight = true;
-    void resolve().then(settled, failed);
-  };
 }
 
 /**
@@ -939,11 +730,11 @@ async function main(): Promise<void> {
     });
 
     const staticsReady = showroom.loadStatics();
-    const look = chooseLook(catalog);
+    const look = chooseLook(catalog, params);
     const firstLookReady = (async () => {
       await showroom.showLook(look.id);
       try {
-        await showroom.setVariant(chooseVariant(look));
+        await showroom.setVariant(chooseVariant(look, params));
       } catch (error) {
         // The catalogue names the variants and the look file carries them, and the two are written
         // by different steps. A swatch that does not exist is a content defect worth seeing, but the

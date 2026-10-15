@@ -3,13 +3,15 @@ import ts from 'typescript';
 import { BoxGeometry, Group, Mesh, MeshStandardMaterial, Texture } from 'three/webgpu';
 import type { GLTF, GLTFLoader, GLTFParser } from 'three/addons/loaders/GLTFLoader.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { contentUrl, loadCatalog } from '../../src/catalog/catalog';
+import { contentUrl } from '../../src/catalog/catalog';
+import { FULL_CONTENT_BASE, loadContentSet, chooseLook, chooseVariant } from '../../src/catalog/bootstrap';
 import type { Catalog } from '../../src/catalog/catalog';
 import { composeLighting, enableShadows, ROOM_ENVIRONMENT_SCALE } from '../../src/lighting/compose';
 import type { Environment } from '../../src/lighting/environment';
 import { DEFAULT_RIG, daylightParameters, serializeRig } from '../../src/lighting/rig';
 import { createShowroom } from '../../src/scene/showroom';
 import type { Showroom } from '../../src/scene/showroom';
+import { createMemoryPublisher } from '../../src/proof/publishers';
 
 const mocks = vi.hoisted(() => ({
   loader: vi.fn(), procedural: vi.fn(), hdr: vi.fn(), fallback: vi.fn(), panel: vi.fn(),
@@ -48,7 +50,7 @@ const snippet = statements.slice(0, publishIndex + 2).map((node) => node.getText
 const compiled = ts.transpileModule(`
   let showroom = null, contentOnScreen = false, frameCount = 0, frameWaiters = [];
   const chain = null, proofOn = false;
-  ${['loadContentSet', 'chooseLook', 'chooseVariant', 'publishSceneState', 'createMemoryPublisher', 'drawFrame'].map(functionText).join('\n')}
+  ${['publishSceneState', 'drawFrame'].map(functionText).join('\n')}
   const publishMemory = createMemoryPublisher(canvas.dataset);
   return {
     async run() { try { ${snippet} } ${startup.catchClause.getText(source)} },
@@ -149,8 +151,8 @@ function harness(search = '?look=second&variant=dark', half = false, hasDark = t
   const routing = { fail: vi.fn() };
   const params = new URLSearchParams(search);
   const dependencies = {
-    loadCatalog, contentUrl, createShowroom, composeLighting, enableShadows, params,
-    FULL_CONTENT_BASE: '/content', HALF_CONTENT_BASE: '/content/half',
+    loadContentSet, chooseLook, chooseVariant, createMemoryPublisher,
+    contentUrl, createShowroom, composeLighting, enableShadows, params, FULL_CONTENT_BASE,
     // The boot's progress-tracking scope: this harness runs without a lobby, so the chosen-set
     // re-track is a no-op and the stop function is the empty one main() starts with.
     lobby: null, stopProgress: () => {},
