@@ -1,6 +1,7 @@
 import { expect, test } from './support/fixtures';
 import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import type { Locator, Page } from '@playwright/test';
+import { backendPath, projectBackend } from './support/backend';
 import { holdFirstRequest } from './support/held-request';
 
 // Catalogue rail E2E verification.
@@ -17,18 +18,19 @@ import { holdFirstRequest } from './support/held-request';
 const SCENE_READY_TIMEOUT = 60_000;
 const SWITCH_TIMEOUT = 30_000;
 
-function skipUnlessWebgl2(): void {
-  test.skip(test.info().project.name !== 'webgl2', 'the chrome checks are backend independent');
-}
-
 // attract=0 keeps the idle tour from starting after 60 s and rendering every frame, and post=off
 // drops the post chain; both only slow the software renderer, and these checks are DOM layout.
+// Every project runs the suite on its own backend: openScene pins the page to the backend its
+// project promises through the canvas data-backend attribute before any DOM reading.
 async function openScene(
   page: Page,
-  path = '/?webgl=1&gate=off&e2e=1&proof=1&attract=0&post=off',
+  path = '/?gate=off&e2e=1&proof=1&attract=0&post=off',
 ): Promise<Locator> {
-  await page.goto(path);
+  await page.goto(backendPath(path));
   const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute('data-backend', projectBackend(), {
+    timeout: SCENE_READY_TIMEOUT,
+  });
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
   return canvas;
 }
@@ -172,8 +174,6 @@ test.describe('Catalogue Rail Parity', () => {
     test(`rail geometry, internal scrolling, touch sizing, and zero document scroll at ${vp.id}`, async ({
       page,
     }) => {
-      skipUnlessWebgl2();
-
       await page.setViewportSize({ width: vp.width, height: vp.height });
       await openScene(page);
 
@@ -273,8 +273,6 @@ test.describe('Catalogue Rail Parity', () => {
     test('desktop rail shows all seven looks at once, clear of the light bar, down to short windows', async ({
       page,
     }) => {
-      skipUnlessWebgl2();
-
       const viewports = [
         { id: '1669x1115', width: 1669, height: 1115, mode: 'fit' },
         { id: '1920x1080', width: 1920, height: 1080, mode: 'fit' },
@@ -287,6 +285,17 @@ test.describe('Catalogue Rail Parity', () => {
       ] as const;
 
       await openScene(page);
+
+      // data-scene goes ready on the first frame with content, but the page mounts the strip and
+      // the card only after the tier benchmark and the post chain settle, so the readings wait
+      // for the rail state they assume: seven buttons, the count the geometry test pins to the
+      // shipped catalogue, exactly one of them the catalogue's current mark, and the card mounted.
+      const rail = page.locator('#looks');
+      await expect(rail.locator('button')).toHaveCount(7, { timeout: SCENE_READY_TIMEOUT });
+      await expect(rail.locator('button[aria-current="true"]')).toHaveCount(1, {
+        timeout: SCENE_READY_TIMEOUT,
+      });
+      await expect(page.locator('.product-card')).toHaveCount(1, { timeout: SCENE_READY_TIMEOUT });
 
       for (const vp of viewports) {
         await resizeTo(page, vp.width, vp.height);
@@ -356,7 +365,6 @@ test.describe('Catalogue Rail Parity', () => {
     test.use({ viewport: { width: 1280, height: 560 }, hasTouch: true });
 
     test('keeps 44px thumbnails and scrolls, clear of the light bar, at 1280x560', async ({ page }) => {
-      skipUnlessWebgl2();
       await openScene(page);
       const tag = 'desktop 1280x560 coarse pointer';
 
@@ -384,8 +392,6 @@ test.describe('Catalogue Rail Parity', () => {
   test('synthetic safe areas and actionable point hit testing at phone portrait and short landscape', async ({
     page,
   }) => {
-    skipUnlessWebgl2();
-
     const viewports = [
       { id: 'phone-390x844', width: 390, height: 844 },
       { id: 'short-landscape-844x390', width: 844, height: 390 },
@@ -483,8 +489,6 @@ test.describe('Catalogue Rail Parity', () => {
   test('actionable point hit testing, clipping proof, and non-occlusion at desktop and tablet', async ({
     page,
   }) => {
-    skipUnlessWebgl2();
-
     const viewports = [
       { id: 'desktop', width: 1440, height: 900 },
       { id: 'tablet', width: 820, height: 1180 },
@@ -543,7 +547,6 @@ test.describe('Catalogue Rail Parity', () => {
   test('selection via pointer, Enter, Space, and focus continuity across breakpoints', async ({
     page,
   }) => {
-    skipUnlessWebgl2();
     await page.setViewportSize({ width: 1440, height: 900 });
     const canvas = await openScene(page);
 
@@ -592,7 +595,6 @@ test.describe('Catalogue Rail Parity', () => {
   });
 
   test('latest-click-wins race condition with deterministic route delay', async ({ page }) => {
-    skipUnlessWebgl2();
     await page.setViewportSize({ width: 1440, height: 900 });
     const canvas = await openScene(page);
 
@@ -636,7 +638,6 @@ test.describe('Catalogue Rail Parity', () => {
   });
 
   test('controlled pending and busy state capture and semantic reading', async ({ page }) => {
-    skipUnlessWebgl2();
     await page.setViewportSize({ width: 1440, height: 900 });
     await openScene(page);
 
@@ -689,7 +690,6 @@ test.describe('Catalogue Rail Parity', () => {
   });
 
   test('renderer preservation and demand loop return to idle', async ({ page }) => {
-    skipUnlessWebgl2();
     test.setTimeout(120_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     const canvas = await openScene(page);

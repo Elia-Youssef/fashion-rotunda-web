@@ -1,12 +1,14 @@
 import { expect, test } from './support/fixtures';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { waitForTooltipInstallation } from './support/a11y-mount';
+import { backendPath, projectBackend } from './support/backend';
 
 // Onboarding, tooltips and accessibility pass.
 // Tests the first-visit onboarding card, Skip dismissal, the DOM tab walk order,
 // roving tabindex arrow navigation on swatches, the tooltip on focus, live region announcements
 // on look changes, and ensures no console errors occur.
-// WebGL2 project only (backend-independent DOM checks, following idle.spec.ts pattern).
+// The checks are backend independent, so both projects run them; each page is pinned to its
+// project's backend through the canvas data-backend attribute before any DOM reading.
 
 const SCENE_READY_TIMEOUT = 60_000;
 const SWITCH_TIMEOUT = 30_000;
@@ -31,8 +33,17 @@ function boxesIntersect(
   );
 }
 
-function skipUnlessWebgl2(): void {
-  test.skip(test.info().project.name !== 'webgl2', 'the a11y checks are backend independent');
+/** Opens the page on the project's own backend and waits for the first drawn frame. */
+async function openScene(page: Page, path: string): Promise<Locator> {
+  await page.goto(backendPath(path));
+  const canvas = page.locator('canvas#scene');
+  // A silent fallback would run these DOM checks against the wrong renderer, so the page must
+  // publish the backend its project promises before any check reads the DOM.
+  await expect(canvas).toHaveAttribute('data-backend', projectBackend(), {
+    timeout: SCENE_READY_TIMEOUT,
+  });
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+  return canvas;
 }
 
 async function installSafeArea(page: Page): Promise<void> {
@@ -60,13 +71,10 @@ async function tabUntil(page: Page, selector: string): Promise<void> {
 }
 
 test('onboarding sequence, focus order, swatch navigation and live announcements', async ({ page }) => {
-  skipUnlessWebgl2();
   // Six steps on a software-rendered page: the suite's default minute ran out under load.
   test.setTimeout(120_000);
 
-  await page.goto('/?webgl=1&gate=off&onboarding=reset');
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+  const canvas = await openScene(page, '/?gate=off&onboarding=reset');
   await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
 
   // 1. Onboarding card appears with the first step; the a11y mount follows the ready attribute.
@@ -208,11 +216,7 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
 });
 
 test('the onboarding card stays away under e2e without the flag', async ({ page }) => {
-  skipUnlessWebgl2();
-
-  await page.goto('/?webgl=1&e2e=1');
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+  await openScene(page, '/?e2e=1');
 
   // Other specs run under e2e=1 and must never meet the card. Two assertions: the a11y mount
   // decides onboarding and must be installed first, then the card is asserted absent.
@@ -223,13 +227,9 @@ test('the onboarding card stays away under e2e without the flag', async ({ page 
 test('the long GPU tooltip stays inside short landscape and dismisses without stale ARIA', async ({
   page,
 }) => {
-  skipUnlessWebgl2();
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 844, height: 390 });
-  await page.goto('/?webgl=1&e2e=1&gate=off');
-  await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'ready', {
-    timeout: SCENE_READY_TIMEOUT,
-  });
+  await openScene(page, '/?e2e=1&gate=off');
 
   const badge = page.locator('.badge');
   const tooltip = page.locator('#a11y-tooltip[role="tooltip"]');
@@ -260,13 +260,9 @@ for (const viewport of [
   test(`the onboarding Lights step leaves its launcher usable at ${viewport.width}x${viewport.height}`, async ({
     page,
   }) => {
-    skipUnlessWebgl2();
     test.setTimeout(120_000);
     await page.setViewportSize(viewport);
-    await page.goto('/?webgl=1&gate=off&onboarding=reset');
-    await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'ready', {
-      timeout: SCENE_READY_TIMEOUT,
-    });
+    await openScene(page, '/?gate=off&onboarding=reset');
     await installSafeArea(page);
 
     const card = page.locator('.onboarding-card');
@@ -321,10 +317,9 @@ for (const viewport of [
 test('transition manages inert state, focus transfer, and live announcements during reveal', async ({
   page,
 }) => {
-  skipUnlessWebgl2();
   test.setTimeout(120_000);
 
-  await page.goto('/?webgl=1');
+  await page.goto(backendPath('/'));
   const lobby = page.locator('#entry-lobby');
   const header = page.locator('#shell-header');
   const main = page.locator('main');
@@ -344,6 +339,11 @@ test('transition manages inert state, focus transfer, and live announcements dur
 
   // Wait for revealed state
   await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  // The renderer starts with the load action, so only now can the page be pinned to the backend
+  // its project promises; a silent fallback would make the reveal checks read the wrong build.
+  await expect(page.locator('canvas#scene')).toHaveAttribute('data-backend', projectBackend(), {
+    timeout: SCENE_READY_TIMEOUT,
+  });
   await expect(lobby).toBeHidden();
 
   // After reveal: inert attributes removed
@@ -369,11 +369,10 @@ test('transition manages inert state, focus transfer, and live announcements dur
 });
 
 test('prefers-reduced-motion bypasses decorative fading during transition', async ({ page }) => {
-  skipUnlessWebgl2();
   test.setTimeout(120_000);
 
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.goto('/?webgl=1');
+  await page.goto(backendPath('/'));
 
   const lobby = page.locator('#entry-lobby');
   await expect(lobby).toHaveAttribute('data-state', 'idle');
@@ -382,6 +381,10 @@ test('prefers-reduced-motion bypasses decorative fading during transition', asyn
 
   // Reaches revealed state successfully
   await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  // Same pin as the transition test: the renderer exists only after the load action.
+  await expect(page.locator('canvas#scene')).toHaveAttribute('data-backend', projectBackend(), {
+    timeout: SCENE_READY_TIMEOUT,
+  });
   await expect(lobby).toBeHidden();
   await expect(page.locator('#scene-veil')).toBeHidden();
   await expect(page.locator('#shell-header')).not.toHaveAttribute('inert');
