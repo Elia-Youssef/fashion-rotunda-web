@@ -1,7 +1,7 @@
 // The shared renderer factory. Backend choice, device-loss wiring and the GPU
 // name live here so the rest of the app deals with one handle and never with backend internals.
 //
-// Source references below are to the installed three.js 0.186.0 sources under
+// Source references below are to the installed three.js 0.186.1 sources under
 // node_modules/three/src/renderers/ and are quoted with file and line.
 
 import { ACESFilmicToneMapping, WebGPURenderer } from 'three/webgpu';
@@ -81,7 +81,7 @@ function usesWebGPUBackend(backend: object): boolean {
 }
 
 /**
- * three 0.186.0 does not keep the adapter: WebGPUBackend.init() holds it in a local variable
+ * three 0.186.1 does not keep the adapter: WebGPUBackend.init() holds it in a local variable
  * (WebGPUBackend.js line 221) and only `this.device` survives init (line 296). The adapter, not
  * the device, carries the identifying `info`, so this module requests its own adapter. A second
  * `requestAdapter()` is cheap and normally resolves to the same physical GPU; when it fails or

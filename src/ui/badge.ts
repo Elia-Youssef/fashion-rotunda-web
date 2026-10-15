@@ -1,4 +1,4 @@
-// The backend badge in the side panel identifies the backend behind the displayed measurements.
+// The backend badge in the footer strip identifies the backend behind the displayed measurements.
 //
 // `import type` below is erased at build time, so this module stays DOM-only at runtime.
 

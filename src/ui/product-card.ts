@@ -116,7 +116,7 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
   swatches.setAttribute('aria-label', 'Mannequin material');
   card.appendChild(swatches);
 
-  // The card leads the side panel, above the badge, so it is prepended rather than appended.
+  // The card leads the side panel, ahead of the share block, so it is prepended rather than appended.
   root.prepend(card);
 
   // Fixed controls live for the card; swatch listeners live for one rendered look.

@@ -1,7 +1,7 @@
 // One image size per framebuffer texture for three's ViewportTextureNode, and a retirement
 // owner for each copy.
 //
-// Source references below are to the installed three.js 0.186.0 sources under node_modules/three/src/.
+// Source references below are to the installed three.js 0.186.1 sources under node_modules/three/src/.
 //
 // The dome glass refracts the room through a ViewportTextureNode (nodes/functions/
 // PhysicalLightingModel.js lines 70-71). The node keeps one framebuffer texture per render target, made

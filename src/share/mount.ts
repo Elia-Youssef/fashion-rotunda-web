@@ -88,14 +88,14 @@ export function mountShare(options: ShareMountOptions): ShareMount {
   const proofPosition: [number, number, number] = [proofPos[0], proofPos[1], proofPos[2]];
 
   // What the chain drew at boot. data-post names the features it built ("ao,traa"), while ?post=
-  // is the override vocabulary off|ao|aa that src/post/chain.ts reads, so the two compare only as
-  // "has this moved since boot": while it has not, the link keeps the ?post= it arrived with, and
-  // a page that never overrode post stays bare.
+  // in a link is the share subset off|ao|aa (src/share/state.ts) of the slices src/post/chain.ts
+  // reads, so the two compare only as "has this moved since boot": while it has not, the link keeps
+  // the ?post= it arrived with, and a page that never overrode post stays bare.
   const bootPostFeatures = options.postFeatures();
 
   const musicStore = readMusicStore();
   // The player's state is transient: 'armed' is a page still waiting for its first gesture and
-  // 'paused' is a visitor who switched the music off, and both would read as "on" in a link. The
+  // 'loading' is a track still starting up, and both would read as "on" in a link. The
   // switch writes the visitor's answer to the store on every press (src/audio/mount.ts), so the
   // store is the durable reading; before the first press the player's boot state is what the page
   // is doing, which is what ?music= and the store had already settled in the audio mount.
