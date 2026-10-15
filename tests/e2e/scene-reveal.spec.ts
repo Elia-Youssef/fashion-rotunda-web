@@ -138,7 +138,7 @@ test.describe('Scene Reveal Transition', () => {
     await rotunda.waitUntilContinued();
 
     // Wait for full transition to revealed
-    await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+    await expect(lobby).toHaveCount(0, { timeout: 60_000 });
     await expectRevealComplete(page);
     await expect(lobby).toBeHidden();
     await expect(canvas).toHaveAttribute('data-scene', 'ready');

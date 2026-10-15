@@ -379,7 +379,12 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       if (currentState === 'disposed') {
         return;
       }
+      if (stopProgressTrackingFn !== null) {
+        stopProgressTrackingFn();
+        stopProgressTrackingFn = null;
+      }
       inputListeners.abort();
+      listeners.abort();
       currentState = 'revealed';
       lobby.dataset['state'] = currentState;
       lobby.setAttribute('inert', '');
@@ -387,6 +392,8 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       lobby.hidden = true;
       lobby.style.display = 'none';
       lobby.style.pointerEvents = 'none';
+      // Keep the revealed state readable for later startup-failure routing.
+      lobby.remove();
     },
 
     setError(message: string): void {

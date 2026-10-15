@@ -89,7 +89,7 @@ test('releases page keyboard navigation after the lobby reveal', async ({ page }
   const lobby = page.locator('#entry-lobby');
   await expect(lobby).toHaveAttribute('data-state', 'idle');
   await lobby.locator('#lobby-load-btn').click();
-  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  await expect(lobby).toHaveCount(0, { timeout: 60_000 });
   await expect(lobby).toBeHidden();
   await expect(page.locator('canvas#scene')).toHaveAttribute('data-backend', projectBackend());
 
@@ -246,7 +246,7 @@ test('proves music preference persistence: Music off fetches no audio during or 
   // The zero-audio reading observes the actual end of boot, not a fixed delay after ready-hidden:
   // the watcher accumulates every request since the goto, so one reading at the initialized state
   // covers during and after the boot, however long the boot takes.
-  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  await expect(lobby).toHaveCount(0, { timeout: 60_000 });
   await waitForSceneInitialization(page, INITIALIZED_TIMEOUT);
 
   expect(watcher.musicUrls(), 'music=off resulted in zero audio requests').toEqual([]);
@@ -323,7 +323,7 @@ test.describe('lobby progress on the touch half set', () => {
 
     await rotunda.release();
     await rotunda.waitUntilContinued();
-    await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+    await expect(lobby).toHaveCount(0, { timeout: 60_000 });
 
     expect(glbPaths.length, 'the scene geometry was requested').toBeGreaterThan(0);
     for (const pathname of glbPaths) {
@@ -413,7 +413,7 @@ test('counts the deep-linked look: the bar rises and reaches its total', async (
       timeout: 60_000,
     })
     .toBe(1);
-  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  await expect(lobby).toHaveCount(0, { timeout: 60_000 });
 
   expect(glbPaths, 'the deep-linked look was requested').toContain('/content/looks/zoot-suit.glb');
 });

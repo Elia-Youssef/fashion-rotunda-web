@@ -331,7 +331,7 @@ test('transition manages inert state, focus transfer, and live announcements dur
   await lobby.locator('#lobby-load-btn').click();
 
   // Wait for revealed state
-  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  await expect(lobby).toHaveCount(0, { timeout: 60_000 });
   // The renderer starts with the load action, so only now can the page be pinned to the backend
   // its project promises; a silent fallback would make the reveal checks read the wrong build.
   await expect(page.locator('canvas#scene')).toHaveAttribute('data-backend', projectBackend(), {
@@ -373,7 +373,7 @@ test('prefers-reduced-motion bypasses decorative fading during transition', asyn
   await lobby.locator('#lobby-load-btn').click();
 
   // Reaches revealed state successfully
-  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  await expect(lobby).toHaveCount(0, { timeout: 60_000 });
   // Same pin as the transition test: the renderer exists only after the load action.
   await expect(page.locator('canvas#scene')).toHaveAttribute('data-backend', projectBackend(), {
     timeout: SCENE_READY_TIMEOUT,

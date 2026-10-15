@@ -847,6 +847,83 @@ describe('unsupported browser behavior', () => {
 });
 
 describe('disposal', () => {
+  it('stops active progress tracking at reveal without requiring a ready call', () => {
+    const disconnect = vi.fn();
+    vi.stubGlobal('PerformanceObserver', class {
+      observe(): void {}
+      disconnect = disconnect;
+    });
+    vi.stubGlobal('fetch', () => new Promise<Response>(() => {}));
+    try {
+      const { lobby } = mountLobby();
+      const timers = vi.getTimerCount();
+      const stop = lobby.trackProgress('/reveal-progress');
+      expect(vi.getTimerCount()).toBe(timers + 1);
+      lobby.setRevealed();
+      expect(disconnect).toHaveBeenCalledOnce();
+      expect(vi.getTimerCount()).toBe(timers);
+      stop();
+      lobby.dispose();
+      expect(disconnect).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it.each([false, true])(
+    'releases the revealed surface while retaining its state (hydration=%s)',
+    async (withPreExistingDOM) => {
+      const signals: AbortSignal[] = [];
+      const add = HTMLButtonElement.prototype.addEventListener;
+      vi.spyOn(HTMLButtonElement.prototype, 'addEventListener').mockImplementation(function (
+        this: HTMLButtonElement, type, listener, options,
+      ) {
+        if (typeof options === 'object' && options.signal) signals.push(options.signal);
+        add.call(this, type, listener, options);
+      });
+      const failed = mountLobby({ withPreExistingDOM });
+      failed.element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+      failed.lobby.setError('Connection lost');
+      failed.lobby.setReady();
+      expect(failed.lobby.state).toBe('error');
+      expect(failed.element.isConnected).toBe(true);
+      expect(failed.element.querySelector<HTMLElement>('.entry-lobby__error-pane')!.hidden).toBe(false);
+      expect(document.activeElement).toBe(failed.element.querySelector('#lobby-retry-btn'));
+      expect(signals.length).toBeGreaterThan(0);
+      expect(signals.every((signal) => !signal.aborted)).toBe(true);
+      failed.lobby.dispose();
+      signals.length = 0;
+
+      const { lobby, element } = mountLobby({ withPreExistingDOM });
+      const music = element.querySelector<HTMLButtonElement>('.entry-lobby__music-switch')!;
+      const load = element.querySelector<HTMLButtonElement>('#lobby-load-btn')!;
+      const preference = music.getAttribute('aria-pressed');
+      load.click();
+      const request = await lobby.waitForLoadRequest();
+      lobby.setReady();
+      lobby.setCoverToBlack();
+      lobby.setBlackHold();
+      lobby.setRevealing();
+      expect(element.isConnected).toBe(true);
+      expect(signals.every((signal) => !signal.aborted)).toBe(true);
+      lobby.setRevealed();
+      expect(signals.length).toBeGreaterThan(0);
+      expect(signals.every((signal) => signal.aborted)).toBe(true);
+      expect(element.isConnected).toBe(false);
+      expect(root.querySelector('#entry-lobby')).toBeNull();
+      expect(lobby.state).toBe('revealed');
+      expect(lobby.element).toBe(element);
+      expect(element.dataset.state).toBe('revealed');
+      music.click();
+      expect(music.getAttribute('aria-pressed')).toBe(preference);
+      expect(await lobby.waitForLoadRequest()).toEqual(request);
+      lobby.setRevealed();
+      expect(lobby.state).toBe('revealed');
+      lobby.dispose();
+      expect(lobby.state).toBe('disposed');
+    },
+  );
+
   it('removes lobby from DOM and sets state to disposed', () => {
     const { lobby } = mountLobby();
     lobby.dispose();

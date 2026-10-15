@@ -62,7 +62,8 @@ test('production policy permits loading, interaction, music and screenshot witho
       await lobby.locator('#lobby-load-btn').click();
       await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
       await expect(canvas).toHaveAttribute('data-backend', backend);
-      await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: SCENE_READY_TIMEOUT });
+      // The lobby removes itself once the scene is revealed.
+      await expect(lobby).toHaveCount(0, { timeout: SCENE_READY_TIMEOUT });
       await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
     });
 

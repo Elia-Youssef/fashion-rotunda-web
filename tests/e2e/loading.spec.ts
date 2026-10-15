@@ -6,7 +6,7 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { browserReports, expect, test, expectConsoleError } from './support/fixtures';
 
 import { holdFirstRequest } from './support/held-request';
-import { backendPath } from './support/backend';
+import { backendPath, projectBackend } from './support/backend';
 import { STARTUP_FAILURE_MESSAGE } from '../../src/ui/startup-failure';
 import { contentUrl, parseCatalog } from '../../src/catalog/catalog';
 
@@ -109,14 +109,11 @@ test('gates the experience until the visitor activates Load Experience', async (
     .toBe(1);
 
   // 5. Transitions through ready-hidden, black veil, to revealed
-  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: REVEAL_TIMEOUT_MS });
+  await expect(lobby).toHaveCount(0, { timeout: REVEAL_TIMEOUT_MS });
   await expect(canvas).toHaveAttribute('data-scene', 'ready');
 
-  // Lobby and scene-veil are hidden once revealed
-  await expect(lobby).toBeHidden();
-  const veil = page.locator('#scene-veil');
-  await expect(veil).toHaveAttribute('data-state', 'revealed');
-  await expect(veil).toBeHidden();
+  // Both completed covers are detached once revealed.
+  await expect(page.locator('#scene-veil')).toHaveCount(0);
 
   // Shell elements are interactive
   await expect(page.locator('#shell-header')).not.toHaveAttribute('inert');
@@ -147,9 +144,43 @@ test('counts and fetches the HDR once under the ?sky=hdr diagnostic', async ({ p
       timeout: LOAD_COMPLETE_TIMEOUT_MS,
     })
     .toBe(1);
-  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: REVEAL_TIMEOUT_MS });
+  await expect(lobby).toHaveCount(0, { timeout: REVEAL_TIMEOUT_MS });
   expect(hdrRequests).toHaveLength(1);
   expect(new URL(hdrRequests[0]).pathname).toBe('/content/env/school-field-cloudy-1k.hdr');
+});
+
+test('reveals the room fallback when the diagnostic HDR request fails', async ({ page }) => {
+  const warnings: string[] = [];
+  let cutRequests = 0;
+  page.on('console', (message) => {
+    if (message.type() === 'warning' && message.text().startsWith('[archviz] sky environment failed;')) {
+      warnings.push(message.text());
+    }
+  });
+  await page.route('**/content/env/school-field-cloudy-1k.hdr', (route) => {
+    cutRequests += 1;
+    return route.abort();
+  });
+  expectConsoleError(page, /^Failed to load resource: net::ERR_FAILED/,
+    'the diagnostic HDR is deliberately cut to exercise the room fallback');
+  await page.goto(backendPath('/?e2e=1&gate=on&sky=hdr&music=off'));
+  const lobby = page.locator('#entry-lobby');
+  await lobby.locator('#lobby-load-btn').click();
+  const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute('data-backend', projectBackend(), { timeout: LOAD_COMPLETE_TIMEOUT_MS });
+  await expect(lobby).toHaveCount(0, { timeout: REVEAL_TIMEOUT_MS });
+  await expect(canvas).toHaveAttribute('data-scene', 'ready');
+  await expect(page.locator('#scene-veil')).toHaveCount(0);
+  expect(cutRequests).toBe(1);
+  expect(warnings).toHaveLength(1);
+  const completed = await page.evaluate(() => ({
+    state: window.archvizReveal?.state,
+    stableFrames: window.archvizReveal?.frameCountBehindBlack,
+    seamReleased: window.archvizTransitionSeam === undefined,
+  }));
+  expect(completed.state).toBe('revealed');
+  expect(completed.stableFrames).toBeGreaterThanOrEqual(2);
+  expect(completed.seamReleased).toBe(true);
 });
 
 // Keyboard Enter activation on the focused Load button
@@ -169,7 +200,7 @@ test('activates Load Experience on Enter from the keyboard', async ({ page }) =>
   await expect(lobby).toHaveAttribute('data-state', 'loading');
   await rotunda.release();
   await rotunda.waitUntilContinued();
-  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: REVEAL_TIMEOUT_MS });
+  await expect(lobby).toHaveCount(0, { timeout: REVEAL_TIMEOUT_MS });
   await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'ready');
   await expect(lobby).toBeHidden();
 });
