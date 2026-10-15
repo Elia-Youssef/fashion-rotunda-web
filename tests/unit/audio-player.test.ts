@@ -221,6 +221,7 @@ describe('createMusicPlayer.play', () => {
 
   it('maps a failed manifest fetch to error and retries from the failed step', async () => {
     const world = fakeWorld();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     let failManifest = true;
     world.fetchMock.mockImplementation(async (input: unknown) => {
       if (String(input).endsWith('music.json') && failManifest) {
@@ -243,13 +244,43 @@ describe('createMusicPlayer.play', () => {
 
     await player.play();
     expect(player.state).toBe('error');
-    expect(states.at(-1)?.[1]).toContain('music list');
+    // The detail is null: the switch draws its own fixed text for the state, and the raw cause
+    // stays in the console under the [archviz] prefix.
+    expect(states.at(-1)?.[1]).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toBe(
+      '[archviz] music unavailable: The music list could not be fetched (status 500).',
+    );
 
     failManifest = false;
     await player.play();
     expect(player.state).toBe('playing');
     // The failed attempt asked for the manifest and nothing else; the retry asked for the file too.
     expect(world.fetchMock).toHaveBeenCalledTimes(3);
+    warn.mockRestore();
+  });
+
+  it('reports every rejection shape the same way: null detail, one warned cause', async () => {
+    const world = fakeWorld();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    // A rejection that is not an Error takes the same path as one that is.
+    world.fetchMock.mockRejectedValue('boom');
+    const states: Array<[MusicState, string | null]> = [];
+    const player = createMusicPlayer({
+      engine: world.engine,
+      baseUrl: '/content/music',
+      trackId: null,
+      level: 0.5,
+      fadeMs: 400,
+      onStateChange: (state, detail) => states.push([state, detail]),
+    });
+
+    await player.play();
+    expect(player.state).toBe('error');
+    expect(states).toEqual([['loading', null], ['error', null]]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toBe('[archviz] music unavailable: boom');
+    warn.mockRestore();
   });
 
   it('warns once about an unknown track and plays the default', async () => {

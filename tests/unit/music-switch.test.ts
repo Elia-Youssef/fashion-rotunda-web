@@ -80,12 +80,13 @@ const STATE_TABLE: Array<{
   },
   {
     // Never disabled: the press in this state is the retry, so the control has to stay pressable.
+    // The player reports no detail, so the switch's own fixed text fills label and tooltip.
     state: 'error',
     text: 'Music unavailable',
     pressed: 'false',
     busy: false,
     disabled: false,
-    tooltip: 'The audio context would not start.',
+    tooltip: 'Music unavailable',
   },
 ];
 
@@ -111,8 +112,7 @@ describe('mountMusicSwitch', () => {
 
   it.each(STATE_TABLE)('shows $state as "$text"', (row) => {
     const current = mount('off');
-    const detail = row.state === 'error' ? 'The audio context would not start.' : null;
-    current.setState(row.state, detail);
+    current.setState(row.state, null);
     const btn = button();
     expect(label()).toBe(row.text);
     expect(btn.getAttribute('aria-pressed')).toBe(row.pressed);
@@ -133,8 +133,8 @@ describe('mountMusicSwitch', () => {
     expect(button().getAttribute('aria-busy')).toBe('true');
     current.setState('playing', null);
     expect(button().hasAttribute('aria-busy')).toBe(false);
-    current.setState('error', 'The audio context would not start.');
-    expect(button().dataset.tooltip).toBe('The audio context would not start.');
+    current.setState('error', null);
+    expect(button().dataset.tooltip).toBe('Music unavailable');
     expect(button().hasAttribute('title')).toBe(false);
     current.setState('off', null);
     expect(button().dataset.tooltip).toBe('Turn music on');
@@ -144,7 +144,7 @@ describe('mountMusicSwitch', () => {
   it('never disables the button, so every state can be pressed', () => {
     const current = mount('off');
     for (const row of STATE_TABLE) {
-      current.setState(row.state, row.state === 'error' ? 'A detail.' : null);
+      current.setState(row.state, null);
       expect(button().disabled, `${row.state} is pressable`).toBe(false);
     }
   });
@@ -163,7 +163,7 @@ describe('the switch reporting a press', () => {
   it('reports a press in the error state, which is how the music is retried', () => {
     const onToggle = vi.fn();
     const current = mount('off', onToggle);
-    current.setState('error', 'The music file could not be fetched (status 404).');
+    current.setState('error', null);
     button().click();
     expect(onToggle, 'the error state retries on a press').toHaveBeenCalledTimes(1);
   });

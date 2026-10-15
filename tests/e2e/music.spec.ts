@@ -1,4 +1,4 @@
-import { expect, test } from './support/fixtures';
+import { browserReports, expect, expectConsoleError, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
 import { backendPath } from './support/backend';
 
@@ -186,4 +186,41 @@ test('keeps the position across a pause and a resume', async ({ page }) => {
       timeout: PROGRESS_TIMEOUT,
     })
     .toBeGreaterThan(p2);
+});
+
+test('reports a failed load as Music unavailable, the cause only in the console', async ({
+  page,
+}) => {
+  // Cutting the manifest request is the same class of failure as a 404 or an undecodable file:
+  // play() rejects and the switch lands in error. No audio output is needed, so the case runs on
+  // both backends.
+  await page.route('**/content/music/music.json', (route) => route.abort());
+  await openWithScene(page, backendPath('/?e2e=1&music=off'));
+  const button = switchButton(page);
+  await expect(button).toHaveAttribute('data-music', 'off');
+
+  // Chromium reports the cut request as a console error whose text carries no URL, so the
+  // pattern anchors on the reported text; the route above is what ties the error to the
+  // manifest, the one request this case fails. The guard ignores plain warnings, so the
+  // [archviz] diagnosis warning needs no declaration.
+  expectConsoleError(page, /^Failed to load resource: net::ERR_FAILED/,
+    'the route abort is a deliberate network failure: the cut manifest behind the error state');
+  await button.click();
+  await expect(button).toHaveAttribute('data-music', 'error', { timeout: PLAYING_TIMEOUT });
+  await expect(button.locator('span')).toHaveText('Music unavailable');
+  // The focus tooltip carries the fixed text too, never the browser's raw rejection message.
+  await expect(button).toHaveAttribute('data-tooltip', 'Music unavailable');
+  // The raw cause stays diagnosable: one warning under the [archviz] prefix.
+  await expect
+    .poll(
+      () =>
+        browserReports(page).some(
+          (report) =>
+            report.kind === 'console' &&
+            report.type === 'warning' &&
+            report.text.startsWith('[archviz] music'),
+        ),
+      { message: 'the raw cause was warned under the [archviz] prefix' },
+    )
+    .toBe(true);
 });

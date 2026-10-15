@@ -299,7 +299,12 @@ export function createMusicPlayer(options: MusicPlayerOptions): MusicPlayer {
       if (mine !== generation) {
         return;
       }
-      setState('error', error instanceof Error ? error.message : 'The music could not start.');
+      // The visitor-facing text is the switch's business: the raw cause goes to the console
+      // with the same [archviz] prefix as the unknown-track warning, and the state carries no
+      // detail for the switch to echo.
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[archviz] music unavailable: ${reason}`);
+      setState('error', null);
     } finally {
       if (mine === generation) {
         controller = null;
