@@ -457,6 +457,54 @@ describe('the card sheet', () => {
   });
 });
 
+describe('the sheet close buttons', () => {
+  // WCAG 2.5.3 (label in name): the accessible name must contain the visible label text. The
+  // chrome paints the glyph "x" as real text, which the name "Close" cannot contain, so the
+  // factory hides the glyph inside an aria-hidden span. jsdom computes no accessible name, so
+  // the test reads the attribute the name comes from and walks each button for text outside an
+  // aria-hidden element; the browser specs pin the computed name through getByRole.
+  function textOutsideAriaHidden(element: Element): string[] {
+    const found: string[] = [];
+    const walk = (node: Node, hidden: boolean): void => {
+      if (node instanceof Element && node.getAttribute('aria-hidden') === 'true') {
+        hidden = true;
+      }
+      if (node.nodeType === Node.TEXT_NODE && !hidden && (node.textContent ?? '').trim() !== '') {
+        found.push((node.textContent ?? '').trim());
+      }
+      for (const child of Array.from(node.childNodes)) {
+        walk(child, hidden);
+      }
+    };
+    walk(element, false);
+    return found;
+  }
+
+  it('names both close buttons Close with no visible text outside aria-hidden', () => {
+    stubViewport(390);
+    shell = mountShell(document);
+
+    shell.setCardOpen(true);
+    const cardClose = document.querySelector('#shell-card .shell-sheet__close');
+    expect(cardClose, 'the card sheet mounts a close button').not.toBeNull();
+    expect(cardClose?.getAttribute('aria-label'), 'the card close is named Close').toBe('Close');
+    expect(
+      textOutsideAriaHidden(cardClose as HTMLElement),
+      'the card close shows no text outside an aria-hidden element',
+    ).toEqual([]);
+
+    shell.setCardOpen(false);
+    shell.setLightPanelOpen(true);
+    const lightClose = document.querySelector('#shell-light-row .shell-sheet__close');
+    expect(lightClose, 'the light sheet mounts a close button').not.toBeNull();
+    expect(lightClose?.getAttribute('aria-label'), 'the light close is named Close').toBe('Close');
+    expect(
+      textOutsideAriaHidden(lightClose as HTMLElement),
+      'the light close shows no text outside an aria-hidden element',
+    ).toEqual([]);
+  });
+});
+
 describe('onBreakpointChange', () => {
   it('notifies on a real change and not on a resize inside the same breakpoint', () => {
     stubViewport(390);

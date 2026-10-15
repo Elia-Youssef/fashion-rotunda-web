@@ -131,8 +131,14 @@ export function mountShell(doc: Document): ShellHandle {
     const button = doc.createElement('button');
     button.type = 'button';
     button.className = 'shell-sheet__close';
-    button.textContent = 'x';
     button.setAttribute('aria-label', 'Close');
+    // The glyph is decoration, not a label: visible text the name "Close" cannot contain would
+    // break WCAG 2.5.3 (label in name), so the span is aria-hidden and the aria-label remains
+    // the button's whole name, the same pattern as the music note and the thumbnails.
+    const glyph = doc.createElement('span');
+    glyph.setAttribute('aria-hidden', 'true');
+    glyph.textContent = 'x';
+    button.append(glyph);
     button.addEventListener('click', close, { signal });
     chrome.append(handle, button);
     sheet.appendChild(chrome);
