@@ -5,21 +5,23 @@ import {
   SCENE_READY_TIMEOUT,
   STUDIO_LIGHTS,
   VIEWPORTS,
-  skipUnlessWebgl2,
-  openScene,
   installSafeArea,
   assertHitAndSafe,
   setNativeInput,
   newTouchPage,
 } from './support/lightdrawer-helpers';
+import { openShowroom } from './support/showroom';
+
+// The drawer and rig checks are backend independent, so both projects run them: each page is
+// pinned to its project's backend through the canvas data-backend attribute, and the opening
+// waits past the late chrome mount before any DOM reading.
+const DRAWER_PATH = '/?gate=off&e2e=1&proof=1&music=off';
 
 test.describe('simplified Light Control drawer and rig', () => {
 
-  test('exact control census, labels, and removed-control absence', async ({ page }) => {
-    skipUnlessWebgl2();
-
+  test('exact control census, labels, and removed-control absence', async ({ page, request }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await openScene(page);
+    await openShowroom(page, request, DRAWER_PATH);
     await page.locator('#shell-light-toggle').click();
     const panel = page.locator('#shell-light-panel');
     await expect(panel.locator('.lightpanel__row')).toHaveCount(4);
@@ -68,12 +70,14 @@ test.describe('simplified Light Control drawer and rig', () => {
 
   // Opening the bar moves focus to its first control. Keyboard opening shows that control's
   // tooltip; a mouse click must not, or the tooltip covers the KeyLight title every time.
-  test('desktop bar shows the focus tooltip after keyboard opening only', async ({ page }) => {
-    skipUnlessWebgl2();
+  test('desktop bar shows the focus tooltip after keyboard opening only', async ({
+    page,
+    request,
+  }) => {
     test.setTimeout(120_000);
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    await openScene(page);
+    await openShowroom(page, request, DRAWER_PATH);
     // The tooltip module installs after the ready attribute; the mouse-open branch would pass without it.
     await waitForTooltipInstallation(page, SCENE_READY_TIMEOUT);
     const toggle = page.locator('#shell-light-toggle');
@@ -104,12 +108,12 @@ test.describe('simplified Light Control drawer and rig', () => {
   for (const viewport of VIEWPORTS.filter((entry) => entry.sheet)) {
     test(`sheet modal semantics preserve rail, Look, and proof hit ownership at ${viewport.width}x${viewport.height}`, async ({
       page,
+      request,
     }) => {
-      skipUnlessWebgl2();
       test.setTimeout(120_000);
 
       await page.setViewportSize(viewport);
-      await openScene(page);
+      await openShowroom(page, request, DRAWER_PATH);
       await installSafeArea(page);
 
       const rail = page.locator('#looks');
@@ -165,12 +169,14 @@ test.describe('simplified Light Control drawer and rig', () => {
     });
   }
 
-  test('keyboard, pointer, native inputs, persistence, share state, and idle', async ({ page }) => {
-    skipUnlessWebgl2();
+  test('keyboard, pointer, native inputs, persistence, share state, and idle', async ({
+    page,
+    request,
+  }) => {
     test.setTimeout(120_000);
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    await openScene(page);
+    await openShowroom(page, request, DRAWER_PATH);
     const toggle = page.locator('#shell-light-toggle');
     const panel = page.locator('#shell-light-panel');
 
@@ -237,12 +243,12 @@ test.describe('simplified Light Control drawer and rig', () => {
 
   test('closed drawer preserves card, rail, Measure, music, and responsive focus continuity', async ({
     page,
+    request,
   }) => {
-    skipUnlessWebgl2();
     test.setTimeout(120_000);
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    await openScene(page);
+    await openShowroom(page, request, DRAWER_PATH);
     const toggle = page.locator('#shell-light-toggle');
     const panel = page.locator('#shell-light-panel');
     await expect(panel).toBeHidden();
@@ -272,10 +278,9 @@ test.describe('simplified Light Control drawer and rig', () => {
   });
 
   test('touchscreen tap opens and closes the phone drawer', async ({ guardedBrowser: browser }) => {
-    skipUnlessWebgl2();
     const touch = await newTouchPage(browser);
     try {
-      await openScene(touch.page);
+      await openShowroom(touch.page, touch.context.request, DRAWER_PATH);
       const toggle = touch.page.locator('#shell-light-toggle');
       const box = await toggle.boundingBox();
       expect(box).not.toBeNull();
@@ -297,12 +302,14 @@ test.describe('simplified Light Control drawer and rig', () => {
     }
   });
 
-  test('phone reduced motion removes sheet movement from the rendered drawer', async ({ page }) => {
-    skipUnlessWebgl2();
+  test('phone reduced motion removes sheet movement from the rendered drawer', async ({
+    page,
+    request,
+  }) => {
     test.setTimeout(120_000);
     await page.setViewportSize({ width: 390, height: 844 });
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await openScene(page);
+    await openShowroom(page, request, DRAWER_PATH);
     await page.locator('#shell-light-toggle').click();
     await expect(page.locator('#shell-light-panel')).toBeVisible();
 
