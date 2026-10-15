@@ -16,6 +16,7 @@ import {
 import type { EntryLobby, ProgressReading } from '../../src/ui/entry-lobby';
 import { lobbyWanted as gateWanted } from '../../src/ui/entry-lobby/gate';
 import { createLobbyMusicSwitch } from '../../src/ui/entry-lobby/music-switch';
+import { bindFocusTrap, focusInitially } from '../../src/ui/entry-lobby/focus-trap';
 
 class FakeStorage {
   private data = new Map<string, string>();
@@ -575,6 +576,77 @@ describe('hidden lobby buttons are not drawn', () => {
 });
 
 describe('accessibility and focus containment', () => {
+  it('binds modal keyboard containment directly and releases it on abort', () => {
+    const dialog = document.createElement('div');
+    const first = document.createElement('button');
+    const last = document.createElement('button');
+    const outside = document.createElement('button');
+    dialog.append(first, last);
+    root.append(dialog, outside);
+    for (const button of [first, last]) {
+      Object.defineProperty(button, 'offsetParent', { configurable: true, get: () => dialog });
+    }
+    const controller = new AbortController();
+    let disposed = false;
+    const key = (value: string, shiftKey = false): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', { key: value, shiftKey, cancelable: true });
+      document.dispatchEvent(event);
+      return event;
+    };
+    try {
+      bindFocusTrap(document, dialog, controller.signal, () => disposed);
+      last.focus();
+      expect(key('Tab').defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(first);
+      expect(key('Tab', true).defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(last);
+      outside.focus();
+      expect(key('Tab').defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(first);
+      expect(key('Escape').defaultPrevented).toBe(true);
+      expect(key('Enter').defaultPrevented).toBe(false);
+
+      first.disabled = true;
+      last.hidden = true;
+      outside.focus();
+      expect(key('Tab').defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(outside);
+      disposed = true;
+      expect(key('Escape').defaultPrevented).toBe(false);
+      disposed = false;
+      controller.abort();
+      expect(key('Escape').defaultPrevented).toBe(false);
+      expect(key('Tab').defaultPrevented).toBe(false);
+    } finally {
+      controller.abort();
+    }
+  });
+
+  it('sets initial focus directly while preserving a hydrated visitor focus', () => {
+    const dialog = document.createElement('div');
+    const load = document.createElement('button');
+    const outside = document.createElement('button');
+    dialog.appendChild(load);
+    root.append(dialog, outside);
+
+    outside.focus();
+    focusInitially(document, dialog, load, true);
+    expect(document.activeElement).toBe(outside);
+    focusInitially(document, dialog, load, false);
+    expect(document.activeElement).toBe(load);
+    expect(dialog.tabIndex).toBe(-1);
+
+    load.blur();
+    focusInitially(document, dialog, load, true);
+    expect(document.activeElement).toBe(load);
+    load.disabled = true;
+    focusInitially(document, dialog, load, false);
+    expect(document.activeElement).toBe(dialog);
+    outside.focus();
+    focusInitially(document, dialog, null, false);
+    expect(document.activeElement).toBe(dialog);
+  });
+
   it('traps Tab navigation inside the lobby dialog', () => {
     const { element } = mountLobby();
     const loadBtn = element.querySelector<HTMLButtonElement>('#lobby-load-btn')!;

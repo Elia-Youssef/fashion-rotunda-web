@@ -13,6 +13,7 @@ import './entry-lobby.css';
 import type { KeyValueStore } from '../audio/preference';
 import { formatProgress, progressRatio } from '../loading/progress';
 import { skySourceFromSearch } from '../lighting/sky';
+import { bindFocusTrap, focusInitially } from './entry-lobby/focus-trap';
 import { buildLobbyMarkup } from './entry-lobby/markup';
 import { createLobbyMusicSwitch } from './entry-lobby/music-switch';
 import { trackFirstFrameProgress } from './entry-lobby/progress';
@@ -265,58 +266,8 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
     );
   }
 
-  // Keyboard accessibility: focus trapping & Tab containment
-  doc.addEventListener(
-    'keydown',
-    (event: KeyboardEvent) => {
-      if (currentState === 'disposed') {
-        return;
-      }
-      if (event.key === 'Escape') {
-        // Escape must NOT dismiss the lobby into an unloaded scene
-        event.preventDefault();
-        return;
-      }
-
-      if (event.key === 'Tab') {
-        const focusables = Array.from(
-          lobby.querySelectorAll<HTMLElement>(
-            'button:not([disabled]):not([hidden]), [tabindex]:not([tabindex="-1"])',
-          ),
-        ).filter((el) => el.offsetParent !== null || el === doc.activeElement);
-
-        if (focusables.length === 0) {
-          event.preventDefault();
-          return;
-        }
-
-        const first = focusables[0];
-        const last = focusables[focusables.length - 1];
-
-        if (event.shiftKey && doc.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && doc.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        } else if (!focusables.includes(doc.activeElement as HTMLElement)) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    },
-    { signal: inputListeners.signal },
-  );
-
-  // Set initial focus intentionally
-  if (!isHydrating || doc.activeElement === doc.body || doc.activeElement === null) {
-    lobby.tabIndex = -1;
-    if (loadBtn && !loadBtn.disabled) {
-      loadBtn.focus();
-    } else {
-      lobby.focus();
-    }
-  }
+  bindFocusTrap(doc, lobby, inputListeners.signal, () => currentState === 'disposed');
+  focusInitially(doc, lobby, loadBtn, isHydrating);
 
   const lobbyHandle: EntryLobby = {
     get state(): LobbyState {
