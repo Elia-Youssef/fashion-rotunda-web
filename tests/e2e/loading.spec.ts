@@ -11,6 +11,29 @@ import { STARTUP_FAILURE_MESSAGE } from '../../src/ui/startup-failure';
 // loading phase is observed while held; 30 s covers a slow boot start under four software workers.
 const LOADING_HOLD_TIMEOUT_MS = 30_000;
 
+// The progress poll waits for the whole first-load content set, the rotunda, the plinth and the
+// first look (the HDR diagnostic joins the byte total under ?sky=hdr), to download and decode and
+// drive the bar to its end; 60 s covers the slowest cold load under four software workers.
+const LOAD_COMPLETE_TIMEOUT_MS = 60_000;
+
+// The reveal wait covers the lobby's last leg: the black veil holds until the scene proves its
+// first stable frames, then the fade completes; that hold is the slow part under software
+// rendering, so it shares the 60 s load budget above.
+const REVEAL_TIMEOUT_MS = 60_000;
+
+// The lobby press is the audio gesture, but the track starts only once revealed; 15 s covers the
+// fetch, decode and first start of the deferred track after the reveal hands over.
+const MUSIC_PLAYING_TIMEOUT_MS = 15_000;
+
+// The cut catalogue surfaces only after the adapter probe and the renderer start, the slow part
+// under software rendering, because the boot fails while starting up; 30 s covers that startup
+// before the abort becomes the lobby's terminal error state.
+const LOBBY_ERROR_TIMEOUT_MS = 30_000;
+
+// The bypass URLs never mount the lobby, so the boot's first canvas scene state is all the page
+// promises; 30 s covers a slow boot start under four software workers, as the hold budget above.
+const BOOT_SCENE_TIMEOUT_MS = 30_000;
+
 test('gates the experience until the visitor activates Load Experience', async ({ page }) => {
   // The default sky is generated in memory: the page must never fetch the diagnostic HDR, and the
   // bar reaching 1 below proves the byte total does not wait for it either.
@@ -52,11 +75,11 @@ test('gates the experience until the visitor activates Load Experience', async (
   const readProgress = async (): Promise<number> =>
     Number((await lobby.locator('progress').getAttribute('value')) ?? '0');
   await expect
-    .poll(readProgress, { message: 'the bar reaches the end of the load', timeout: 60_000 })
+    .poll(readProgress, { message: 'the bar reaches the end of the load', timeout: LOAD_COMPLETE_TIMEOUT_MS })
     .toBe(1);
 
   // 5. Transitions through ready-hidden, black veil, to revealed
-  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: REVEAL_TIMEOUT_MS });
   await expect(canvas).toHaveAttribute('data-scene', 'ready');
 
   // Lobby and scene-veil are hidden once revealed
@@ -71,7 +94,7 @@ test('gates the experience until the visitor activates Load Experience', async (
 
   // Deferred audio starts once revealed
   await expect(page.locator('#shell-header button.music-switch')).toHaveAttribute('data-music', 'playing', {
-    timeout: 15_000,
+    timeout: MUSIC_PLAYING_TIMEOUT_MS,
   });
 
   expect(hdrRequests, 'the default sky requests no .hdr file').toHaveLength(0);
@@ -91,10 +114,10 @@ test('counts and fetches the HDR once under the ?sky=hdr diagnostic', async ({ p
   await expect
     .poll(async () => Number((await lobby.locator('progress').getAttribute('value')) ?? '0'), {
       message: 'the bar reaches the end of the load, HDR included',
-      timeout: 60_000,
+      timeout: LOAD_COMPLETE_TIMEOUT_MS,
     })
     .toBe(1);
-  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: REVEAL_TIMEOUT_MS });
   expect(hdrRequests).toHaveLength(1);
   expect(new URL(hdrRequests[0]).pathname).toBe('/content/env/school-field-cloudy-1k.hdr');
 });
@@ -116,7 +139,7 @@ test('activates Load Experience on Enter from the keyboard', async ({ page }) =>
   await expect(lobby).toHaveAttribute('data-state', 'loading');
   await rotunda.release();
   await rotunda.waitUntilContinued();
-  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: 60_000 });
+  await expect(lobby).toHaveAttribute('data-state', 'revealed', { timeout: REVEAL_TIMEOUT_MS });
   await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', 'ready');
   await expect(lobby).toBeHidden();
 });
@@ -148,7 +171,7 @@ test('shows the lobby error state and retry control when the catalogue request i
 
   // The adapter probe and the renderer start are the slow part under software rendering; the abort
   // fails fast once the catalogue fetch begins.
-  await expect(lobby).toHaveAttribute('data-state', 'error', { timeout: 30_000 });
+  await expect(lobby).toHaveAttribute('data-state', 'error', { timeout: LOBBY_ERROR_TIMEOUT_MS });
   const errorPane = lobby.locator('.entry-lobby__error-pane');
   await expect(errorPane).toBeVisible();
   await expect(errorPane.locator('.entry-lobby__error-message')).toHaveText(STARTUP_FAILURE_MESSAGE);
@@ -162,7 +185,7 @@ for (const search of ['?gate=off', '?e2e=1']) {
   test(`bypasses the lobby on ${search}`, async ({ page }) => {
     await page.goto(backendPath(`/${search}`));
     await expect(page.locator('canvas#scene')).toHaveAttribute('data-scene', /loading|ready|error/, {
-      timeout: 30_000,
+      timeout: BOOT_SCENE_TIMEOUT_MS,
     });
     await expect(page.locator('#entry-lobby')).toHaveCount(0);
   });
