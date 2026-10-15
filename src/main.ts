@@ -12,6 +12,7 @@ import { mountModeSwitch } from './camera/mode-switch';
 import { contentUrl } from './catalog/catalog';
 import { FULL_CONTENT_BASE, loadContentSet, chooseLook, chooseVariant, switchOrder } from './catalog/bootstrap';
 import { composeLighting, enableShadows } from './lighting/compose';
+import { info } from './log';
 import { createLoop } from './loop/loop';
 import type { LoopDiagnostics } from './loop/loop';
 import { RecoveryEligibility } from './loop/recovery';
@@ -309,7 +310,7 @@ async function main(): Promise<void> {
       }
     },
   });
-  console.info(`[archviz] renderer backend: ${backend}`);
+  info(`[archviz] renderer backend: ${backend}`);
 
   // three's internal Animation loop (src/renderers/common/Animation.js line 81) resets the info
   // counters on every one of its own ticks when autoReset is on, whether or not a frame was rendered,
@@ -449,7 +450,7 @@ async function main(): Promise<void> {
   const override = tierOverrideFromUrl(search);
   let tier: TierName = override ?? decideTier(tierInput);
   let settings = TIERS[tier];
-  console.info(`[archviz] tier: ${tier}${override === null ? '' : ' (url override, provisional)'}`);
+  info(`[archviz] tier: ${tier}${override === null ? '' : ' (url override, provisional)'}`);
   badge.update({ tier });
 
   // Resolution is min(device pixel ratio, the tier cap) times the scaler's step. The scaler lowers
@@ -615,14 +616,14 @@ async function main(): Promise<void> {
     renderer.setPixelRatio(1);
     resize();
     const benchmarkP95Ms = await runBenchmark({ renderFrame: drawFrame, durationMs: BENCHMARK_MS, loop });
-    console.info(`[archviz] benchmark p95: ${benchmarkP95Ms.toFixed(2)} ms`);
+    info(`[archviz] benchmark p95: ${benchmarkP95Ms.toFixed(2)} ms`);
     const settled = decideTier({ ...tierInput, benchmarkP95Ms });
     if (settled !== tier) {
       tier = settled;
       settings = TIERS[tier];
       scaler = new ResolutionScaler({ budgetMs: settings.frameBudgetMs, steps: settings.scalerSteps });
       renderScale = scaler.scale;
-      console.info(`[archviz] tier: ${tier} (after the benchmark)`);
+      info(`[archviz] tier: ${tier} (after the benchmark)`);
       badge.update({ tier });
     }
     applyResolution();

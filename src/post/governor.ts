@@ -12,6 +12,8 @@
 // At the base level, the post chain keeps LUT and vignette (a single 3D texture lookup and math pass)
 // while dropping heavy passes (SSGI, SSR) as well as bloom and depth of field.
 
+import { info } from '../log';
+
 export type EnhancedLevel = 'full' | 'ssgi-half' | 'no-ssgi' | 'no-ssr' | 'base';
 
 /** p95 must sit at or below this share of the tier frame budget for a window to count as comfortable. */
@@ -406,7 +408,7 @@ export function createGovernor(options: GovernorOptions): Governor {
                 nowMs,
                 `p95 ${p95.toFixed(1)} ms > ${budgetMs.toFixed(1)} ms`,
               );
-              console.info(
+              info(
                 `[archviz] post governor stepped down to ${ladder[currentIndex]} (p95 was ${p95.toFixed(1)} ms)`,
               );
             } else if (!cooldownActive) {
@@ -433,7 +435,7 @@ export function createGovernor(options: GovernorOptions): Governor {
               nowMs,
               `p95 ${p95.toFixed(1)} ms <= ${recoveryThresholdMs.toFixed(2)} ms after ${(qualifiedFor / 1000).toFixed(1)} s`,
             );
-            console.info(
+            info(
               `[archviz] post governor recovered to ${ladder[currentIndex]} (p95 was ${p95.toFixed(1)} ms)`,
             );
           }

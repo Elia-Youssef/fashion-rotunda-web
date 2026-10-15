@@ -5,8 +5,9 @@ import { canvasStats } from './support/pixels';
 type Backend = 'webgpu' | 'webgl2';
 
 // This suite relies on three facts of the page: canvas#scene carries data-backend once the renderer
-// has initialised, one console line starts with the prefix below, and the badge in the side panel
-// names the same backend.
+// has initialised, one console line starts with the prefix below for a session that asked for
+// diagnostics (?e2e=1; a visitor's console stays quiet), and the badge in the side panel names the
+// same backend.
 const BACKEND_ATTRIBUTE = 'data-backend';
 const BACKEND_LOG_PREFIX = '[archviz] renderer backend:';
 const BACKEND_ATTRIBUTE_TIMEOUT = 30_000;
@@ -67,11 +68,14 @@ function expectedBackend(): Backend {
   return test.info().project.name === 'webgpu' ? 'webgpu' : 'webgl2';
 }
 
-function targetPath(backend: Backend): string {
+function targetPath(backend: Backend, diagnostics: boolean): string {
   // ?webgl=1 forces the fallback on a machine that has WebGPU, so the webgl2 project stays
   // testable locally too. gate=off keeps the loading gate away: the pixel check below reads the
-  // canvas, and a gate over it would be counted as the room.
-  return backend === 'webgpu' ? '/?gate=off' : '/?webgl=1&gate=off';
+  // canvas, and a gate over it would be counted as the room. The console-line assertions read
+  // diagnostics lines, which print only for sessions that asked for them, so those tests pass
+  // e2e=1 and the visitor-console check does not.
+  const asked = diagnostics ? '&e2e=1' : '';
+  return backend === 'webgpu' ? `/?gate=off${asked}` : `/?webgl=1&gate=off${asked}`;
 }
 
 async function skipWhenWebGPUUnavailable(page: Page, backend: Backend): Promise<void> {
@@ -87,7 +91,7 @@ async function skipWhenWebGPUUnavailable(page: Page, backend: Backend): Promise<
 test('renders on the expected backend', async ({ page }) => {
   const backend = expectedBackend();
 
-  await page.goto(targetPath(backend));
+  await page.goto(targetPath(backend, true));
   await skipWhenWebGPUUnavailable(page, backend);
 
   const canvas = page.locator('canvas#scene');
@@ -102,9 +106,34 @@ test('renders on the expected backend', async ({ page }) => {
   expect(backendLines, 'exactly one renderer backend console line').toHaveLength(1);
 });
 
+// A visitor's console stays quiet: the [archviz] startup, benchmark and governor lines are info
+// lines that print only for sessions that asked for diagnostics. The guard records every console
+// message from navigation on, and the scene-ready attribute marks the point by which the startup
+// lines have all been decided, so the filtered read below covers them.
+test('keeps the visitor console free of archviz diagnostics', async ({ page }) => {
+  const backend = expectedBackend();
+
+  await page.goto(targetPath(backend, false));
+  await skipWhenWebGPUUnavailable(page, backend);
+
+  const canvas = page.locator('canvas#scene');
+  await expect(canvas).toHaveAttribute(BACKEND_ATTRIBUTE, backend, {
+    timeout: BACKEND_ATTRIBUTE_TIMEOUT,
+  });
+  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+
+  const archvizLines = browserReports(page).filter(
+    (message) => message.kind === 'console' && message.text.startsWith('[archviz]'),
+  );
+  expect(
+    archvizLines.map((message) => `${message.type}: ${message.text}`),
+    'archviz console lines in a visitor session',
+  ).toEqual([]);
+});
+
 test('draws something', async ({ page }) => {
   const backend = expectedBackend();
-  await page.goto(targetPath(backend));
+  await page.goto(targetPath(backend, false));
   await skipWhenWebGPUUnavailable(page, backend);
 
   const canvas = page.locator('canvas#scene');
