@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
-import { PerspectiveCamera } from 'three';
+import { BoxGeometry, Group, Mesh, PerspectiveCamera } from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { setImmediate } from 'node:timers';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -31,29 +33,39 @@ function make() {
   const fetched = deferred<Response>();
   const parsing = deferred<void>();
   const enteredParse = deferred<void>();
+  const bytes = new ArrayBuffer(0);
   let partial: WalkSession | null = null;
+  let parseArgs: [ArrayBuffer, AbortSignal] | null = null;
   const factory = vi.fn((options: Parameters<typeof readyWalkSession>[0]) => {
     partial = readyWalkSession(options);
     vi.spyOn(partial, 'dispose');
-    partial.loadCollision = vi.fn(() => { enteredParse.resolve(); return parsing.promise; });
+    partial.loadCollision = vi.fn((data: ArrayBuffer, signal: AbortSignal) => {
+      parseArgs = [data, signal];
+      enteredParse.resolve();
+      return parsing.promise;
+    });
     return partial;
   });
   const importer = vi.fn(() => imported.promise);
   const fetchCollision = vi.fn<typeof fetch>(() => fetched.promise);
-  const loader = createWalkLoad({
+  const loadOptions = {
     camera: new PerspectiveCamera(), canvas: document.createElement('canvas'),
     isTouch: false, now: () => 0, onChange: vi.fn(), collisionUrl: '/content/collision.glb',
     importer, fetchCollision,
-  });
+  };
+  const loader = createWalkLoad(loadOptions);
   owners.push(loader);
-  const response = { ok: true, arrayBuffer: async () => new ArrayBuffer(0) } as Response;
+  const response = { ok: true, arrayBuffer: async () => bytes } as Response;
   async function reachParse() {
     imported.resolve({ createWalkSession: factory });
     fetched.resolve(response);
     await enteredParse.promise;
     return partial!;
   }
-  return { loader, imported, fetched, parsing, factory, importer, fetchCollision, reachParse, response };
+  return {
+    loader, imported, fetched, parsing, factory, importer, fetchCollision, reachParse, response,
+    bytes, loadOptions, parseArgs: () => parseArgs!,
+  };
 }
 
 describe('createWalkLoad', () => {
@@ -164,5 +176,137 @@ describe('createWalkLoad', () => {
     expect(f.loader.session).toBe(next);
     expect(next).not.toBe(partial);
     expect(f.loader.state).toBe('ready');
+  });
+
+  it('notifies state listeners of every publish and stops a removed listener', async () => {
+    const f = make();
+    const seen: string[] = [];
+    const removed = vi.fn();
+    const stop = f.loader.onStateChange(removed);
+    f.loader.onStateChange(() => seen.push(f.loader.state));
+    stop();
+    const loading = f.loader.ensureReady();
+    expect(seen).toEqual(['loading']);
+    const partial = await f.reachParse();
+    f.parsing.resolve();
+    expect(await loading).toBe(partial);
+    expect(seen).toEqual(['loading', 'ready']);
+    // The cached session answers without a new publish.
+    expect(await f.loader.ensureReady()).toBe(partial);
+    expect(seen).toEqual(['loading', 'ready']);
+    expect(removed).not.toHaveBeenCalled();
+  });
+
+  it('publishes idle when a loading attempt is cancelled', async () => {
+    const f = make();
+    const seen: string[] = [];
+    f.loader.onStateChange(() => seen.push(f.loader.state));
+    const loading = f.loader.ensureReady();
+    f.loader.cancel();
+    expect(await loading).toBeNull();
+    expect(f.loader.state).toBe('idle');
+    expect(seen).toEqual(['loading', 'idle']);
+  });
+
+  it('keeps an error state when cancel arrives after a failure', async () => {
+    const f = make();
+    const rejected = expect(f.loader.ensureReady()).rejects.toThrow('boom');
+    f.imported.reject(new Error('boom'));
+    await rejected;
+    expect(f.loader.state).toBe('error');
+    f.loader.cancel();
+    expect(f.loader.state).toBe('error');
+  });
+
+  it('forwards url, bytes, options and the attempt signal, which cancel aborts', async () => {
+    const f = make();
+    void f.loader.ensureReady();
+    const partial = await f.reachParse();
+    expect(f.fetchCollision.mock.calls[0][0]).toBe('/content/collision.glb');
+    const request = f.fetchCollision.mock.calls[0][1] as RequestInit;
+    expect(request.signal).toBeInstanceOf(AbortSignal);
+    const [data, signal] = f.parseArgs();
+    expect(data).toBe(f.bytes);
+    expect(signal).toBe(request.signal);
+    expect(signal.aborted).toBe(false);
+    expect(f.factory.mock.calls[0][0]).toBe(f.loadOptions);
+    f.loader.cancel();
+    expect(signal.aborted).toBe(true);
+    expect(partial.dispose).toHaveBeenCalled();
+  });
+
+  it('disposes the session it built when the collision parse fails', async () => {
+    const f = make();
+    const loading = f.loader.ensureReady();
+    const partial = await f.reachParse();
+    const rejected = expect(loading).rejects.toThrow('boom');
+    f.parsing.reject(new Error('boom'));
+    await rejected;
+    expect(partial.dispose).toHaveBeenCalled();
+    expect(f.loader.session).toBeNull();
+    expect(f.loader.state).toBe('error');
+  });
+
+  it('keeps a cancelled attempt idle when its late parse then fails', async () => {
+    const f = make();
+    const seen: string[] = [];
+    f.loader.onStateChange(() => seen.push(f.loader.state));
+    const loading = f.loader.ensureReady();
+    const partial = await f.reachParse();
+    f.loader.cancel();
+    await loading;
+    f.parsing.reject(new Error('boom'));
+    await new Promise<void>((resolve) => { setImmediate(resolve); });
+    expect(f.loader.state).toBe('idle');
+    expect(seen).toEqual(['loading', 'idle']);
+    expect(partial.dispose).toHaveBeenCalled();
+  });
+
+  it('disposes the pending session synchronously when the loader is disposed', async () => {
+    const f = make();
+    void f.loader.ensureReady();
+    const partial = await f.reachParse();
+    f.loader.dispose();
+    expect(partial.dispose).toHaveBeenCalled();
+    expect(f.loader.session).toBeNull();
+  });
+
+  it('turns a synchronously throwing importer into a rejection', async () => {
+    const f = make();
+    f.importer.mockImplementation(() => { throw new Error('boom'); });
+    const rejected = expect(f.loader.ensureReady()).rejects.toThrow('boom');
+    await rejected;
+    expect(f.loader.state).toBe('error');
+    expect(f.fetchCollision).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to the bundled session factory and the page fetch', async () => {
+    const parser = vi.spyOn(GLTFLoader.prototype, 'parse').mockImplementationOnce(
+      (_data, _path, done) => {
+        const scene = new Group();
+        scene.add(new Mesh(new BoxGeometry(20, 4, 0.4).translate(0, 2, 4)));
+        done({ scene } as GLTF);
+      },
+    );
+    const pageFetch = vi.fn<typeof fetch>(async () => ({
+      ok: true, arrayBuffer: async () => new ArrayBuffer(0),
+    } as Response));
+    vi.stubGlobal('fetch', pageFetch);
+    try {
+      const loader = createWalkLoad({
+        camera: new PerspectiveCamera(), canvas: document.createElement('canvas'),
+        isTouch: false, now: () => 0, onChange: vi.fn(), collisionUrl: '/content/collision.glb',
+      });
+      owners.push(loader);
+      const session = await loader.ensureReady();
+      expect(session).toBe(loader.session);
+      expect(loader.state).toBe('ready');
+      expect(pageFetch).toHaveBeenCalledWith('/content/collision.glb', expect.objectContaining({
+        signal: expect.any(AbortSignal),
+      }));
+    } finally {
+      parser.mockRestore();
+      vi.unstubAllGlobals();
+    }
   });
 });
