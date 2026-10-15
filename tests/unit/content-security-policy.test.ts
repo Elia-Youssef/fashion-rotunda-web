@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { CONTENT_SECURITY_POLICY } from '../../src/content-security-policy';
-import config, { productionCspPlugin } from '../../vite.config';
+import { createShowroomConfig } from '../../vite.config';
+
+const config = createShowroomConfig({});
+const [, productionCspPlugin] = config.plugins;
 
 const directives = CONTENT_SECURITY_POLICY.split(';').map((entry) => entry.trim().split(/\s+/));
 const sources = new Map(directives.map(([name, ...values]) => [name, values]));

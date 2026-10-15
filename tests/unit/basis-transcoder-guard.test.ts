@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-import config, { omitEmittedBasisTranscoderPlugin } from '../../vite.config';
+import { createShowroomConfig, omitEmittedBasisTranscoderPlugin } from '../../vite.config';
+
+const config = createShowroomConfig({});
 
 // The guard runs inside the bundler's generateBundle hook, so these tests drive the hook against
 // bundle objects shaped like the real output: vite 8 emits through rolldown, whose output assets

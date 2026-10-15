@@ -6,6 +6,7 @@
 // only the newest request may start a source, and an old source's onended never changes the state.
 
 import type { AudioBuses, AudioEngine } from './engine';
+import { contentUrl } from '../catalog/catalog';
 import { loopPosition } from './loop-math';
 import { pickSource } from './sources';
 
@@ -171,7 +172,7 @@ export function createMusicPlayer(options: MusicPlayerOptions): MusicPlayer {
     }
     if (manifestPromise === null) {
       const fetchJson = (async (): Promise<MusicManifest> => {
-        const response = await fetch(`${baseUrl}/music.json`, requestOptions());
+        const response = await fetch(contentUrl(baseUrl, 'music.json'), requestOptions());
         if (!response.ok) {
           throw new Error(`The music list could not be fetched (status ${response.status}).`);
         }
@@ -218,7 +219,7 @@ export function createMusicPlayer(options: MusicPlayerOptions): MusicPlayer {
       if (picked === null) {
         throw new Error('This browser plays neither music format.');
       }
-      const response = await fetch(`${baseUrl}/${picked.url}`, requestOptions());
+      const response = await fetch(contentUrl(baseUrl, picked.url), requestOptions());
       if (!response.ok) {
         throw new Error(`The music file could not be fetched (status ${response.status}).`);
       }

@@ -177,6 +177,34 @@ function fakeWorld(): FakeWorld {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.resetModules();
+});
+
+it('fetches both the music list and the selected format through the configured content resolver', async () => {
+  const origin = 'https://static.example.invalid';
+  const files = ['music/music.json', 'music/music-01.ogg',
+    'basis/basis_transcoder.js', 'basis/basis_transcoder.wasm'].map((path, index) => {
+    const sha256 = index.toString(16).padStart(64, '0');
+    const key = path.startsWith('basis/') ? `content/${path}` : `content/${sha256}.${path.split('.').pop()}`;
+    return { path, sha256, bytes: 100, key, url: `${origin}/${key}` };
+  });
+  vi.stubGlobal('__CONTENT_ORIGIN__', origin);
+  vi.stubGlobal('__CONTENT_MANIFEST__', { origin, files });
+  vi.resetModules();
+  const { createMusicPlayer: createRemotePlayer } = await import('../../src/audio/music');
+  const world = fakeWorld();
+  world.fetchMock.mockImplementation(async (input: unknown) => {
+    if (input === files[0].url) return { ok: true, status: 200, json: async () => manifestJson() };
+    if (input === files[1].url) return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(64) };
+    throw new Error('unexpected music request: ' + String(input));
+  });
+  const player = createRemotePlayer({ engine: world.engine, baseUrl: '/content/music', trackId: null,
+    level: 0.5, fadeMs: 400, onStateChange: () => {} });
+  try {
+    await player.play();
+    expect(player.state).toBe('playing');
+    expect(world.fetchMock.mock.calls.map(([url]) => url)).toEqual([files[0].url, files[1].url]);
+  } finally { player.dispose(); }
 });
 
 describe('createMusicPlayer.play', () => {

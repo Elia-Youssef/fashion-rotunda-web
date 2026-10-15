@@ -1,25 +1,70 @@
 import { defineConfig } from 'vite';
 import type { Plugin } from 'vite';
-import { CONTENT_SECURITY_POLICY } from './src/content-security-policy';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { contentSecurityPolicy } from './src/content-security-policy';
+import { createContentResolver } from './src/content/resolver';
+import { walkContentFiles } from './pipeline/r2/lib/objects.mjs';
 
-export const productionCspPlugin = {
-  name: 'production-content-security-policy',
-  apply: 'build',
-  transformIndexHtml: {
-    order: 'post',
-    handler() {
-      return [{
-        tag: 'meta',
-        attrs: {
-          'http-equiv': 'Content-Security-Policy',
-          content: CONTENT_SECURITY_POLICY,
-        },
-        // Enforce the policy before Vite's scripts, preloads and stylesheets are encountered.
-        injectTo: 'head-prepend',
-      }];
+/** Validates the manifest before emitting both the URL map and the matching document policy. */
+export function contentBuildSettings(origin: string, manifest?: unknown, paths: string[] = []) {
+  const resolver = createContentResolver(origin, manifest);
+  for (const path of paths) resolver.resolve(path);
+  return {
+    define: {
+      __CONTENT_ORIGIN__: JSON.stringify(resolver.origin),
+      __CONTENT_MANIFEST__: JSON.stringify(resolver.origin === '' ? null : manifest),
     },
-  },
-} satisfies Plugin;
+    policy: contentSecurityPolicy(resolver.origin),
+  };
+}
+
+/** Each configuration owns one validated snapshot, independent of hook order and later builds. */
+export function createShowroomConfig(environment: Readonly<Record<string, string | undefined>> = process.env) {
+  // Explicit process environment only; configuration never opens credential or dotenv files.
+  const origin = environment['VITE_CONTENT_ORIGIN'] ?? '';
+  const manifestFile = environment['VITE_CONTENT_MANIFEST'];
+  let manifest: unknown;
+  let paths: string[] = [];
+  if (origin.trim() !== '') {
+    if (!manifestFile) throw new Error('content: VITE_CONTENT_MANIFEST is required with VITE_CONTENT_ORIGIN');
+    manifest = JSON.parse(readFileSync(resolve(manifestFile), 'utf8')) as unknown;
+    paths = walkContentFiles(resolve('public/content'));
+  }
+  const settings = contentBuildSettings(origin, manifest, paths);
+  const contentBuildPlugin = {
+    name: 'content-manifest',
+    config() {
+      return { define: settings.define };
+    },
+  } satisfies Plugin;
+  const productionCspPlugin = {
+    name: 'production-content-security-policy',
+    apply: 'build',
+    transformIndexHtml: {
+      order: 'post',
+      handler() {
+        return [{
+          tag: 'meta',
+          attrs: {
+            'http-equiv': 'Content-Security-Policy',
+            content: settings.policy,
+          },
+          // Enforce the policy before Vite's scripts, preloads and stylesheets are encountered.
+          injectTo: 'head-prepend',
+        }];
+      },
+    },
+  } satisfies Plugin;
+  return {
+    plugins: [
+      contentBuildPlugin, productionCspPlugin, omitEmittedBasisTranscoderPlugin,
+    ] satisfies [Plugin, Plugin, Plugin],
+    // A phone on the same network can open the server. WebGPU requires a secure context,
+    // so a LAN address over plain HTTP falls back to WebGL 2 by design.
+    server: { host: true },
+  };
+}
 
 // The two Basis Universal file names the page serves from public/content/basis/ and points
 // KTX2Loader at (src/scene/loaders.ts). A copy of either name inside the bundle output is always
@@ -93,11 +138,4 @@ export const omitEmittedBasisTranscoderPlugin = {
   },
 } satisfies Plugin;
 
-// host true binds the dev server to every interface, so a phone on the same network can open it.
-// WebGPU needs a secure context, so a LAN address over plain HTTP falls back to WebGL 2 by design.
-export default defineConfig({
-  plugins: [productionCspPlugin, omitEmittedBasisTranscoderPlugin],
-  server: {
-    host: true,
-  },
-});
+export default defineConfig(() => createShowroomConfig());

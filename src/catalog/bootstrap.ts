@@ -12,8 +12,9 @@ const HALF_CONTENT_BASE = '/content/half';
  */
 export async function loadContentSet(wantHalf: boolean): Promise<{ base: string; catalog: Catalog }> {
   if (wantHalf) {
+    const catalogUrl = contentUrl(HALF_CONTENT_BASE, 'catalog.json');
     try {
-      const catalog = await loadCatalog(contentUrl(HALF_CONTENT_BASE, 'catalog.json'));
+      const catalog = await loadCatalog(catalogUrl);
       return { base: HALF_CONTENT_BASE, catalog };
     } catch (error) {
       console.warn(

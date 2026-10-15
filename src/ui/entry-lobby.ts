@@ -9,7 +9,7 @@ import './entry-lobby.css';
 import { resolveMusicPreference, storeMusicPreference } from '../audio/preference';
 import type { KeyValueStore } from '../audio/preference';
 import { contentUrl, loadCatalog } from '../catalog/catalog';
-import { expectedBytes, formatProgress, progressRatio, receivedBytes } from '../loading/progress';
+import { expectedBytes, formatProgress, progressRatio } from '../loading/progress';
 import { skySourceFromSearch } from '../lighting/sky';
 import type { ManifestFile, ResourceEntry } from '../loading/progress';
 
@@ -133,9 +133,9 @@ function readManifestFiles(json: unknown, setName: string): Record<string, Manif
   return files;
 }
 
-function pathnameOf(name: string): string {
+function resourceUrl(name: string): string {
   try {
-    return new URL(name).pathname;
+    return new URL(name, window.location.href).href;
   } catch {
     return name;
   }
@@ -189,7 +189,7 @@ export function trackFirstFrameProgress(
   }
 
   function countEnded(mine: ResourceEntry[]): number {
-    const arrived = new Set(mine.map((one) => pathnameOf(one.name)));
+    const arrived = new Set(mine.map((one) => resourceUrl(one.name)));
     return expectedPaths.filter((path) => arrived.has(path)).length;
   }
 
@@ -197,8 +197,8 @@ export function trackFirstFrameProgress(
     if (stopped) {
       return;
     }
-    const mine = contentEntries().filter((one) => expectedPaths.includes(pathnameOf(one.name)));
-    const received = receivedBytes(mine, contentBase);
+    const mine = contentEntries().filter((one) => expectedPaths.includes(resourceUrl(one.name)));
+    const received = mine.reduce((total, entry) => total + entry.transferSize, 0);
     if (!fromCache && mine.length > 0) {
       const first = mine.reduce((left, right) => (right.responseEnd < left.responseEnd ? right : left));
       if (first.transferSize === 0) {
@@ -248,11 +248,13 @@ export function trackFirstFrameProgress(
         const environmentFile = countEnvironment ? catalog.environment.file : null;
         expected = files === null ? 0 : expectedBytes(files, firstLook, environmentFile);
         expectedPaths = [
-          ...(environmentFile === null ? [] : [environmentFile]),
           catalog.rotunda.file,
           catalog.plinth.file,
           firstLook,
-        ].map((file) => contentUrl(contentBase, file));
+        ].map((file) => resourceUrl(contentUrl(contentBase, file)));
+        if (environmentFile !== null) {
+          expectedPaths.push(resourceUrl(contentUrl(manifestBase, environmentFile)));
+        }
         update();
       }
     } catch (err) {

@@ -3,6 +3,8 @@
 // type throws with the field's path. A silently dropped look is a blank plinth with nothing on
 // screen to explain it, which is far more expensive to diagnose than a thrown error at boot.
 
+import { contentResolver } from '../content/resolver';
+
 /** One look: a garment baked together with its mannequin, plus the text and media that describe it. */
 export interface CatalogLook {
   id: string;
@@ -192,13 +194,12 @@ export function parseCatalog(json: unknown): Catalog {
 }
 
 /**
- * Joins a content base ('/content' or '/content/half') to a file path from the catalogue without
- * ever producing a double slash, which Vite's preview server answers with a redirect.
+ * Joins a logical content base ('/content' or '/content/half') to a catalogue file through the
+ * configured resolver. Local requests retain the same slash handling and remote requests use
+ * the immutable manifest address.
  */
 export function contentUrl(base: string, file: string): string {
-  const left = base.endsWith('/') ? base.slice(0, -1) : base;
-  const right = file.startsWith('/') ? file.slice(1) : file;
-  return `${left}/${right}`;
+  return contentResolver.join(base, file);
 }
 
 // A request owner per fetch implementation, shared by the scene loader and progress tracker.
