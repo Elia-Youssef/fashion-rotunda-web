@@ -1,6 +1,16 @@
 import type { BufferGeometry, PerspectiveCamera } from 'three';
 
 export type CameraMode = 'orbit' | 'walk';
+export type WalkLoadState = 'idle' | 'loading' | 'ready' | 'error' | 'disposed';
+
+export interface WalkLoader {
+  readonly state: WalkLoadState;
+  readonly session: WalkSession | null;
+  ensureReady(): Promise<WalkSession | null>;
+  cancel(): void;
+  onStateChange(listener: () => void): () => void;
+  dispose(): void;
+}
 
 export interface WalkthroughOptions {
   camera: PerspectiveCamera;
@@ -31,17 +41,17 @@ export interface WalkthroughHandle {
 export interface WalkSessionOptions {
   camera: PerspectiveCamera;
   canvas: HTMLCanvasElement;
-  collisionUrl: string;
   isTouch: boolean;
   onChange: () => void;
   now: () => number;
 }
 
-/** Owns the controller, collision request/geometry and touch controls together. */
+/** Owns controllers, parsed collision geometry and touch controls together. */
 export interface WalkSession {
   readonly walk: WalkthroughHandle;
   readonly ready: boolean;
   onReady(listener: () => void): () => void;
+  loadCollision(data: ArrayBuffer, signal: AbortSignal): Promise<void>;
   setJoystickVisible(visible: boolean): void;
   dispose(): void;
 }

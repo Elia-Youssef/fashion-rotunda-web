@@ -4,11 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MusicState } from '../../src/audio/music';
 import { mountA11y } from '../../src/ui/a11y';
 import type { A11yMount } from '../../src/ui/a11y';
+import { mountAnnouncer } from '../../src/ui/announce';
+import type { Announcer } from '../../src/ui/announce';
 import { mountMusicSwitch } from '../../src/ui/music-switch';
 import type { MusicSwitchHandle } from '../../src/ui/music-switch';
 import { ONBOARDING_STORAGE_KEY } from '../../src/ui/onboarding';
 
 let root: HTMLElement;
+let announcer: Announcer;
 let aside: HTMLElement;
 let canvas: HTMLCanvasElement;
 let header: HTMLElement;
@@ -23,6 +26,7 @@ beforeEach(() => {
   localStorage.clear();
 
   root = document.body;
+  announcer = mountAnnouncer(root);
 
   header = document.createElement('header');
   const musicBtn = document.createElement('button');
@@ -66,6 +70,7 @@ afterEach(() => {
   a11y = null;
   musicSwitch?.dispose();
   musicSwitch = null;
+  announcer.dispose();
   root.innerHTML = '';
   localStorage.clear();
   vi.useRealTimers();
@@ -98,7 +103,7 @@ describe('mountA11y', () => {
         },
       });
       const musicBtn = header.querySelector<HTMLButtonElement>('button.music-switch')!;
-      a11y = mountA11y({ root, aside, canvas, search: '?e2e=1' });
+      a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
       const liveRegion = root.querySelector('.a11y-live-region')!;
 
       a11y.announcer.say('Experience ready');
@@ -124,7 +129,7 @@ describe('mountA11y', () => {
 
   it('sets canvas aria-label, removes role and keeps tabindex=0', () => {
     canvas.setAttribute('role', 'img');
-    a11y = mountA11y({ root, aside, canvas, search: '' });
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '' });
 
     expect(canvas.getAttribute('aria-label')).toBe(
       'Showroom. Drag to orbit, arrow keys to turn, plus and minus to zoom, Home to reset',
@@ -135,22 +140,22 @@ describe('mountA11y', () => {
 
   it('resets onboarding storage key when ?onboarding=reset is present', () => {
     localStorage.setItem(ONBOARDING_STORAGE_KEY, 'done');
-    a11y = mountA11y({ root, aside, canvas, search: '?onboarding=reset' });
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?onboarding=reset' });
 
     expect(localStorage.getItem(ONBOARDING_STORAGE_KEY)).toBeNull();
   });
 
   it('does not start onboarding under ?e2e=1 unless onboarding=1 is passed', () => {
-    a11y = mountA11y({ root, aside, canvas, search: '?e2e=1' });
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
     expect(root.querySelector('.onboarding-card')).toBeNull();
     a11y.dispose();
 
-    a11y = mountA11y({ root, aside, canvas, search: '?e2e=1&onboarding=1' });
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1&onboarding=1' });
     expect(root.querySelector('.onboarding-card')).not.toBeNull();
   });
 
   it('speaks look changes through the polite live region', async () => {
-    a11y = mountA11y({ root, aside, canvas, search: '?e2e=1' });
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
     const liveRegion = root.querySelector('.a11y-live-region');
     expect(liveRegion).not.toBeNull();
 
@@ -164,7 +169,7 @@ describe('mountA11y', () => {
   });
 
   it('speaks swatch changes through the polite live region', async () => {
-    a11y = mountA11y({ root, aside, canvas, search: '?e2e=1' });
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
     const liveRegion = root.querySelector('.a11y-live-region');
 
     canvas.dataset.variant = 'dark';
@@ -176,7 +181,7 @@ describe('mountA11y', () => {
   });
 
   it('speaks turntable and music switch toggles', async () => {
-    a11y = mountA11y({ root, aside, canvas, search: '?e2e=1' });
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
     const liveRegion = root.querySelector('.a11y-live-region');
 
     const rotateBtn = aside.querySelector('button[data-action="rotate"]');
@@ -220,7 +225,7 @@ describe('mountA11y', () => {
       musicBtn?.setAttribute('aria-pressed', String(!enabled));
       if (musicBtn !== null) musicBtn.dataset.music = enabled ? 'off' : 'on';
 
-      a11y = mountA11y({ root, aside, canvas, search: '?e2e=1' });
+      a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
       const liveRegion = root.querySelector('.a11y-live-region');
       expect(liveRegion).not.toBeNull();
 

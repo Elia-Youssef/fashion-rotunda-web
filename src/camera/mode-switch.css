@@ -54,6 +54,27 @@
   user-select: none;
 }
 
+.archviz-mode-button[data-mode="walk"] {
+  display: inline-grid;
+  align-items: center;
+}
+
+.archviz-mode-label {
+  grid-area: 1 / 1;
+  white-space: nowrap;
+}
+
+/* The widest label sets the column width without adding text or height to the button. */
+.archviz-mode-button[data-mode="walk"]::after {
+  content: attr(data-reserve-labels);
+  grid-area: 1 / 1;
+  white-space: pre;
+  visibility: hidden;
+  block-size: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
 .archviz-mode-button:hover:not(:disabled) {
   color: var(--text, #ffffff);
   background: rgba(255, 255, 255, 0.08);

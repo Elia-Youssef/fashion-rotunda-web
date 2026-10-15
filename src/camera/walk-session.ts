@@ -45,17 +45,16 @@ function mountJoystickLayer(canvas: HTMLCanvasElement): JoystickLayer {
   }
 }
 
-/** Eager Walk ownership; the existing zero-delay collision preload remains unchanged. */
+/** Owns temporary and collision-ready controllers, parsed geometry and touch controls. */
 export function createWalkSession(options: WalkSessionOptions): WalkSession {
-  const { camera, canvas, collisionUrl, isTouch, onChange, now } = options;
+  const { camera, canvas, isTouch, onChange, now } = options;
   let currentWalk: WalkthroughHandle | null = null;
   let ownedGeometry: BufferGeometry | null = new BufferGeometry();
   let joystick: JoystickHandle | null = null;
   let joystickLayer: JoystickLayer | null = null;
-  let collisionTimeoutId: ReturnType<typeof setTimeout> | null = null;
-  let collisionAbort: AbortController | null = null;
   let disposed = false;
   let ready = false;
+  let cancelParse: (() => void) | null = null;
   const readyListeners = new Set<() => void>();
 
   function createController(geometry: BufferGeometry): WalkthroughHandle {
@@ -75,8 +74,8 @@ export function createWalkSession(options: WalkSessionOptions): WalkSession {
   function dispose(): void {
     if (disposed) return;
     disposed = true;
-    if (collisionTimeoutId !== null) clearTimeout(collisionTimeoutId);
-    collisionAbort?.abort();
+    cancelParse?.();
+    cancelParse = null;
     currentWalk?.dispose();
     joystick?.dispose();
     joystickLayer?.dispose();
@@ -110,7 +109,7 @@ export function createWalkSession(options: WalkSessionOptions): WalkSession {
   }
 
   try {
-    // Keep the placeholder handle and early touch mount until readiness is made asynchronous.
+    // Keep the transitional controller private until validated collision replaces it.
     currentWalk = createController(ownedGeometry);
     if (isTouch) {
       joystickLayer = mountJoystickLayer(canvas);
@@ -119,45 +118,7 @@ export function createWalkSession(options: WalkSessionOptions): WalkSession {
       });
     }
 
-    // Fetch owns cancellation; GLTFLoader parses the same collision response as before.
-    if (collisionUrl) {
-      collisionTimeoutId = setTimeout(() => {
-        try {
-          collisionAbort = new AbortController();
-          const loader = new GLTFLoader();
-          void fetch(collisionUrl, { signal: collisionAbort.signal })
-            .then((response) => {
-              if (!response.ok) throw new Error(`collision mesh answered ${response.status}`);
-              return response.arrayBuffer();
-            })
-            .then((data) => {
-              if (disposed) return;
-              loader.parse(
-                data,
-                '',
-                (gltf) => {
-                  const mesh = gltf.scene.children[0] as { geometry?: BufferGeometry };
-                  if (disposed) {
-                    mesh?.geometry?.dispose();
-                  } else if (mesh?.geometry) {
-                    setupCollision(mesh.geometry);
-                  }
-                },
-                (err) => {
-                  if (!disposed) console.warn('[archviz] failed to parse collision mesh', err);
-                },
-              );
-            })
-            .catch((err: unknown) => {
-              if (!disposed && !(err instanceof DOMException && err.name === 'AbortError')) {
-                console.warn('[archviz] failed to load collision mesh', err);
-              }
-            });
-        } catch {
-          // Ignored if loader URL resolution fails in test environments.
-        }
-      }, 0);
-    }
+
   } catch (error) {
     dispose();
     throw error;
@@ -173,6 +134,49 @@ export function createWalkSession(options: WalkSessionOptions): WalkSession {
     onReady(listener: () => void): () => void {
       readyListeners.add(listener);
       return () => readyListeners.delete(listener);
+    },
+    loadCollision(data: ArrayBuffer, signal: AbortSignal): Promise<void> {
+      return new Promise<void>((resolve, reject) => {
+        const finish = (): void => {
+          signal.removeEventListener('abort', aborted);
+          cancelParse = null;
+        };
+        const aborted = (): void => {
+          finish();
+          reject(new DOMException('Walk load canceled', 'AbortError'));
+        };
+        if (signal.aborted || disposed) { aborted(); return; }
+        signal.addEventListener('abort', aborted, { once: true });
+        cancelParse = aborted;
+        try {
+          new GLTFLoader().parse(data, '', (gltf) => {
+            finish();
+            const geometries = new Set<BufferGeometry>();
+            gltf.scene.traverse((child) => {
+              const geometry = (child as { geometry?: BufferGeometry }).geometry;
+              if (geometry) geometries.add(geometry);
+            });
+            if (disposed || signal.aborted) {
+              for (const geometry of geometries) geometry.dispose();
+              aborted();
+              return;
+            }
+            const mesh = gltf.scene.children[0] as { geometry?: BufferGeometry } | undefined;
+            const geometry = mesh?.geometry;
+            if (!geometry || !geometry.getAttribute('position')?.count ||
+                (geometry.index ? geometry.index.count : geometry.getAttribute('position').count) < 3) {
+              for (const item of geometries) item.dispose();
+              reject(new Error('collision mesh has no triangles'));
+              return;
+            }
+            for (const item of geometries) if (item !== geometry) item.dispose();
+            try {
+              setupCollision(geometry);
+              resolve();
+            } catch (error) { reject(error); }
+          }, (error) => { finish(); reject(error); });
+        } catch (error) { finish(); reject(error); }
+      });
     },
     setJoystickVisible(visible: boolean): void {
       joystick?.setVisible(visible);

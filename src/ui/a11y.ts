@@ -2,7 +2,6 @@
 // Configures the canvas accessible name, installs tooltips, wires the polite live region
 // MutationObserver for page state announcements, and drives the onboarding sequence.
 
-import { mountAnnouncer } from './announce';
 import type { Announcer } from './announce';
 import { ONBOARDING_STORAGE_KEY, mountOnboarding } from './onboarding';
 import type { OnboardingHandle } from './onboarding';
@@ -14,11 +13,12 @@ export interface A11yMountOptions {
   aside: HTMLElement;
   canvas: HTMLCanvasElement;
   search: string;
+  announcer: Pick<Announcer, 'say'>;
 }
 
 export interface A11yMount {
   onboarding: OnboardingHandle;
-  announcer: Announcer;
+  announcer: Pick<Announcer, 'say'>;
   dispose(): void;
 }
 
@@ -26,7 +26,7 @@ const CANVAS_LABEL =
   'Showroom. Drag to orbit, arrow keys to turn, plus and minus to zoom, Home to reset';
 
 export function mountA11y(options: A11yMountOptions): A11yMount {
-  const { root, aside, canvas, search } = options;
+  const { root, aside, canvas, search, announcer } = options;
 
   // The canvas: role="img" is wrong for an interactive surface; keep tabindex="0".
   canvas.removeAttribute('role');
@@ -34,7 +34,6 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
   canvas.tabIndex = 0;
 
   const tooltips = installTooltips(root);
-  const announcer = mountAnnouncer(root);
 
   const params = new URLSearchParams(search);
   if (params.get('onboarding') === 'reset') {
@@ -153,10 +152,13 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
     });
   }
 
+  let disposed = false;
   return {
     onboarding,
     announcer,
     dispose(): void {
+      if (disposed) return;
+      disposed = true;
       canvas.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointerup', onPointerUp);
       root.removeEventListener('input', onPanelInput);
@@ -164,7 +166,6 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
       asideObserver.disconnect();
       headerObserver.disconnect();
       tooltips.dispose();
-      announcer.dispose();
       onboarding.dispose();
     },
   };

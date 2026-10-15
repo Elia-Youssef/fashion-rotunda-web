@@ -41,6 +41,7 @@ import type { TierInput } from './tiers/decide';
 import { TIERS } from './tiers/table';
 import type { TierName } from './tiers/table';
 import { mountA11y } from './ui/a11y';
+import { mountPageAnnouncer } from './ui/announce';
 import { mountBadge } from './ui/badge';
 import { mountChrome } from './ui/chrome';
 import { mountShell } from './ui/shell';
@@ -175,6 +176,7 @@ async function main(): Promise<void> {
   let musicPreference: 'on' | 'off' = 'on';
   const routing = createStartupFailureRouting({ lobby: () => lobby });
   startupFailures = routing;
+  const announcer = mountPageAnnouncer(document.body);
 
   if (!showLobby) {
     lobbyElement?.remove();
@@ -781,8 +783,10 @@ async function main(): Promise<void> {
 
     // Hooks against the handles above: the camera mounts its controls on the canvas and the loop,
     // and the chrome mounts the catalogue strip and the product card in the side panel.
+    let modeSwitch: ReturnType<typeof mountModeSwitch> | null = null;
     const cameraHandle = mountCamera({
       camera: showroom.camera,
+      onDispose: () => modeSwitch?.dispose(),
       canvas,
       showroom,
       loop,
@@ -794,7 +798,7 @@ async function main(): Promise<void> {
     });
     cameraMount = cameraHandle;
     proofView = catalog.views['proof'];
-    mountModeSwitch(shell.roots.header, cameraHandle, { hasPointerLock: !isTouch, canvas });
+    modeSwitch = mountModeSwitch(shell.roots.header, cameraHandle, { hasPointerLock: !isTouch, canvas, announcer });
     const finishingPass = initializedChain;
     finishingPass.setDepthOfFieldAllowed(cameraHandle.mode === 'orbit');
     cameraHandle.onModeChange((mode) => {
@@ -857,7 +861,7 @@ async function main(): Promise<void> {
     stopProgress();
 
     if (!showLobby) {
-      mountA11y({ root: document.body, aside: shell.roots.card, canvas, search });
+      mountA11y({ root: document.body, aside: shell.roots.card, canvas, search, announcer });
       if (musicPreference === 'on') {
         void music.startDeferred();
       }
@@ -917,7 +921,7 @@ async function main(): Promise<void> {
             void music.startDeferred();
           }
 
-          const a11y = mountA11y({ root: document.body, aside: shell.roots.card, canvas, search });
+          const a11y = mountA11y({ root: document.body, aside: shell.roots.card, canvas, search, announcer });
           a11y.announcer.say('Experience ready');
         },
         onError: (err) => {

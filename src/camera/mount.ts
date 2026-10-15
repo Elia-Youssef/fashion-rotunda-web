@@ -2,6 +2,7 @@
 // Integrates the orbit inspection camera, turntable, walkthrough camera with capsule collision,
 // blended mode transitions, catalogue view presets, and the idle attract tour.
 
+import { Vector3 } from 'three/webgpu';
 import type { PerspectiveCamera } from 'three/webgpu';
 
 import type { CatalogView } from '../catalog/catalog';
@@ -16,9 +17,10 @@ import { createPresets } from './presets';
 import type { PresetsHandle } from './presets';
 import { createTurntable } from './turntable';
 import type { Turntable } from './turntable';
-import type { CameraMode, WalkthroughHandle } from './contracts';
+import type { CameraMode, WalkLoader, WalkLoadState, WalkthroughHandle } from './contracts';
 import { WALK_EYE_HEIGHT } from './walk-settings';
-import { createWalkSession } from './walk-session';
+import { createWalkLoad } from './walk-load';
+import type { WalkLoadOptions } from './walk-load';
 
 export type { CameraMode } from './contracts';
 
@@ -33,14 +35,16 @@ export interface CameraMountOptions {
   collisionUrl: string; // contentUrl(base, 'collision.glb')
   search: string; // location.search: ?attract=0|1 and ?attractIdle=<ms>
   now?: () => number;
+  createWalkLoader?: (options: WalkLoadOptions) => WalkLoader;
+  onDispose?: () => void;
 }
 
 export interface CameraMount {
   orbit: OrbitHandle;
   turntable: Turntable;
-  walk: WalkthroughHandle;
+  readonly walk: WalkthroughHandle | undefined;
   readonly mode: CameraMode;
-  /** Resolves once the blend has landed and the target mode has control. */
+  /** Resolves on completion, supersession or disposal; rejects an active load failure. */
   setMode(mode: CameraMode): Promise<void>;
   onModeChange(listener: (mode: CameraMode) => void): () => void;
   presets: PresetsHandle;
@@ -52,6 +56,9 @@ export interface CameraMount {
    * is in flight.
    */
   readonly moving: boolean;
+  readonly pendingMode: CameraMode | null;
+  readonly walkLoadState: WalkLoadState;
+  onWalkStateChange(listener: () => void): () => void;
   readonly walkReady: boolean;
   onWalkReady(listener: () => void): () => void;
   dispose(): void;
@@ -100,7 +107,7 @@ declare global {
     archvizCamera?: {
       orbit: OrbitHandle;
       turntable: Turntable;
-      walk?: WalkthroughHandle;
+      readonly walk: WalkthroughHandle | undefined;
       readonly mode: CameraMode;
       setMode: (mode: CameraMode) => Promise<void>;
       presets: PresetsHandle;
@@ -213,20 +220,27 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
   let storedWalkYaw = 0;
   let storedWalkPitch = 0;
 
-  const walkSession = createWalkSession({
+  let disposed = false;
+  const walkLoader = (options.createWalkLoader ?? createWalkLoad)({
     camera,
     canvas,
     collisionUrl,
     isTouch,
     now: clock,
     onChange: () => {
-      if (walkSession.walk.moving) {
+      if (currentMode === 'walk' && walkLoader.session?.walk.moving) {
         hold();
       } else {
         loop.invalidate();
       }
     },
   });
+
+  // Keep the boot preload for the eager transition; first-use loading is a separate change.
+  let preload: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+    preload = null;
+    void walkLoader.ensureReady().catch(() => {});
+  }, 0);
 
   // Presets
   const presets = createPresets(views, orbit, prefersReducedMotion);
@@ -304,102 +318,127 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
   }
 
   function applyModeHandover(mode: CameraMode): void {
+    const changed = currentMode !== mode;
     currentMode = mode;
     canvas.dataset['camera'] = mode;
+    const walkSession = walkLoader.session;
     if (mode === 'walk') {
       orbit.setEnabled(false);
-      walkSession.walk.enable();
-      walkSession.setJoystickVisible(true);
+      walkSession!.walk.enable();
+      walkSession!.setJoystickVisible(true);
     } else {
-      walkSession.walk.disable();
+      walkSession?.walk.disable();
       orbit.setEnabled(true);
-      walkSession.setJoystickVisible(false);
+      walkSession?.setJoystickVisible(false);
     }
-    for (const listener of modeListeners) {
-      listener(mode);
+    if (changed) for (const listener of modeListeners) listener(mode);
+  }
+
+  interface ModeRequest {
+    mode: CameraMode;
+    promise: Promise<void>;
+    resolve(): void;
+    reject(error: unknown): void;
+  }
+  let request: ModeRequest | null = null;
+  const stateListeners = new Set<() => void>();
+  function notifyState(): void {
+    for (const listener of stateListeners) listener();
+  }
+  const unlistenLoad = walkLoader.onStateChange(notifyState);
+
+  function finishRequest(current: ModeRequest, error?: unknown, failed = false): void {
+    if (request !== current) return;
+    request = null;
+    attract.noteInput();
+    notifyState();
+    if (failed) current.reject(error);
+    else current.resolve();
+  }
+
+  function beginBlend(current: ModeRequest, interrupted: boolean): void {
+    const mode = current.mode;
+    const walkSession = walkLoader.session;
+    // Capture only after readiness, including any Orbit input during the load.
+    if (!interrupted) {
+      if (currentMode === 'orbit') {
+        storedOrbitPose = { position: [...orbit.position], target: [...orbit.target] };
+      } else if (walkSession !== null) {
+        storedWalkFoot = walkSession.walk.foot;
+        storedWalkYaw = walkSession.walk.yaw;
+        storedWalkPitch = walkSession.walk.pitch;
+      }
     }
+    const direction = camera.getWorldDirection(new Vector3());
+    const fromPose: Pose = {
+      position: [camera.position.x, camera.position.y, camera.position.z],
+      target: [camera.position.x + direction.x, camera.position.y + direction.y,
+        camera.position.z + direction.z],
+    };
+    const toPose = mode === 'walk'
+      ? getWalkCameraPose(storedWalkFoot, storedWalkYaw, storedWalkPitch) : storedOrbitPose;
+    orbit.setEnabled(false);
+    walkSession?.walk.disable();
+    walkSession?.setJoystickVisible(false);
+    if (mode === 'walk') walkSession!.walk.setPose(storedWalkFoot, storedWalkYaw, storedWalkPitch);
+    const duration = prefersReducedMotion() ? 0 : BLEND_MS;
+    if (duration === 0) {
+      camera.position.set(...toPose.position);
+      camera.lookAt(...toPose.target);
+      if (mode === 'orbit') orbit.moveTo(toPose.position, toPose.target);
+      applyModeHandover(mode);
+      finishRequest(current);
+      loop.invalidate();
+      release();
+      return;
+    }
+    hold();
+    activeBlend = {
+      fromPose, toPose, durationMs: duration, elapsedMs: 0, targetMode: mode,
+      ...(mode === 'walk' ? {
+        targetFoot: storedWalkFoot, targetYaw: storedWalkYaw, targetPitch: storedWalkPitch,
+      } : {}),
+      resolve: () => finishRequest(current),
+    };
+    loop.invalidate();
   }
 
   function setMode(mode: CameraMode): Promise<void> {
-    if (mode === currentMode && activeBlend === null) {
+    if (disposed) return Promise.resolve();
+    if (preload !== null) { clearTimeout(preload); preload = null; }
+    if (request?.mode === mode) return request.promise;
+    const interrupted = activeBlend !== null;
+    activeBlend = null;
+    const previous = request;
+    request = null;
+    previous?.resolve();
+    // Cancellation precedes even the same-mode return while Orbit owns the camera.
+    if (mode === 'orbit') {
+      walkLoader.cancel();
+    }
+    attract.noteInput();
+    attractPoseApplied = false;
+    if (mode === currentMode && !interrupted) {
+      notifyState();
       return Promise.resolve();
     }
-
-    if (activeBlend !== null) {
-      const finish = activeBlend.resolve;
-      activeBlend = null;
-      finish();
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+    const current: ModeRequest = { mode, promise, resolve, reject };
+    request = current;
+    notifyState();
+    if (mode === 'orbit' || walkLoader.state === 'ready') beginBlend(current, interrupted);
+    else {
+      void walkLoader.ensureReady().then((ready) => {
+        if (disposed || request !== current || ready === null) return;
+        beginBlend(current, interrupted);
+      }).catch((error: unknown) => {
+        if (disposed || request !== current) return;
+        finishRequest(current, error, true);
+      });
     }
-
-    // Capture leaving mode pose.
-    if (currentMode === 'orbit') {
-      storedOrbitPose = {
-        position: [...orbit.position],
-        target: [...orbit.target],
-      };
-    } else {
-      storedWalkFoot = walkSession.walk.foot;
-      storedWalkYaw = walkSession.walk.yaw;
-      storedWalkPitch = walkSession.walk.pitch;
-    }
-
-    const fromPose: Pose = {
-      position: [camera.position.x, camera.position.y, camera.position.z],
-      target:
-        currentMode === 'orbit'
-          ? storedOrbitPose.target
-          : getWalkCameraPose(storedWalkFoot, storedWalkYaw, storedWalkPitch).target,
-    };
-
-    let toPose: Pose;
-    let targetFoot: [number, number, number] | undefined;
-    let targetYaw: number | undefined;
-    let targetPitch: number | undefined;
-
-    if (mode === 'walk') {
-      targetFoot = storedWalkFoot;
-      targetYaw = storedWalkYaw;
-      targetPitch = storedWalkPitch;
-      toPose = getWalkCameraPose(targetFoot, targetYaw, targetPitch);
-    } else {
-      toPose = storedOrbitPose;
-    }
-
-    const duration = prefersReducedMotion() ? 0 : BLEND_MS;
-
-    if (duration <= 0) {
-      camera.position.set(...toPose.position);
-      camera.lookAt(...toPose.target);
-      if (mode === 'walk') {
-        walkSession.walk.setPose(targetFoot!, targetYaw!, targetPitch!);
-      } else {
-        orbit.moveTo(toPose.position, toPose.target);
-      }
-      applyModeHandover(mode);
-      loop.invalidate();
-      return Promise.resolve();
-    }
-
-    // Disable controls during blend.
-    orbit.setEnabled(false);
-    walkSession.walk.disable();
-    walkSession.setJoystickVisible(false);
-    hold();
-
-    return new Promise<void>((resolve) => {
-      activeBlend = {
-        fromPose,
-        toPose,
-        durationMs: duration,
-        elapsedMs: 0,
-        targetMode: mode,
-        ...(targetFoot !== undefined ? { targetFoot } : {}),
-        ...(targetYaw !== undefined ? { targetYaw } : {}),
-        ...(targetPitch !== undefined ? { targetPitch } : {}),
-        resolve,
-      };
-      loop.invalidate();
-    });
+    return promise;
   }
 
   const exposed =
@@ -408,8 +447,8 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     window.archvizCamera = {
       orbit,
       turntable,
-      get walk(): WalkthroughHandle {
-        return walkSession.walk;
+      get walk(): WalkthroughHandle | undefined {
+        return walkLoader.session?.walk;
       },
       get mode(): CameraMode {
         return currentMode;
@@ -423,8 +462,8 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
   return {
     orbit,
     turntable,
-    get walk(): WalkthroughHandle {
-      return walkSession.walk;
+    get walk(): WalkthroughHandle | undefined {
+      return walkLoader.session?.walk;
     },
     get mode(): CameraMode {
       return currentMode;
@@ -437,15 +476,22 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     presets,
     attract,
 
+    get pendingMode() { return request?.mode ?? null; },
+    get walkLoadState() { return walkLoader.state; },
+    onWalkStateChange(listener) {
+      stateListeners.add(listener);
+      return () => stateListeners.delete(listener);
+    },
     get walkReady(): boolean {
-      return walkSession.ready;
+      return walkLoader.state === 'ready';
     },
 
     onWalkReady(listener: () => void): () => void {
-      return walkSession.onReady(listener);
+      return walkLoader.onStateChange(() => { if (walkLoader.state === 'ready') listener(); });
     },
 
     update(dtMs: number): void {
+      if (disposed) return;
       const step = Math.min(Math.max(dtMs, 0), MAX_STEP_MS);
 
       // Handle active blend transition.
@@ -462,7 +508,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
             const blend = activeBlend;
             activeBlend = null;
             if (blend.targetMode === 'walk') {
-              walkSession.walk.setPose(blend.targetFoot!, blend.targetYaw!, blend.targetPitch!);
+              walkLoader.session!.walk.setPose(blend.targetFoot!, blend.targetYaw!, blend.targetPitch!);
             } else {
               orbit.moveTo(blend.toPose.position, blend.toPose.target);
             }
@@ -476,7 +522,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
 
       // Normal mode updates.
       const orbitMoving = orbit.update(step);
-      const walkMoving = currentMode === 'walk' ? walkSession.walk.update(step) : false;
+      const walkMoving = currentMode === 'walk' ? (walkLoader.session?.walk.update(step) ?? false) : false;
       const yaw = turntable.update(step);
 
       if (turntable.running && yaw !== appliedYaw) {
@@ -484,7 +530,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
       }
 
       // Attract loop ticking (orbit mode only, turntable not running).
-      if (currentMode === 'orbit' && !turntable.running && !orbit.moving) {
+      if (currentMode === 'orbit' && request === null && !turntable.running && !orbit.moving) {
         const tickResult = attract.tick();
         if (tickResult !== null) {
           canvas.dataset['attract'] = '1';
@@ -520,13 +566,21 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
       return (
         orbit.moving ||
         turntable.running ||
-        walkSession.walk.moving ||
+        (walkLoader.session?.walk.moving ?? false) ||
         activeBlend !== null ||
         attract.running
       );
     },
 
     dispose(): void {
+      if (disposed) return;
+      disposed = true;
+      if (preload !== null) clearTimeout(preload);
+      request?.resolve();
+      request = null;
+      unlistenLoad();
+      stateListeners.clear();
+      modeListeners.clear();
       release();
       window.removeEventListener('pointerdown', onWindowInput);
       window.removeEventListener('pointermove', onWindowInput);
@@ -541,7 +595,8 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
 
       orbit.dispose();
       turntable.stop();
-      walkSession.dispose();
+      walkLoader.dispose();
+      options.onDispose?.();
 
       canvas.style.touchAction = hadTouchAction;
       if (hadTabIndex === null) {

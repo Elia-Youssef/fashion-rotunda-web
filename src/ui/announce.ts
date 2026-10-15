@@ -31,6 +31,7 @@ export function mountAnnouncer(root: HTMLElement): Announcer {
 
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pendingText: string | null = null;
+  let disposed = false;
 
   function speak(text: string): void {
     // Writing the same string a second time is not a change, so the region would stay silent.
@@ -54,6 +55,7 @@ export function mountAnnouncer(root: HTMLElement): Announcer {
 
   return {
     say(text: string): void {
+      if (disposed) return;
       if (timer === null) {
         speak(text);
         openWindow();
@@ -62,6 +64,8 @@ export function mountAnnouncer(root: HTMLElement): Announcer {
       pendingText = text;
     },
     dispose(): void {
+      if (disposed) return;
+      disposed = true;
       if (timer !== null) {
         clearTimeout(timer);
         timer = null;
@@ -70,4 +74,21 @@ export function mountAnnouncer(root: HTMLElement): Announcer {
       region.remove();
     },
   };
+}
+
+/** Page ownership survives the back-forward cache and ends on a permanent departure. */
+export function mountPageAnnouncer(root: HTMLElement): Announcer {
+  const announcer = mountAnnouncer(root);
+  function onPageHide(event: PageTransitionEvent): void {
+    if (event.persisted === false) owner.dispose();
+  }
+  const owner: Announcer = {
+    say: (text) => announcer.say(text),
+    dispose(): void {
+      window.removeEventListener('pagehide', onPageHide);
+      announcer.dispose();
+    },
+  };
+  window.addEventListener('pagehide', onPageHide);
+  return owner;
 }

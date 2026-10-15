@@ -51,7 +51,9 @@ const FROZEN_SHEET_HASHES: Readonly<Record<string, string>> = {
   // Fixed-size touch controls with translucent fills, white borders and shadows of their own;
   // no token matches those values. Frozen bytes keep them from drifting.
   'camera/joystick.css': 'f4770d13697af60904f86b3d169e2b9034de09c3824bbe1148ed46e7b99851f9',
-  'camera/mode-switch.css': '729446028a64cb148b67965972252953e586fbe30e11f5a8efee984509ca462f',
+  // 2026-10-15: reserve all Walk labels through intrinsic layout without adding
+  // colour, font or length literals; freeze the resulting layout rules too.
+  'camera/mode-switch.css': '2203f6b2d6fb97c2bd82f44f49bf55557b4bd24bfb2ceab54fcb9537592856b0',
 };
 
 function stripComments(css: string): string {

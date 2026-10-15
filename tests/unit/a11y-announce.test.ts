@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { mountAnnouncer, prefersReducedMotion } from '../../src/ui/announce';
+import { mountAnnouncer, mountPageAnnouncer, prefersReducedMotion } from '../../src/ui/announce';
 import type { Announcer } from '../../src/ui/announce';
 
 let root: HTMLElement;
@@ -96,6 +96,52 @@ describe('mountAnnouncer', () => {
 
     vi.advanceTimersByTime(500);
     expect(root.querySelector('.a11y-live-region')).toBeNull();
+  });
+
+  it('keeps disposal idempotent and ignores late messages without restarting a timer', () => {
+    announcer = mountAnnouncer(root);
+    const region = root.querySelector('.a11y-live-region')!;
+    announcer.say('First');
+    announcer.say('Queued');
+    announcer.dispose();
+    announcer.dispose();
+    announcer.say('Late');
+    expect(vi.getTimerCount()).toBe(0);
+    vi.runAllTimers();
+    expect(region.textContent).toBe('First');
+    expect(root.querySelector('.a11y-live-region')).toBeNull();
+  });
+});
+
+describe('mountPageAnnouncer', () => {
+  it('retains one region and its coalescing window through a back-forward cache departure', () => {
+    announcer = mountPageAnnouncer(root);
+    const region = root.querySelector('.a11y-live-region');
+    announcer.say('Before cache');
+    announcer.say('Pending');
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }));
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+    expect(root.querySelectorAll('.a11y-live-region')).toHaveLength(1);
+    expect(root.querySelector('.a11y-live-region')).toBe(region);
+    vi.advanceTimersByTime(500);
+    expect(region?.textContent).toBe('Pending');
+  });
+
+  it('disposes on permanent pagehide and releases its lifecycle listener', () => {
+    announcer = mountPageAnnouncer(root);
+    const remove = vi.spyOn(window, 'removeEventListener');
+    announcer.say('Before departure');
+    announcer.say('Pending');
+    // A synthetic lifecycle notification used by diagnostics is not a real page departure.
+    window.dispatchEvent(new Event('pagehide'));
+    expect(root.querySelectorAll('.a11y-live-region')).toHaveLength(1);
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: false }));
+    expect(root.querySelector('.a11y-live-region')).toBeNull();
+    expect(remove).toHaveBeenCalledWith('pagehide', expect.any(Function));
+    announcer.say('After departure');
+    announcer.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    remove.mockRestore();
   });
 });
 

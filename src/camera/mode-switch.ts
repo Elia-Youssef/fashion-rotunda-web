@@ -1,19 +1,21 @@
 // Camera mode switch UI.
 // Two buttons (Orbit and Walk), aria-pressed on the active one, keyboard reachable,
-// and data-tooltip set ("Orbit inspection camera", "Walk the showroom floor" or "Loading the floor").
+// and tooltips describing the camera actions.
 
 import './mode-switch.css';
+import type { Announcer } from '../ui/announce';
 import type { CameraMode, CameraMount } from './mount';
 
-export type ModeSwitchMount = Pick<CameraMount, 'mode' | 'setMode' | 'onModeChange'> & {
-  readonly walkReady?: boolean;
-  onWalkReady?: (listener: () => void) => () => void;
-};
+export type ModeSwitchMount = Pick<CameraMount,
+  'mode' | 'setMode' | 'onModeChange' | 'pendingMode' | 'walkLoadState' | 'onWalkStateChange'>;
 
 export interface ModeSwitchOptions {
   hasPointerLock?: boolean;
   canvas: HTMLCanvasElement;
+  announcer: Pick<Announcer, 'say'>;
 }
+
+const WALK_LABELS = { idle: 'Walk', loading: 'Loading Walk...', error: 'Retry Walk' };
 
 /** Two camera-mode buttons plus the Walk pointer-lock escape guidance. */
 export function mountModeSwitch(
@@ -37,42 +39,57 @@ export function mountModeSwitch(
   walkButton.type = 'button';
   walkButton.className = 'archviz-mode-button';
   walkButton.setAttribute('data-mode', 'walk');
-  walkButton.textContent = 'Walk';
+  walkButton.setAttribute('data-tooltip', 'Walk the showroom floor');
+  walkButton.setAttribute('data-reserve-labels', Object.values(WALK_LABELS).join('\n'));
+  const walkLabel = document.createElement('span');
+  walkLabel.className = 'archviz-mode-label';
+  walkButton.appendChild(walkLabel);
 
   const walkHint = document.createElement('p');
   walkHint.className = 'archviz-walk-hint';
   walkHint.id = 'archviz-walk-hint';
   walkHint.hidden = true;
-  walkHint.setAttribute('aria-live', 'polite');
   walkHint.textContent =
     'Walk: click the scene to look. Press Esc to release the mouse, then select Orbit. Press O to return to Orbit.';
 
-  const isReady = mount.walkReady ?? true;
-  if (!isReady) {
-    walkButton.disabled = true;
-    walkButton.setAttribute('data-tooltip', 'Loading the floor');
-  } else {
-    walkButton.disabled = false;
-    walkButton.setAttribute('data-tooltip', 'Walk the showroom floor');
+  const escapeText = walkHint.textContent;
+  const announcer = options.announcer;
+  let lastNotice = '';
+  let disposed = false;
+
+  function updateLoad(): void {
+    const pending = mount.pendingMode === 'walk';
+    const failed = mount.walkLoadState === 'error';
+    const notice = pending ? WALK_LABELS.loading : failed ? 'Walk could not load. Try again.' : '';
+    const label = pending ? WALK_LABELS.loading : failed ? WALK_LABELS.error : WALK_LABELS.idle;
+    walkLabel.textContent = label;
+    walkButton.setAttribute('aria-label', label);
+    walkButton.setAttribute('aria-disabled', String(pending));
+    container.setAttribute('aria-busy', String(pending));
+    walkHint.textContent = failed ? notice : escapeText;
+    walkHint.hidden = !failed && (mount.mode !== 'walk' || !hasPointerLock);
+    const speech = notice || (mount.mode === 'walk' && hasPointerLock ? escapeText : '');
+    if (speech !== lastNotice) {
+      if (speech) announcer.say(speech);
+      lastNotice = speech;
+    }
   }
 
   function updateActive(mode: CameraMode): void {
     orbitButton.setAttribute('aria-pressed', mode === 'orbit' ? 'true' : 'false');
     walkButton.setAttribute('aria-pressed', mode === 'walk' ? 'true' : 'false');
-    walkHint.hidden = mode !== 'walk' || !hasPointerLock;
+    updateLoad();
   }
 
   updateActive(mount.mode);
 
   function onOrbitClick(): void {
-    if (mount.mode !== 'orbit') {
-      void mount.setMode('orbit');
-    }
+    void mount.setMode('orbit').catch(() => {});
   }
 
   function onWalkClick(): void {
-    if (!walkButton.disabled && mount.mode !== 'walk') {
-      void mount.setMode('walk');
+    if (mount.pendingMode !== 'walk' && mount.mode !== 'walk') {
+      void mount.setMode('walk').catch(() => {});
     }
   }
 
@@ -103,7 +120,8 @@ export function mountModeSwitch(
 
     event.preventDefault();
     orbitShortcutPending = true;
-    void mount.setMode('orbit').finally(() => {
+    void mount.setMode('orbit').catch(() => {}).finally(() => {
+      if (disposed) return;
       orbitShortcutPending = false;
     });
   }
@@ -123,23 +141,17 @@ export function mountModeSwitch(
     updateActive(mode);
   });
 
-  let unlistenWalkReady: (() => void) | null = null;
-  if (typeof mount.onWalkReady === 'function') {
-    unlistenWalkReady = mount.onWalkReady(() => {
-      walkButton.disabled = false;
-      walkButton.setAttribute('data-tooltip', 'Walk the showroom floor');
-    });
-  }
+  const unlistenLoad = mount.onWalkStateChange(updateLoad);
 
   return {
     dispose(): void {
+      if (disposed) return;
+      disposed = true;
       orbitButton.removeEventListener('click', onOrbitClick);
       walkButton.removeEventListener('click', onWalkClick);
       window.removeEventListener('keydown', onKeyDown);
       unlistenMode();
-      if (unlistenWalkReady !== null) {
-        unlistenWalkReady();
-      }
+      unlistenLoad();
       container.remove();
       walkHint.remove();
     },

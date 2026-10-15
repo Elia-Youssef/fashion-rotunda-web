@@ -49,7 +49,6 @@ function make(options: Partial<WalkSessionOptions> = {}): WalkSession {
   session = createWalkSession({
     camera: new PerspectiveCamera(40, 1, 0.1, 100),
     canvas,
-    collisionUrl: '/content/collision.glb',
     isTouch: false,
     onChange: vi.fn(),
     now: () => 1000,
@@ -66,7 +65,29 @@ function parsed(geometry: BufferGeometry): void {
 }
 
 describe('createWalkSession', () => {
-  it('keeps eager preload, readiness, pose and colliding controller replacement', async () => {
+  it.each(['parse', 'missing', 'empty'] as const)('rejects %s collision without readiness', async (kind) => {
+    const current = make();
+    const ready = vi.fn();
+    current.onReady(ready);
+    if (kind === 'parse') {
+      vi.mocked(GLTFLoader.prototype.parse).mockImplementationOnce((_data, _path, _done, fail) => {
+        fail!(new ErrorEvent('error', { message: 'invalid GLB' }));
+      });
+    }
+    const loading = current.loadCollision(new ArrayBuffer(0), new AbortController().signal);
+    const rejected = kind === 'parse' ? expect(loading).rejects.toMatchObject({ message: 'invalid GLB' })
+      : expect(loading).rejects.toThrow('no triangles');
+    const geometry = new BufferGeometry();
+    const disposeGeometry = vi.spyOn(geometry, 'dispose');
+    if (kind === 'empty') parsed(geometry);
+    if (kind === 'missing') finishParse!({ scene: new Group() } as GLTF);
+    await rejected;
+    expect(current.ready).toBe(false);
+    expect(ready).not.toHaveBeenCalled();
+    if (kind === 'empty') expect(disposeGeometry).toHaveBeenCalledOnce();
+  });
+
+  it('publishes readiness only after real collision and preserves the private transitional pose', async () => {
     const disposeGeometry = vi.spyOn(BufferGeometry.prototype, 'dispose');
     const current = make();
     const previous = current.walk;
@@ -80,15 +101,13 @@ describe('createWalkSession', () => {
 
     expect(current.ready).toBe(false);
     expect(fetch).not.toHaveBeenCalled();
-    await vi.runAllTimersAsync();
-    expect(fetch).toHaveBeenCalledExactlyOnceWith('/content/collision.glb', {
-      signal: expect.any(AbortSignal),
-    });
+    const loading = current.loadCollision(new ArrayBuffer(0), new AbortController().signal);
     expect(current.ready).toBe(false);
 
     // Front wall surface z=4.2 plus capsule radius 0.3 holds the foot at z=4.5.
     const wall = new BoxGeometry(20, 4, 0.4).translate(0, 2, 4);
     parsed(wall);
+    await loading;
     expect(disposeGeometry).toHaveBeenCalledOnce();
     expect(current.walk).not.toBe(previous);
     expect(disposePrevious).toHaveBeenCalledOnce();
@@ -113,7 +132,7 @@ describe('createWalkSession', () => {
   it('disposes active input, touch DOM, observer and geometry exactly once', () => {
     const disposeGeometry = vi.spyOn(BufferGeometry.prototype, 'dispose');
     const onChange = vi.fn();
-    const current = make({ isTouch: true, collisionUrl: '', onChange });
+    const current = make({ isTouch: true, onChange });
     const walk = current.walk;
     const disposeWalk = vi.spyOn(walk, 'dispose');
     const vector = vi.spyOn(walk, 'setJoystickVector');
@@ -193,46 +212,33 @@ describe('createWalkSession', () => {
     const previous = current.walk;
     const ready = vi.fn();
     current.onReady(ready);
-    await vi.runAllTimersAsync();
+    const loading = current.loadCollision(new ArrayBuffer(0), new AbortController().signal);
+    const failed = expect(loading).rejects.toThrow('collision controller failed');
     const geometry = new BoxGeometry();
     const disposeGeometry = vi.spyOn(geometry, 'dispose');
     const failure = new Error('collision controller failed');
     vi.spyOn(walkthroughModule, 'createWalkthrough').mockImplementationOnce(() => { throw failure; });
-    expect(() => parsed(geometry)).toThrow(failure);
+    parsed(geometry);
+    await failed;
     expect(disposeGeometry).toHaveBeenCalledOnce();
     expect(current.walk).toBe(previous);
     expect(current.ready).toBe(false);
     expect(ready).not.toHaveBeenCalled();
   });
 
-  it('cancels a queued preload and aborts an in-flight fetch', async () => {
-    const queued = make();
-    queued.dispose();
-    await vi.runAllTimersAsync();
-    expect(fetch).not.toHaveBeenCalled();
-    const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(
-      () => new Promise<Response>(() => {}),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-    const current = make();
-    await vi.runAllTimersAsync();
-    const signal = fetchMock.mock.calls[0][1]?.signal;
-    expect(signal?.aborted).toBe(false);
-    current.dispose();
-    expect(signal?.aborted).toBe(true);
-  });
-
   it('disposes a late parsed geometry without publishing readiness', async () => {
     const current = make();
     const ready = vi.fn();
     current.onReady(ready);
-    await vi.runAllTimersAsync();
+    const loading = current.loadCollision(new ArrayBuffer(0), new AbortController().signal);
+    const canceled = expect(loading).rejects.toThrow('Walk load canceled');
     current.dispose();
+    await canceled;
     const geometry = new BoxGeometry();
     const disposeGeometry = vi.spyOn(geometry, 'dispose');
     parsed(geometry);
-    expect(disposeGeometry).toHaveBeenCalledOnce();
     expect(current.ready).toBe(false);
+    expect(disposeGeometry).toHaveBeenCalledOnce();
     expect(current.walk.enabled).toBe(false);
     expect(ready).not.toHaveBeenCalled();
   });
