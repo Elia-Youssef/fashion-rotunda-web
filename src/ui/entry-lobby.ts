@@ -1,12 +1,12 @@
 // Opaque Entry Lobby and Deferred Experience Boot.
 // Replaces the translucent loading gate with an opaque branded lobby.
-// Owns the branded lobby, state machine, focus trap, truthful progress,
-// audio preference contract, and deferred boot trigger.
+// Owns the branded lobby, state machine, truthful progress and deferred boot trigger.
 // Does NOT import renderer, scene, camera, material or post-processing modules; its one lighting
 // import is skySourceFromSearch from lighting/sky.
-// The markup builder lives in entry-lobby/markup and is not re-exported; the progress tracker
-// lives in entry-lobby/progress and is re-exported here. Page code imports the lobby through
-// this module alone.
+// Gate precedence, the music preference switch and focus handling live in entry-lobby/gate,
+// entry-lobby/music-switch and entry-lobby/focus-trap. This facade keeps their public contract.
+// The markup builder lives in entry-lobby/markup; the progress tracker in entry-lobby/progress
+// and the gate decision are re-exported here. Page code imports the lobby through this module alone.
 
 import './entry-lobby.css';
 
