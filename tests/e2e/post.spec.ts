@@ -144,7 +144,7 @@ const MIN_CHANGED_RATIO = 0.05;
 function skipUnlessWebgl2(): void {
   test.skip(
     test.info().project.name !== 'webgl2',
-    'these slices assert the WebGL 2 mid chain without compute-only effects',
+    'run once on webgl2: every URL below pins ?webgl=1, so the webgpu project would rerun the same pages',
   );
 }
 

@@ -5,8 +5,9 @@ import type { Page } from '@playwright/test';
 // exposes navigator.gpu and WebGL2RenderingContext, but grants neither an adapter nor a context.
 // The lobby must not stay loading forever: after the Load press the unsupported surface appears,
 // Load stays disabled, the hidden retry button is not drawn, and no /content/ request left the
-// page. The webgl2 project only; this spec launches its own browser, like the probe spec it
-// follows, because the flags must not disturb the shared project browser.
+// page. Both cases launch their own bundled Chromium and never use the shared project browser
+// (the flags case so its graphics-disabling flags cannot reach it), so both projects would run
+// this spec identically: it runs once, on the webgl2 project.
 
 const DISABLED_GRAPHICS_FLAGS = ['--disable-webgl', '--disable-webgl2', '--disable-features=WebGPU'];
 
@@ -17,7 +18,10 @@ const DISABLED_GRAPHICS_FLAGS = ['--disable-webgl', '--disable-webgl2', '--disab
 const UNSUPPORTED_QUIET_WINDOW_MS = 1_000;
 
 function skipUnlessWebgl2(): void {
-  test.skip(test.info().project.name !== 'webgl2', 'webgl2 project Chromium only');
+  test.skip(
+    test.info().project.name !== 'webgl2',
+    'run once on webgl2: both cases launch their own bundled Chromium and never use the project browser',
+  );
 }
 
 function watchContentRequests(page: Page): () => string[] {
