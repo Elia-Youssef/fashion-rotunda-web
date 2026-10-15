@@ -173,4 +173,98 @@ describe('createSwitcher', () => {
     expect(ready).toHaveLength(1);
     expect(switcher.current).toBe('zoot-suit');
   });
+
+  it('waits for the shared load before resolving a repeated request', async () => {
+    const { switcher, loads, ready } = harness();
+    const first = switcher.request('zoot-suit');
+    let repeatedSettled = false;
+    const second = switcher.request('zoot-suit').then(() => {
+      repeatedSettled = true;
+    });
+    // Two microtask turns are enough for a wrongly immediate resolve to surface; the deduped
+    // promise must stay pending until the shared load settles.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(repeatedSettled).toBe(false);
+
+    loads[0].deferred.resolve({ id: 'zoot-suit' });
+    await Promise.all([first, second]);
+    expect(repeatedSettled).toBe(true);
+    expect(ready).toHaveLength(1);
+  });
+
+  it('does not abort the signal of a request that won', async () => {
+    const { switcher, loads } = harness();
+    const first = switcher.request('wallis-dress');
+    loads[0].deferred.resolve({ id: 'wallis-dress' });
+    await first;
+
+    // A won request was never superseded, so the next switch must leave its signal alone.
+    const second = switcher.request('zoot-suit');
+    expect(loads[0].signal.aborted).toBe(false);
+    loads[1].deferred.resolve({ id: 'zoot-suit' });
+    await second;
+  });
+
+  it('does not abort the signal of a request that already failed', async () => {
+    const { switcher, loads } = harness();
+    const failed = switcher.request('wallis-dress');
+    loads[0].deferred.reject(new Error('content: 404'));
+    await expect(failed).rejects.toThrow('404');
+
+    // The failed request is over, not superseded; the retry must not abort its signal.
+    const retry = switcher.request('zoot-suit');
+    expect(loads[0].signal.aborted).toBe(false);
+    loads[1].deferred.resolve({ id: 'zoot-suit' });
+    await retry;
+  });
+
+  it('does not answer a repeated request from inside load with a retired promise', async () => {
+    const loads: Harness['loads'] = [];
+    const ready: Harness['ready'] = [];
+    const disposed: FakeLook[] = [];
+    let fromInsideLoad: Promise<void> | null = null;
+    const switcher = createSwitcher<FakeLook>({
+      load: (id, signal) => {
+        const entry = { id, signal, deferred: deferred<FakeLook>() };
+        loads.push(entry);
+        if (loads.length === 2) {
+          // The second load asks again for its own look while it runs. Only the promise of the
+          // run in flight may answer a repeated request; a promise left over from the request
+          // this load replaced would settle from the wrong run.
+          fromInsideLoad = switcher.request(id);
+        }
+        return entry.deferred.promise;
+      },
+      dispose: (loaded) => {
+        disposed.push(loaded);
+      },
+      onReady: (id, loaded) => {
+        ready.push({ id, loaded });
+      },
+    });
+
+    const first = switcher.request('wallis-dress');
+    const second = switcher.request('zoot-suit');
+    const repeated = fromInsideLoad;
+    if (repeated === null) {
+      throw new Error('the load did not repeat its request');
+    }
+    // The repeated request superseded the load it was made from and started one of its own.
+    expect(loads.map((entry) => entry.id)).toEqual(['wallis-dress', 'zoot-suit', 'zoot-suit']);
+    expect(loads[1].signal.aborted).toBe(true);
+
+    const zoot: FakeLook = { id: 'zoot-suit' };
+    loads[2].deferred.resolve(zoot);
+    await repeated;
+    const wallis: FakeLook = { id: 'wallis-dress' };
+    loads[0].deferred.resolve(wallis);
+    loads[1].deferred.resolve({ id: 'zoot-suit' });
+    await Promise.all([first, second]);
+
+    expect(ready).toEqual([{ id: 'zoot-suit', loaded: zoot }]);
+    expect(disposed).toEqual([wallis, { id: 'zoot-suit' }]);
+    expect(switcher.current).toBe('zoot-suit');
+    expect(switcher.pending).toBeNull();
+  });
 });
