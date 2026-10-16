@@ -1,9 +1,9 @@
-import { DirectionalLight, RectAreaLight } from 'three';
+import { DirectionalLight, RectAreaLight, Vector3 } from 'three';
 import type { Light } from 'three';
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_RIG, updateDaylight, updateLight } from '../../src/lighting/rig';
-import type { Rig } from '../../src/lighting/rig';
+import type { Rig, RigLight } from '../../src/lighting/rig';
 import { createThreeRig } from '../../src/lighting/three-rig';
 import type { RigLightLookupId, ThreeRig, ThreeRigOptions } from '../../src/lighting/three-rig';
 import { candelaToNits } from '../../src/lighting/units';
@@ -30,6 +30,18 @@ function sunOf(rig: ThreeRig): DirectionalLight {
   const light = only(rig, 'sun');
   if (!(light instanceof DirectionalLight)) throw new Error('sun is not a DirectionalLight');
   return light;
+}
+
+/** The key light with one optional field removed, as a runtime rig with malformed data. */
+function stripField(light: RigLight, field: 'position' | 'direction' | 'size'): RigLight {
+  const copy: { [key: string]: unknown } = { ...light };
+  delete copy[field];
+  return copy as unknown as RigLight;
+}
+
+/** The default rig with the key light replaced. */
+function rigWithKey(light: RigLight): Rig {
+  return { ...DEFAULT_RIG, lights: [light, ...DEFAULT_RIG.lights.slice(1)] };
 }
 
 describe('createThreeRig', () => {
@@ -172,5 +184,128 @@ describe('createThreeRig', () => {
     expect(rig.group.children.length).toBeGreaterThan(0);
     rig.dispose();
     expect(rig.group.children).toHaveLength(0);
+  });
+
+  it('notifies every owned light about disposal', () => {
+    const rig = build();
+    const disposed: string[] = [];
+    for (const [id, lights] of rig.lightsById) {
+      for (const light of lights) light.addEventListener('dispose', () => disposed.push(id));
+    }
+    rig.dispose();
+    expect([...disposed].sort()).toEqual(['back', 'fill', 'key', 'sun']);
+  });
+
+  it('rejects a rig light without a position', () => {
+    const broken = rigWithKey(stripField(DEFAULT_RIG.lights[0], 'position'));
+    expect(() => build(broken)).toThrow(TypeError);
+    expect(() => build(broken)).toThrow(/rig light key needs a position/);
+  });
+
+  it('rejects a rig light without a direction', () => {
+    const broken = rigWithKey(stripField(DEFAULT_RIG.lights[0], 'direction'));
+    expect(() => build(broken)).toThrow(TypeError);
+    expect(() => build(broken)).toThrow(/rig light key needs a direction/);
+  });
+
+  it('rejects a rig light without a size', () => {
+    const broken = rigWithKey(stripField(DEFAULT_RIG.lights[0], 'size'));
+    expect(() => build(broken)).toThrow(TypeError);
+    expect(() => build(broken)).toThrow(/rig light key needs a size/);
+  });
+
+  it('places every rect light at its authored position', () => {
+    const rig = build();
+    for (const entry of DEFAULT_RIG.lights) {
+      const position = entry.position;
+      if (!position) throw new Error(`rig light ${entry.id} has no position`);
+      expect(rect(rig, entry.id).position.toArray()).toEqual(position);
+    }
+  });
+
+  it('aims every rect light along its authored direction', () => {
+    const rig = build();
+    const facing = new Vector3();
+    for (const entry of DEFAULT_RIG.lights) {
+      const direction = entry.direction;
+      if (!direction) throw new Error(`rig light ${entry.id} has no direction`);
+      // A light looks with its -Z axis: lookAt points that axis at the target.
+      facing.set(0, 0, -1).applyQuaternion(rect(rig, entry.id).quaternion);
+      expect(facing.x).toBeCloseTo(direction[0], 6);
+      expect(facing.y).toBeCloseTo(direction[1], 6);
+      expect(facing.z).toBeCloseTo(direction[2], 6);
+    }
+  });
+
+  it('keeps the sun visible through every apply', () => {
+    const rig = build();
+    const sun = sunOf(rig);
+    expect(sun.visible).toBe(true);
+    rig.apply(updateDaylight(DEFAULT_RIG, 0));
+    rig.apply(updateDaylight(DEFAULT_RIG, 1));
+    rig.apply(DEFAULT_RIG);
+    expect(sun.visible).toBe(true);
+  });
+
+  it('turns the sun shadow off when the option says so', () => {
+    const rig = build(DEFAULT_RIG, { shadowMapSize: 1024, sunShadow: false });
+    const sun = sunOf(rig);
+    expect(sun.castShadow).toBe(false);
+    rig.apply(updateDaylight(DEFAULT_RIG, 0.9));
+    expect(sun.castShadow).toBe(false);
+  });
+
+  it('names the group and every light for scene inspection', () => {
+    const rig = build();
+    expect(rig.group.name).toBe('studio-rig');
+    for (const entry of DEFAULT_RIG.lights) {
+      expect(rect(rig, entry.id).name).toBe(entry.label);
+    }
+  });
+
+  it('sizes the sun shadow map from the options', () => {
+    const small = build(DEFAULT_RIG, { shadowMapSize: 512, sunShadow: true });
+    expect(sunOf(small).shadow.mapSize.x).toBe(512);
+    expect(sunOf(small).shadow.mapSize.y).toBe(512);
+    const large = build(DEFAULT_RIG, { shadowMapSize: 4096, sunShadow: true });
+    expect(sunOf(large).shadow.mapSize.x).toBe(4096);
+    expect(sunOf(large).shadow.mapSize.y).toBe(4096);
+  });
+
+  it('fits the sun shadow frustum to the room', () => {
+    const camera = sunOf(build()).shadow.camera;
+    // The 16 m room needs the 9 m half extent at every sun angle; the far plane reaches
+    // the sun at 20 m plus the frustum depth.
+    expect(camera.left).toBe(-9);
+    expect(camera.right).toBe(9);
+    expect(camera.top).toBe(9);
+    expect(camera.bottom).toBe(-9);
+    expect(camera.near).toBe(1);
+    expect(camera.far).toBe(38);
+  });
+
+  it('updates the shadow projection matrix to the configured frustum', () => {
+    const elements = sunOf(build()).shadow.camera.projectionMatrix.elements;
+    // Orthographic scale is 2 / (right - left) = 1/9 for the 9 m half extent; a stale
+    // matrix would still carry 0.2 from three's default 5 m shadow camera.
+    expect(elements[0]).toBeCloseTo(1 / 9, 6);
+    expect(elements[5]).toBeCloseTo(1 / 9, 6);
+  });
+
+  it('links the sun target into the group so its world matrix updates', () => {
+    const rig = build();
+    const target = rig.group.children.find((child) => child.name === 'sun-target');
+    expect(target).toBeDefined();
+    expect(sunOf(rig).target).toBe(target);
+  });
+
+  it('skips rig entries it has no light for instead of throwing', () => {
+    const rig = build();
+    // Serialized v1 rigs once carried a 'top' light; apply must skip retired ids.
+    const retired = { ...DEFAULT_RIG.lights[0], id: 'top', label: 'TopLight' } as unknown as RigLight;
+    const extended: Rig = { ...DEFAULT_RIG, lights: [...DEFAULT_RIG.lights, retired] };
+    expect(() => rig.apply(extended)).not.toThrow();
+    rig.apply(updateLight(extended, 'key', { intensity: 30 }));
+    expect(rect(rig, 'key').intensity).toBeCloseTo(candelaToNits(30, 0.6, 0.9), 6);
   });
 });
