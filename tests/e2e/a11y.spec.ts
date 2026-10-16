@@ -16,6 +16,17 @@ const SWITCH_TIMEOUT = 30_000;
 // The a11y module mounts after the ready attribute is published (after compilation and the first
 // drawn frame), so its waits use the scene-initialization budget instead of the assertion default.
 const A11Y_MOUNT_TIMEOUT = SCENE_READY_TIMEOUT;
+// The tab walk counts the header controls, so the Walk button is proven active before it is read,
+// not only present: it sits aria-disabled while a walk load is pending (src/camera/mode-switch.ts).
+// A healthy boot passes at once, so the 10 s is headroom for the late chrome mount under load.
+const WALK_READY_TIMEOUT_MS = 10_000;
+// The live region repeats the look's name from the same data-look write the switch above asserts
+// (src/ui/a11y.ts), so this wait normally lands at once; 10 s is headroom for a loaded machine.
+const LOOK_ANNOUNCE_TIMEOUT_MS = 10_000;
+// The lobby unmounts at the reveal, the first load's last leg: content decode, the benchmark and
+// the black veil's stable-frame hold ahead of the fade. That hold is the slow part under software
+// rendering, so the wait shares the 60 s scene budget SCENE_READY_TIMEOUT carries.
+const REVEAL_TIMEOUT_MS = 60_000;
 const SAFE_AREA = { top: 19, right: 23, bottom: 29, left: 17 } as const;
 
 // The longest run in the documented order is the thumbnail strip, seven looks plus the controls
@@ -66,7 +77,7 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
   test.setTimeout(120_000);
 
   const { canvas } = await openShowroom(page, request, '/?gate=off&onboarding=reset');
-  await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
+  await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: WALK_READY_TIMEOUT_MS });
 
   // 1. Onboarding card appears with the first step; the a11y mount follows the ready attribute.
   const card = page.locator('.onboarding-card');
@@ -188,7 +199,7 @@ test('onboarding sequence, focus order, swatch navigation and live announcements
   const thirdLookName = 'New Look Dress';
   await expect(canvas).toHaveAttribute('data-look', 'new-look-dress', { timeout: SWITCH_TIMEOUT });
   const liveRegion = page.locator('.a11y-live-region');
-  await expect(liveRegion).toContainText(thirdLookName, { timeout: 10_000 });
+  await expect(liveRegion).toContainText(thirdLookName, { timeout: LOOK_ANNOUNCE_TIMEOUT_MS });
 
   // 7. The look switch re-renders the swatches; the roving tabindex has to survive that
   const checkedAfterSwitch = page.locator('.product-card__swatch[aria-checked="true"]');
@@ -331,7 +342,7 @@ test('transition manages inert state, focus transfer, and live announcements dur
   await lobby.locator('#lobby-load-btn').click();
 
   // Wait for revealed state
-  await expect(lobby).toHaveCount(0, { timeout: 60_000 });
+  await expect(lobby).toHaveCount(0, { timeout: REVEAL_TIMEOUT_MS });
   // The renderer starts with the load action, so only now can the page be pinned to the backend
   // its project promises; a silent fallback would make the reveal checks read the wrong build.
   await expect(page.locator('canvas#scene')).toHaveAttribute('data-backend', projectBackend(), {
@@ -373,7 +384,7 @@ test('prefers-reduced-motion bypasses decorative fading during transition', asyn
   await lobby.locator('#lobby-load-btn').click();
 
   // Reaches revealed state successfully
-  await expect(lobby).toHaveCount(0, { timeout: 60_000 });
+  await expect(lobby).toHaveCount(0, { timeout: REVEAL_TIMEOUT_MS });
   // Same pin as the transition test: the renderer exists only after the load action.
   await expect(page.locator('canvas#scene')).toHaveAttribute('data-backend', projectBackend(), {
     timeout: SCENE_READY_TIMEOUT,

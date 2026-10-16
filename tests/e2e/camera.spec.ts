@@ -5,6 +5,11 @@ import { openShowroom } from './support/showroom';
 import { waitForLoopIdle } from './support/ready';
 
 const SCENE_READY_TIMEOUT = 60_000;
+// A test that drives walk input first proves the Walk control is active, not merely mounted:
+// openShowroom proves existence only, and the button sits aria-disabled while a walk load is
+// pending (src/camera/mode-switch.ts). A healthy boot passes at once, so the 10 s is headroom
+// for the late chrome mount on a loaded machine, not time the run normally spends.
+const WALK_READY_TIMEOUT_MS = 10_000;
 // The turntable publishes its yaw from rendered frames (mount.ts writeYaw inside update), so every
 // progress check polls the published yaw past an earlier reading instead of sampling once.
 const YAW_POLL_TIMEOUT_MS = 5_000;
@@ -43,6 +48,10 @@ const WALL_CONTACT_FORWARD_EPSILON_M = 0.001;
 const WALL_CONTACT_CONFIRMATIONS = 3;
 // The 1.33 m approach takes about 1 s at walk speed; allow software-rendered frame delays.
 const WALL_MOVE_TIMEOUT_MS = 15_000;
+// The idle tour arms after ATTRACT_IDLE_MS (500 ms under ?attractIdle=500) without input and
+// publishes data-attract from a rendered frame's update (src/camera/mount.ts), so the wait covers
+// the idle delay plus that first publishing frame; 5 s leaves the rest to slow machines.
+const ATTRACT_START_TIMEOUT_MS = 5_000;
 // Only delivery of a latched event observation is polled, never the transient stopped-tour state.
 const ATTRACT_INPUT_TIMEOUT_MS = 5_000;
 
@@ -369,7 +378,7 @@ test('walk mode stops at walls and stays above floor', async ({ page, request })
   const { canvas } = await openShowroom(page, request, '/?e2e=1');
 
   const walkBtn = page.locator('button[data-mode="walk"]');
-  await expect(walkBtn).toBeEnabled({ timeout: 10_000 });
+  await expect(walkBtn).toBeEnabled({ timeout: WALK_READY_TIMEOUT_MS });
 
   await page.evaluate(async () => {
     await window.archvizCamera?.setMode('walk');
@@ -435,7 +444,7 @@ test('walk mode stops at walls and stays above floor', async ({ page, request })
 
 test('the real collision GLB blocks normal and sprint routes around the plinth and every wall', async ({ page, request }) => {
   await openShowroom(page, request, '/?e2e=1&attract=0');
-  await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
+  await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: WALK_READY_TIMEOUT_MS });
   await page.evaluate(async () => {
     await window.archvizCamera?.setMode('walk');
   });
@@ -513,7 +522,7 @@ test.describe('touch walkthrough controls', () => {
     });
     const { canvas } = await openShowroom(page, request, '/?e2e=1&attract=0');
     await page.setViewportSize({ width: 767, height: 430 });
-    await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: 10_000 });
+    await expect(page.locator('button[data-mode="walk"]')).toBeEnabled({ timeout: WALK_READY_TIMEOUT_MS });
     await page.evaluate(async () => {
       await window.archvizCamera?.setMode('walk');
     });
@@ -584,7 +593,7 @@ test('two round trips orbit-walk-orbit end at starting orbit position within 1 m
   const { canvas } = await openShowroom(page, request, '/?e2e=1');
 
   const walkBtn = page.locator('button[data-mode="walk"]');
-  await expect(walkBtn).toBeEnabled({ timeout: 10_000 });
+  await expect(walkBtn).toBeEnabled({ timeout: WALK_READY_TIMEOUT_MS });
 
   const initial = await page.evaluate((): [number, number, number] => {
     const pos = window.archvizCamera?.orbit.position ?? [0, 0, 0];
@@ -637,8 +646,7 @@ test('attract loop tours presets when idle and cancels on input', async ({ page 
     return [pos[0], pos[1], pos[2]];
   });
 
-  // data-attract becomes 1 within 5 s
-  await expect(canvas).toHaveAttribute('data-attract', '1', { timeout: 5_000 });
+  await expect(canvas).toHaveAttribute('data-attract', '1', { timeout: ATTRACT_START_TIMEOUT_MS });
 
   // The tour must actually move the camera, not only publish its state: a tour that never
   // placed a pose still turned data-attract on. Poll the published orbit pose until it has
