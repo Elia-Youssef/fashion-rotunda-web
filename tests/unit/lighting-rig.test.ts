@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CANDELA_RANGE,
   DAYLIGHT_RANGE,
+  DAYLIGHT_STEP,
   DEFAULT_RIG,
   EXPOSURE_RANGE,
   UNREAL_COLORS,
@@ -547,5 +548,170 @@ describe('Serialization and Backward Compatibility Migration', () => {
   it('returns base rig on malformed or empty inputs', () => {
     expect(parseRig('', DEFAULT_RIG)).toBe(DEFAULT_RIG);
     expect(parseRig('unknown-format;abc', DEFAULT_RIG)).toBe(DEFAULT_RIG);
+  });
+});
+
+describe('Published control constants', () => {
+  it('pins the daylight step at 1 percent and the exposure range at [0.05, 8]', () => {
+    // Numeric pins. The suites that read these symbols (clamp bounds here, the
+    // range input step in the DOM suite) read the same constant, so a symbolic
+    // comparison cannot catch a changed number.
+    expect(DAYLIGHT_STEP).toBe(0.01);
+    expect(EXPOSURE_RANGE).toEqual([0.05, 8]);
+  });
+});
+
+describe('sRGB transfer helpers on and off the curve', () => {
+  it('srgbToLinear: linear segment below 0.04045, power segment above, ends clamped', () => {
+    expect(srgbToLinear(0)).toBe(0);
+    expect(srgbToLinear(0.02)).toBeCloseTo(0.02 / 12.92, 10);
+    expect(srgbToLinear(0.04045)).toBeCloseTo(0.04045 / 12.92, 6);
+    expect(srgbToLinear(0.5)).toBeCloseTo(Math.pow((0.5 + 0.055) / 1.055, 2.4), 10);
+    expect(srgbToLinear(1)).toBeCloseTo(1, 12);
+    expect(srgbToLinear(-0.5)).toBe(0);
+    expect(srgbToLinear(2)).toBe(1);
+  });
+
+  it('linearRgbToHex clamps each channel to [0, 1] before encoding', () => {
+    // 0.5 linear encodes as 188 (0xbc); the out-of-range channels pin to 0 and 1
+    expect(linearRgbToHex([-1, 0.5, 2])).toBe('#00bcff');
+  });
+
+  it('linearRgbToHex uses the 12.92 linear segment below 0.0031308', () => {
+    // 0.001 linear is 0.01292 sRGB, which rounds to channel 3 (0x03)
+    expect(linearRgbToHex([0.001, 0, 0])).toBe('#030000');
+  });
+});
+
+describe('normalizeHexColor tolerance', () => {
+  it('falls back to white by default and never throws on non-string input', () => {
+    expect(normalizeHexColor('not-a-color')).toBe('#ffffff');
+    expect(normalizeHexColor(undefined as unknown as string, '#123456')).toBe('#123456');
+    expect(normalizeHexColor(42 as unknown as string)).toBe('#ffffff');
+  });
+
+  it('an invalid hex color in a v2 link falls back to white', () => {
+    const parsed = parseRig('v2;key,1,15,zzzzzz', DEFAULT_RIG);
+    expect(studioLight(parsed, 'key').color).toBe('#ffffff');
+  });
+});
+
+describe('Daylight kelvin interpolation between anchors', () => {
+  it('interpolates linearly between the pinned anchors, not only at them', () => {
+    // 0.4 sits between the 4000 K and 6500 K anchors: 4000 + 2500 * 0.8
+    expect(daylightParameters(0.4).kelvin).toBe(6000);
+    // 0.6 sits between the 6500 K and 7500 K anchors: 6500 + 1000 * 0.2
+    expect(daylightParameters(0.6).kelvin).toBe(6700);
+  });
+});
+
+describe('DEFAULT_RIG immutability', () => {
+  it('is deep-frozen: the rig, the lights array, every light and its tuples', () => {
+    expect(Object.isFrozen(DEFAULT_RIG)).toBe(true);
+    expect(Object.isFrozen(DEFAULT_RIG.lights)).toBe(true);
+    for (const light of DEFAULT_RIG.lights) {
+      expect(Object.isFrozen(light)).toBe(true);
+      expect(Object.isFrozen(light.position)).toBe(true);
+      expect(Object.isFrozen(light.direction)).toBe(true);
+      expect(Object.isFrozen(light.size)).toBe(true);
+    }
+  });
+});
+
+describe('Rig updates on bad input', () => {
+  it('an invalid color patch keeps the current color of the light', () => {
+    const tinted = updateLight(DEFAULT_RIG, 'key', { color: '#123456' });
+    const kept = updateLight(tinted, 'key', { color: 'not-a-color' });
+    expect(studioLight(kept, 'key').color).toBe('#123456');
+  });
+
+  it('updateLight preserves the rig daylight and exposure it was given', () => {
+    const moved = updateDaylight(DEFAULT_RIG, 0.85); // daylight 0.85, exposure 0.93
+    const changed = updateLight(moved, 'key', { intensity: 20 });
+    expect(changed.daylight).toBe(0.85);
+    expect(changed.exposure).toBe(0.93);
+  });
+
+  it('updateDaylight falls back to 0.5 (neutral Day) on NaN', () => {
+    const moved = updateDaylight(DEFAULT_RIG, 0.85);
+    const reset = updateDaylight(moved, Number.NaN);
+    expect(reset.daylight).toBe(0.5);
+    expect(reset.exposure).toBe(1.0);
+  });
+
+  it('updateExposure falls back to 1 on NaN and both infinities, not to a range bound', () => {
+    const opened = updateExposure(DEFAULT_RIG, 2);
+    expect(updateExposure(opened, Number.NaN).exposure).toBe(1);
+    expect(updateExposure(opened, Number.POSITIVE_INFINITY).exposure).toBe(1);
+    expect(updateExposure(opened, Number.NEGATIVE_INFINITY).exposure).toBe(1);
+  });
+});
+
+describe('Serialization precision and link bytes', () => {
+  it('rounds every serialized number to 3 decimals', () => {
+    const rig = updateLight(DEFAULT_RIG, 'key', { intensity: 22.3456 });
+    expect(serializeRig(rig)).toContain('key,1,22.346,ffffff');
+  });
+
+  it('writes lowercase hex even when the rig carries an uppercase color', () => {
+    const shouting: Rig = {
+      ...DEFAULT_RIG,
+      lights: DEFAULT_RIG.lights.map((light) =>
+        light.id === 'key' ? { ...light, color: '#AABBCC' } : light,
+      ),
+    };
+    expect(serializeRig(shouting)).toContain('key,1,15,aabbcc');
+    expect(serializeRig(shouting)).not.toContain('AABBCC');
+  });
+
+  it('omits the exposure part when it rounds to the default at link precision', () => {
+    const nudged = updateExposure(DEFAULT_RIG, 1.0004);
+    expect(nudged.exposure).toBe(1.0004);
+    expect(serializeRig(nudged)).not.toContain(';e,');
+  });
+});
+
+describe('parseRig tolerance on malformed fields', () => {
+  it('returns the base for non-string input instead of throwing', () => {
+    expect(parseRig(undefined as unknown as string, DEFAULT_RIG)).toBe(DEFAULT_RIG);
+    expect(parseRig(42 as unknown as string, DEFAULT_RIG)).toBe(DEFAULT_RIG);
+  });
+
+  it('an empty day field keeps the current daylight instead of becoming 0', () => {
+    expect(parseRig('v2;day,', DEFAULT_RIG).daylight).toBe(0.5);
+  });
+
+  it('a non-numeric day field keeps the base daylight instead of resetting to 0.5', () => {
+    const moved = updateDaylight(DEFAULT_RIG, 0.8);
+    expect(parseRig('v2;day,abc', moved).daylight).toBe(0.8);
+  });
+
+  it('an unrecognized on flag leaves the on state of the light unchanged (v2 and v1)', () => {
+    const fillOn = updateLight(DEFAULT_RIG, 'fill', { on: true });
+    expect(studioLight(parseRig('v2;fill,x,7,ffffff', fillOn), 'fill').on).toBe(true);
+    const backOn = updateLight(DEFAULT_RIG, 'back', { on: true });
+    expect(studioLight(parseRig('v1;back,x,7,6500', backOn), 'back').on).toBe(true);
+  });
+
+  it('an empty color field keeps the current color of the light (v2 and v1)', () => {
+    const tinted = updateLight(DEFAULT_RIG, 'key', { color: '#123456' });
+    expect(studioLight(parseRig('v2;key,1,15,', tinted), 'key').color).toBe('#123456');
+    expect(studioLight(parseRig('v1;key,1,15,', tinted), 'key').color).toBe('#123456');
+  });
+
+  it('an invalid v1 kelvin field falls back to 6500 K white', () => {
+    const tinted = updateLight(DEFAULT_RIG, 'key', { color: '#123456' });
+    expect(studioLight(parseRig('v1;key,1,15,abc', tinted), 'key').color).toBe('#ffffff');
+  });
+
+  it('v1 sun angle: an empty field keeps the daylight, an invalid one falls back to 90 deg', () => {
+    const moved = updateDaylight(DEFAULT_RIG, 0.2);
+    expect(parseRig('v1;sun,1,7,7000,', moved).daylight).toBe(0.2);
+    expect(parseRig('v1;sun,1,7,7000,abc', moved).daylight).toBe(0.5);
+  });
+
+  it('an unknown version tag returns the caller base rig, not the default', () => {
+    const moved = updateDaylight(DEFAULT_RIG, 0.75);
+    expect(parseRig('v9;key,1,15,ffffff', moved)).toBe(moved);
   });
 });
