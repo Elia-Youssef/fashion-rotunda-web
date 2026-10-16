@@ -1,5 +1,5 @@
+import { requireWebGPU } from './support/backend';
 import { expect, test, browserReports } from './support/fixtures';
-import type { Page } from '@playwright/test';
 import { canvasStats } from './support/pixels';
 
 type Backend = 'webgpu' | 'webgl2';
@@ -78,21 +78,11 @@ function targetPath(backend: Backend, diagnostics: boolean): string {
   return backend === 'webgpu' ? `/?gate=off${asked}` : `/?webgl=1&gate=off${asked}`;
 }
 
-async function skipWhenWebGPUUnavailable(page: Page, backend: Backend): Promise<void> {
-  if (backend !== 'webgpu') {
-    return;
-  }
-  // navigator.gpu is exposed only in secure contexts, and the browser's start page (about:blank)
-  // is not one, so this runs on the page under test after the goto. Before the goto it returns
-  // false even on a machine with a working adapter.
-  test.skip(!(await page.evaluate(() => 'gpu' in navigator)), 'WebGPU not available in this browser');
-}
-
 test('renders on the expected backend', async ({ page }) => {
   const backend = expectedBackend();
 
   await page.goto(targetPath(backend, true));
-  await skipWhenWebGPUUnavailable(page, backend);
+  await requireWebGPU(page);
 
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute(BACKEND_ATTRIBUTE, backend, {
@@ -114,7 +104,7 @@ test('keeps the visitor console free of archviz diagnostics', async ({ page }) =
   const backend = expectedBackend();
 
   await page.goto(targetPath(backend, false));
-  await skipWhenWebGPUUnavailable(page, backend);
+  await requireWebGPU(page);
 
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute(BACKEND_ATTRIBUTE, backend, {
@@ -134,7 +124,7 @@ test('keeps the visitor console free of archviz diagnostics', async ({ page }) =
 test('draws something', async ({ page }) => {
   const backend = expectedBackend();
   await page.goto(targetPath(backend, false));
-  await skipWhenWebGPUUnavailable(page, backend);
+  await requireWebGPU(page);
 
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute(BACKEND_ATTRIBUTE, backend, {
