@@ -3,6 +3,7 @@ import {
   CANDELA_RANGE,
   KELVIN_RANGE,
   candelaToNits,
+  clamp,
   kelvinToRgb,
   unrealToThreeDirection,
   unrealToThreePosition,
@@ -40,6 +41,31 @@ function referenceKelvinToRgb(kelvin: number): [number, number, number] {
   const scale = peak > 1 ? 1 / peak : 1;
   return [balanced[0] * scale, balanced[1] * scale, balanced[2] * scale];
 }
+
+describe('panel ranges', () => {
+  it('publishes the spans the light controls are built on', () => {
+    // The intensity slider's bounds (src/ui/lightpanel.ts) and the rig's intensity clamp
+    // (src/lighting/rig.ts) read CANDELA_RANGE, so its value is a decided product number. Pinning
+    // it against literals, rather than deriving expectations from the constant itself, is what
+    // makes a change visible; KELVIN_RANGE is pinned the same way as the module's documented span.
+    expect(KELVIN_RANGE).toEqual([2700, 8000]);
+    expect(CANDELA_RANGE).toEqual([0, 50]);
+  });
+});
+
+describe('clamp', () => {
+  it('returns the value inside the bounds and the nearest bound outside them', () => {
+    expect(clamp(12, 0, 50)).toBe(12);
+    expect(clamp(-5, 0, 50)).toBe(0);
+    expect(clamp(75, 0, 50)).toBe(50);
+  });
+
+  it('falls back to the low bound for NaN', () => {
+    // The rig routes a NaN intensity straight into clamp (src/lighting/rig.ts updateLight), so the
+    // fallback decides what a broken slider reading does to a light.
+    expect(clamp(Number.NaN, 0, 50)).toBe(0);
+  });
+});
 
 describe('kelvinToRgb', () => {
   // The two implementations agree to 2.2e-3 per channel at worst over these four temperatures, measured,
@@ -87,6 +113,17 @@ describe('kelvinToRgb', () => {
         expect(channel).toBeLessThanOrEqual(1);
       }
     }
+  });
+
+  it('saturates outside the published Planckian domain instead of extrapolating', () => {
+    // Krystek's polynomials are published for 1000 K to 15000 K; outside that window the module
+    // clamps first, so an out-of-range temperature reads as its domain end's colour. A legacy v1
+    // share link can carry any kelvin field into kelvinToHex (src/lighting/rig.ts parseRig), so a
+    // visitor can reach this path. NaN takes the low end, the same fallback clamp itself uses. Both
+    // sides of each equality run the identical arithmetic, so the comparison is exact.
+    expect(kelvinToRgb(200)).toEqual(kelvinToRgb(1000));
+    expect(kelvinToRgb(Number.NaN)).toEqual(kelvinToRgb(1000));
+    expect(kelvinToRgb(60000)).toEqual(kelvinToRgb(15000));
   });
 });
 
