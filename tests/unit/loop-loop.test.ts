@@ -6,8 +6,11 @@ import { waitForLoopIdle } from '../e2e/support/ready';
 /**
  * Hand-driven raf/caf/clock. pump() runs the oldest scheduled callback, the way a frame fires,
  * and the harness records every cancelled id so tests can prove stop() cancels.
+ * cancelRemoves: false models a transport that delivers a callback it already dequeued: caf is
+ * still observed, but the cancelled callback stays deliverable.
  */
-function makeHarness() {
+function makeHarness(options: { cancelRemoves?: boolean } = {}) {
+  const cancelRemoves = options.cancelRemoves ?? true;
   let nextId = 1;
   let lastId = 0;
   let clock = 0;
@@ -23,7 +26,9 @@ function makeHarness() {
     },
     caf(id: number): void {
       cancelled.push(id);
-      scheduled.delete(id);
+      if (cancelRemoves) {
+        scheduled.delete(id);
+      }
     },
     pump(): void {
       const first = scheduled.entries().next();
@@ -187,6 +192,110 @@ describe('createLoop', () => {
     expect(h.scheduledCount()).toBe(1);
     h.pump();
     expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports dt 0 on the first rendered frame however late the tick fires', () => {
+    const h = makeHarness();
+    const render = vi.fn();
+    const loop = makeLoop(h, render, null);
+    loop.start();
+    loop.invalidate();
+    h.advance(250); // The first tick arrives a quarter second late; dt must not inherit that.
+    h.pump();
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(render).toHaveBeenCalledWith(0);
+  });
+
+  it('requests no frame while stopped, even when asked to animate', () => {
+    const h = makeHarness();
+    const render = vi.fn();
+    const loop = makeLoop(h, render, null);
+    loop.setAnimating(true);
+    expect(h.scheduledCount()).toBe(0);
+    loop.start();
+    expect(h.scheduledCount()).toBe(1);
+    h.pump();
+    expect(render).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders continuously for animation requested before start', () => {
+    const h = makeHarness();
+    const render = vi.fn();
+    const loop = makeLoop(h, render, null);
+    loop.setAnimating(true);
+    loop.start();
+    h.pump();
+    h.pump();
+    expect(render).toHaveBeenCalledTimes(2);
+    expect(h.scheduledCount()).toBe(1);
+  });
+
+  it('still renders a frame owed when animation turns off', () => {
+    const h = makeHarness();
+    const render = vi.fn();
+    const loop = makeLoop(h, render, null);
+    loop.start();
+    loop.setAnimating(true);
+    loop.invalidate(); // One more frame is owed while a tick is already scheduled.
+    loop.setAnimating(false);
+    expect(h.cancelledIds()).toEqual([]);
+    h.pump();
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(h.scheduledCount()).toBe(0);
+  });
+
+  it('keeps a delivery attempt scheduled for work invalidated during a render that stopped the loop', () => {
+    const h = makeHarness();
+    const render = vi.fn(() => {
+      loop.stop();
+      loop.invalidate();
+    });
+    const loop = makeLoop(h, render, null);
+    loop.start();
+    loop.invalidate();
+    h.pump(); // The render stops the loop, then owes another frame.
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(h.scheduledCount()).toBe(1);
+    h.pump(); // The scheduled tick finds the loop stopped and renders nothing.
+    expect(render).toHaveBeenCalledTimes(1);
+    loop.start();
+    h.pump();
+    expect(render).toHaveBeenCalledTimes(2);
+  });
+});
+
+// A transport can deliver a callback the loop already cancelled (the callback left the
+// browser's queue before caf ran). These tests drive a harness whose caf is observed but
+// removes nothing, so the cancelled tick still fires; the loop must render no work from it.
+describe('stale tick delivery', () => {
+  function staleHarness() {
+    return makeHarness({ cancelRemoves: false });
+  }
+
+  it('renders nothing from a tick delivered after stop', () => {
+    const h = staleHarness();
+    const render = vi.fn();
+    const loop = makeLoop(h, render, null);
+    loop.start();
+    loop.invalidate();
+    loop.stop();
+    expect(h.cancelledIds()).toHaveLength(1);
+    h.pump(); // The transport delivers the callback stop() already cancelled.
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  it('renders nothing from a stray tick delivered after animation turns off', () => {
+    const h = staleHarness();
+    const render = vi.fn();
+    const loop = makeLoop(h, render, null);
+    loop.start();
+    loop.setAnimating(true);
+    h.pump();
+    expect(render).toHaveBeenCalledTimes(1);
+    loop.setAnimating(false);
+    h.pump(); // The stray tick setAnimating(false) cancelled still fires.
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(h.scheduledCount()).toBe(0);
   });
 });
 
