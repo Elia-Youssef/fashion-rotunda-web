@@ -26,7 +26,6 @@ import {
   createGovernorPublisher, createPostStatePublisher, createMemoryPublisher, createTimestampResolveBridge,
 } from './proof/publishers';
 import { latestLookSwitchMs, markFirstFrame, snapshot } from './proof/marks';
-import { overlayWanted } from './proof/overlay';
 import { loadProof } from './proof/load';
 import { createRenderer, describeRendererError } from './renderer/create';
 import { withCompilationDeadline } from './renderer/compile-deadline';
@@ -245,12 +244,11 @@ async function main(): Promise<void> {
     lobby !== null ? lobby.trackProgress(FULL_CONTENT_BASE, params.get('look')) : () => {};
 
   // Decided before the renderer exists because it decides how the renderer is built: the timestamp
-  // queries and their per-frame resolve serve the panel and nothing else, so a visitor who never
-  // asks for the panel pays for neither. Read once, used by the renderer options, by drawFrame and
+  // queries and their per-frame resolve serve the panel and nothing else, so a visitor without
+  // the panel pays for neither. Read once, used by the renderer options, by drawFrame and
   // by the mount below, so the three can never disagree.
-  const proofOn = overlayWanted(search, import.meta.env.DEV);
-  const proofReady = loadProof(search, import.meta.env.DEV);
-  const proofTools = proofReady === null ? null : await proofReady;
+  const proofTools = await loadProof(search, import.meta.env.DEV);
+  const proofOn = proofTools !== null;
 
   let revealCoordinator: SceneRevealCoordinator | null = null;
   /**

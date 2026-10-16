@@ -3,8 +3,13 @@ import { overlayWanted } from './overlay';
 
 const loadRuntime = lazyImport(() => import('./runtime'));
 
-/** Only proof-enabled pages prepare the panel, measurement orbit and GPU series. */
-export function loadProof(search: string, isDev: boolean): Promise<typeof import('./runtime')> | null {
+/** Missing optional proof tools disable the panel and its timing work without blocking startup. */
+export async function loadProof(search: string, isDev: boolean): Promise<typeof import('./runtime') | null> {
   if (!overlayWanted(search, isDev)) return null;
-  return loadRuntime();
+  try {
+    return await loadRuntime();
+  } catch (error) {
+    console.warn('[archviz] proof overlay unavailable:', error instanceof Error ? error.message : String(error));
+    return null;
+  }
 }

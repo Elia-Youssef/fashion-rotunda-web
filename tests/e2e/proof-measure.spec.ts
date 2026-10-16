@@ -1,4 +1,6 @@
-import { expect, test } from './support/fixtures';
+import { readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { browserReports, expect, expectConsoleError, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
 import { openShowroom } from './support/showroom';
 
@@ -44,6 +46,29 @@ function expectOrbitResult(text: string): void {
   if (result[4] !== undefined) expectPercentiles(result[4], result[5]);
   // Budget and status are printed context, not performance acceptance thresholds.
 }
+
+test('starts the showroom without proof when the runtime chunk fails', async ({ page, request }) => {
+  // Read the emitted filename from the build served by preview; the hash changes with the source.
+  const chunks = readdirSync(join(process.cwd(), 'dist', 'assets'))
+    .filter((file) => /^runtime-[\w-]+\.js$/.test(file));
+  expect(chunks, 'the build emits exactly one proof runtime chunk').toHaveLength(1);
+  const chunkPath = `/assets/${chunks[0]}`;
+  const aborted: string[] = [];
+  await page.route((url) => url.pathname === chunkPath, (route) => {
+    aborted.push(route.request().url());
+    return route.abort();
+  });
+  expectConsoleError(page, /^Failed to load resource: net::ERR_FAILED/,
+    'the proof runtime chunk is deliberately aborted to exercise optional startup');
+
+  await openShowroom(page, request, '/?e2e=1&proof=1&tier=base&attract=0&music=off');
+  expect(aborted, 'the proof chunk request actually failed').toHaveLength(1);
+  await expect(page.getByRole('region', { name: 'Proof', exact: true })).toHaveCount(0);
+  const warnings = browserReports(page).filter((report) => report.kind === 'console'
+    && report.type === 'warning' && report.text.startsWith('[archviz] proof overlay unavailable:'));
+  expect(warnings, 'one warning names the unavailable proof chunk').toHaveLength(1);
+  expect(warnings[0].text).toContain(aborted[0]);
+});
 
 test('Measure runs the proof orbit and replaces its frame-time result', async ({ page, request }) => {
   test.setTimeout(TEST_TIMEOUT_MS);
