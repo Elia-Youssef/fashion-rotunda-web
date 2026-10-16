@@ -47,6 +47,31 @@ describe('ResolutionScaler', () => {
     expect(scaler.update(30, 4000)).toBe(0.7);
   });
 
+  it('restarts the up timer after each step', () => {
+    const scaler = makeScaler({ downAfterMs: 2000 });
+    scaler.update(30, 0);
+    scaler.update(30, 2000);
+    scaler.update(30, 4000);
+    scaler.update(30, 6000); // at 0.55 now
+    scaler.update(10, 6000); // under-streak starts
+    expect(scaler.update(10, 11000)).toBe(0.7);
+    // The step at 11000 restarts the streak, so 5000 ms more must pass for the next one.
+    expect(scaler.update(10, 11001)).toBe(0.7);
+    expect(scaler.update(10, 15999)).toBe(0.7);
+    expect(scaler.update(10, 16000)).toBe(0.85);
+  });
+
+  it('never steps up while the p95 is over budget, even with upAfterMs below downAfterMs', () => {
+    const scaler = makeScaler({ downAfterMs: 2000, upAfterMs: 1000 });
+    scaler.setScale(0.7);
+    scaler.update(30, 0); // over-streak starts
+    // 1500 ms is past upAfterMs but short of downAfterMs, and the p95 is over budget,
+    // so only the down window may move the scale.
+    expect(scaler.update(30, 1500)).toBe(0.7);
+    expect(scaler.update(30, 1999)).toBe(0.7);
+    expect(scaler.update(30, 2000)).toBe(0.55);
+  });
+
   it('restarts the streak when the p95 crosses the budget', () => {
     const scaler = makeScaler({ downAfterMs: 2000 });
     scaler.update(30, 0);
