@@ -1,0 +1,370 @@
+import { expect, expectConsoleError, test } from './support/fixtures';
+import type { Page } from '@playwright/test';
+import { openShowroom, readCatalog } from './support/showroom';
+import { RAIL_PATH } from './support/catalogue-rail';
+
+// Catalogue rail E2E verification.
+// Covers four benchmark viewports, internal horizontal scrolling below the desktop width,
+// synthetic safe-area insets, actionable point elementFromPoint hit testing,
+// pointer and keyboard (Enter, Space) selection, breakpoint focus continuity,
+// latest-click-wins race resolution, and deterministic pending/busy state.
+//
+// The desktop rail adapts to the available width and height: from 1200px wide the rail shows all
+// seven looks at once with no internal scroll, keeps
+// its bottom 140px above the viewport bottom for the light bar, shrinks the thumbnails on a short
+// window down to the 24px floor, and scrolls only below that floor.
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+  test(`failed strip thumbnail shows an empty box at ${viewport.width}x${viewport.height}`, async ({ page, request }) => {
+    await page.setViewportSize(viewport);
+    const catalog = await readCatalog(request);
+    const look = catalog.looks[0];
+    expect(look.thumbnail).not.toBeNull();
+    await page.route(`**/content/${look.thumbnail}`, (route) => route.abort());
+    expectConsoleError(page, /^Failed to load resource: net::ERR_FAILED/,
+      'the opening look thumbnail is deliberately aborted in the strip and card');
+    await openShowroom(page, request, RAIL_PATH);
+    const button = page.locator(`#looks button[data-look="${look.id}"]`);
+    await expect(button.locator('.catalog-strip__empty')).toBeVisible();
+    await expect(button.locator('.catalog-strip__empty')).toHaveAttribute('aria-hidden', 'true');
+    await expect(button.locator('.catalog-strip__empty')).toHaveText('');
+    await expect(button.locator('img')).toHaveCount(0);
+    await expect(button).toHaveAccessibleName(look.name);
+    await expect(button).toHaveAttribute('aria-current', 'true');
+  });
+}
+
+const LIGHT_BAR_RESERVE = 140;
+const RESIZE_TIMEOUT = 10_000;
+
+/** Waits for both the viewport and the closed card's responsive sheet state before layout reads. */
+async function resizeTo(page: Page, width: number, height: number): Promise<void> {
+  await page.setViewportSize({ width, height });
+  await page.waitForFunction(
+    ([w, h]) => {
+      if (window.innerWidth !== w || window.innerHeight !== h) return false;
+      // CSS can change before the shell's media-query change callback applies hidden.
+      const card = document.querySelector<HTMLElement>('#shell-card');
+      const sheetMode =
+        !matchMedia('(min-width: 768px)').matches ||
+        matchMedia('(max-height: 599px)').matches;
+      return card !== null && card.hidden === sheetMode;
+    },
+    [width, height],
+    { timeout: RESIZE_TIMEOUT },
+  );
+}
+
+interface DesktopRailReading {
+  top: number;
+  bottom: number;
+  scrollHeight: number;
+  clientHeight: number;
+  sizes: { width: number; height: number }[];
+  owned: boolean[];
+  owners: { look: string | null; hit: string | null; region: string | null }[];
+  currentCount: number;
+  documentScrolls: boolean;
+}
+
+async function readDesktopRail(page: Page): Promise<DesktopRailReading> {
+  return page.locator('#looks').evaluate((el) => {
+    const hits = (button: Element) => {
+      const r = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      const describe = (element: Element | null): string | null =>
+        element === null
+          ? null
+          : `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ''}${
+              [...element.classList].map((name) => `.${name}`).join('')
+            }`;
+      return {
+        owned: hit !== null && (hit === button || button.contains(hit)),
+        owner: {
+          look: button.getAttribute('data-look'),
+          hit: describe(hit),
+          region: describe(hit?.closest('[id]') ?? null),
+        },
+      };
+    };
+    const buttons = [...el.querySelectorAll('button')];
+    const centres = buttons.map(hits);
+    const scroller = document.scrollingElement;
+    const box = el.getBoundingClientRect();
+    return {
+      top: box.top,
+      bottom: box.bottom,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      sizes: buttons.map((b) => {
+        const r = b.getBoundingClientRect();
+        return { width: r.width, height: r.height };
+      }),
+      owned: centres.map((centre) => centre.owned),
+      owners: centres.map((centre) => centre.owner),
+      currentCount: el.querySelectorAll('button[aria-current="true"]').length,
+      documentScrolls:
+        scroller !== null &&
+        (scroller.scrollHeight > scroller.clientHeight || scroller.scrollWidth > scroller.clientWidth),
+    };
+  });
+}
+
+/**
+ * Focuses a thumbnail as the keyboard would (focusVisible, and the focus does its own scrolling)
+ * and reports whether its outline, width plus offset, stays inside the rail's padding box.
+ */
+async function focusRing(
+  page: Page,
+  index: number,
+): Promise<{ focusVisible: boolean; outlineStyle: string; inside: boolean }> {
+  return page
+    .locator('#looks button')
+    .nth(index)
+    .evaluate((button) => {
+      button.focus({ focusVisible: true });
+      const rail = button.closest('#looks');
+      if (rail === null) throw new Error('rail missing');
+      const style = getComputedStyle(button);
+      const reach = parseFloat(style.outlineWidth) + parseFloat(style.outlineOffset);
+      const r = button.getBoundingClientRect();
+      const rr = rail.getBoundingClientRect();
+      return {
+        focusVisible: button.matches(':focus-visible'),
+        outlineStyle: style.outlineStyle,
+        inside:
+          r.left - reach >= rr.left + rail.clientLeft - 0.01 &&
+          r.top - reach >= rr.top + rail.clientTop - 0.01 &&
+          r.right + reach <= rr.left + rail.clientLeft + rail.clientWidth + 0.01 &&
+          r.bottom + reach <= rr.top + rail.clientTop + rail.clientHeight + 0.01,
+      };
+    });
+}
+
+test.describe('Catalogue Rail Parity', () => {
+  const GEOMETRY_VIEWPORTS = [
+    { id: 'desktop', width: 1440, height: 900, axis: 'y' },
+    { id: 'tablet', width: 820, height: 1180, axis: 'x' },
+    { id: 'phone', width: 390, height: 844, axis: 'x', checkTouch: true },
+    { id: 'shortLandscape', width: 844, height: 390, axis: 'x', checkTouch: true },
+  ];
+
+  // One cold scene load per test, so each viewport stays inside the default test timeout.
+  for (const vp of GEOMETRY_VIEWPORTS) {
+    test(`rail geometry, internal scrolling, touch sizing, and zero document scroll at ${vp.id}`, async ({
+      page,
+      request,
+    }) => {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await openShowroom(page, request, RAIL_PATH);
+
+      const rail = page.locator('#looks');
+      await expect(rail).toBeVisible();
+
+      // Ensure all 7 shipped looks are present in catalogue source order
+      const buttons = rail.locator('button');
+      await expect(buttons).toHaveCount(7);
+      const expectedIds = [
+        'wallis-dress',
+        'zoot-suit',
+        'new-look-dress',
+        'mondrian-dress',
+        'jumpsuit-dress',
+        'blue-silk-dress',
+        'geoffrey-beene',
+      ];
+      for (let i = 0; i < expectedIds.length; i++) {
+        await expect(buttons.nth(i)).toHaveAttribute('data-look', expectedIds[i]);
+      }
+
+      // Check document scrolling: must NEVER scroll
+      const docScroll = await page.evaluate(() => {
+        const scroller = document.scrollingElement;
+        return {
+          hasDocScroll:
+            scroller !== null &&
+            (scroller.scrollHeight > scroller.clientHeight ||
+              scroller.scrollWidth > scroller.clientWidth ||
+              window.scrollX !== 0 ||
+              window.scrollY !== 0),
+          scrollHeight: scroller?.scrollHeight,
+          clientHeight: scroller?.clientHeight,
+          scrollWidth: scroller?.scrollWidth,
+          clientWidth: scroller?.clientWidth,
+        };
+      });
+      expect(docScroll.hasDocScroll, `${vp.id}: document must not scroll`).toBe(false);
+
+      // Check internal scrolling for the required axis
+      const railMetrics = await rail.evaluate((el) => ({
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+        overflowX: getComputedStyle(el).overflowX,
+        overflowY: getComputedStyle(el).overflowY,
+      }));
+
+      if (vp.axis === 'y') {
+        // Desktop: every look fits, so the rail has nothing to scroll (client review item 1).
+        // overflow-y stays auto as the last resort below the thumbnail floor.
+        expect(
+          railMetrics.scrollHeight,
+          `${vp.id}: rail shows all seven looks without internal scrolling`,
+        ).toBeLessThanOrEqual(railMetrics.clientHeight);
+        expect(railMetrics.overflowY).toBe('auto');
+      } else {
+        // Tablet and Phone: prove horizontal internal scrolling
+        if (vp.id === 'tablet' || vp.id === 'phone') {
+          expect(
+            railMetrics.scrollWidth,
+            `${vp.id}: rail scrollWidth must exceed clientWidth for horizontal internal scrolling`,
+          ).toBeGreaterThan(railMetrics.clientWidth);
+
+          await rail.evaluate((el) => {
+            el.scrollLeft = 40;
+          });
+          const scrollLeft = await rail.evaluate((el) => el.scrollLeft);
+          expect(scrollLeft, `${vp.id}: rail scrollLeft must be scrollable`).toBeGreaterThan(0);
+        }
+        expect(railMetrics.overflowX).toBe('auto');
+      }
+
+      // Check touch sizing on phone viewports (>=44x44 CSS px)
+      if (vp.checkTouch) {
+        for (let i = 0; i < 7; i++) {
+          const box = await buttons.nth(i).boundingBox();
+          expect(box, `${vp.id}: button ${i} has bounding box`).not.toBeNull();
+          if (box) {
+            expect(box.width, `${vp.id}: button ${i} width >= 44px`).toBeGreaterThanOrEqual(44);
+            expect(box.height, `${vp.id}: button ${i} height >= 44px`).toBeGreaterThanOrEqual(44);
+          }
+        }
+      }
+    });
+  }
+
+  // Client review item 1 at the client's own window: 1669x1115 at a 1.25 device scale. The walk
+  // then resizes one page through the other desktop sizes. The layout depends only on the height
+  // once the width is 1200 or more. fit: 48px thumbnails, no scroll; shrink: smaller thumbnails,
+  // still no scroll, at least the 24px WCAG 2.5.8 floor; floor: 24px and the rail scrolls.
+  test.describe('desktop rail at the client scale', () => {
+    test.use({ viewport: { width: 1669, height: 1115 }, deviceScaleFactor: 1.25 });
+
+    test('desktop rail shows all seven looks at once, clear of the light bar, down to short windows', async ({
+      page,
+      request,
+    }) => {
+      const viewports = [
+        { id: '1669x1115', width: 1669, height: 1115, mode: 'fit' },
+        { id: '1920x1080', width: 1920, height: 1080, mode: 'fit' },
+        { id: '1440x900', width: 1440, height: 900, mode: 'fit' },
+        { id: '1280x720', width: 1280, height: 720, mode: 'fit' },
+        { id: '1200x640', width: 1200, height: 640, mode: 'fit' },
+        { id: '1280x560', width: 1280, height: 560, mode: 'shrink' },
+        { id: '1440x500', width: 1440, height: 500, mode: 'shrink' },
+        { id: '1280x420', width: 1280, height: 420, mode: 'floor' },
+      ] as const;
+
+      // The shared opening waits for the mounted chrome before the readings: data-scene goes ready
+      // on the first frame with content, but the page mounts the strip and the card only after the
+      // tier benchmark and the post chain settle, and readDesktopRail reads the rail without
+      // waiting, so the count the geometry test pins to the shipped catalogue and the catalogue's
+      // own current mark have to be on the buttons before the first resize.
+      await openShowroom(page, request, RAIL_PATH);
+
+      for (const vp of viewports) {
+        await resizeTo(page, vp.width, vp.height);
+        const tag = `desktop ${vp.id} @1.25`;
+        const reading = await readDesktopRail(page);
+
+        expect(reading.documentScrolls, `${tag}: document must not scroll`).toBe(false);
+        expect(reading.top, `${tag}: rail keeps its top under the header`).toBeCloseTo(72, 0);
+        expect(reading.currentCount, `${tag}: exactly one look is marked current`).toBe(1);
+        expect(reading.sizes, `${tag}: seven thumbnails`).toHaveLength(7);
+        expect(
+          reading.bottom,
+          `${tag}: rail ends at least ${LIGHT_BAR_RESERVE}px above the viewport bottom`,
+        ).toBeLessThanOrEqual(vp.height - LIGHT_BAR_RESERVE + 0.5);
+        for (const [i, size] of reading.sizes.entries()) {
+          expect(size.width, `${tag}: thumbnail ${i} is at least 24px wide`).toBeGreaterThanOrEqual(24);
+          expect(size.height, `${tag}: thumbnail ${i} is at least 24px tall`).toBeGreaterThanOrEqual(24);
+          expect(size.width, `${tag}: thumbnail ${i} is square`).toBeCloseTo(size.height, 1);
+          expect(size.width, `${tag}: thumbnail ${i} never grows past 48px`).toBeLessThanOrEqual(48);
+        }
+
+        if (vp.mode === 'floor') {
+          // Last resort: the floor holds and the rail scrolls rather than shrinking further.
+          expect(reading.sizes[0].width, `${tag}: thumbnails sit on the 24px floor`).toBeCloseTo(24, 1);
+          expect(reading.scrollHeight, `${tag}: rail scrolls below the floor`).toBeGreaterThan(
+            reading.clientHeight,
+          );
+          // Focus scrolls the rail; scroll padding keeps both ends' rings inside its clip.
+          for (const index of [6, 0]) {
+            const ring = await focusRing(page, index);
+            expect(ring.focusVisible, `${tag}: thumbnail ${index} is focus-visible`).toBe(true);
+            expect(ring.outlineStyle, `${tag}: thumbnail ${index} draws its outline`).toBe('solid');
+            expect(ring.inside, `${tag}: thumbnail ${index} ring is not clipped`).toBe(true);
+          }
+          continue;
+        }
+
+        expect(
+          reading.scrollHeight,
+          `${tag}: rail shows all seven looks without internal scrolling`,
+        ).toBeLessThanOrEqual(reading.clientHeight);
+        expect(
+          reading.owned,
+          `${tag}: elementFromPoint owns every thumbnail centre; owners=${JSON.stringify(reading.owners)}`,
+        ).toEqual(
+          Array.from({ length: 7 }, () => true),
+        );
+        if (vp.mode === 'fit') {
+          expect(reading.sizes[0].width, `${tag}: thumbnails keep 48px`).toBeCloseTo(48, 1);
+        } else {
+          expect(reading.sizes[0].width, `${tag}: thumbnails shrink to fit`).toBeLessThan(48);
+        }
+      }
+
+      // Back at the client size, the last look's focus ring stays inside the rail.
+      await resizeTo(page, 1669, 1115);
+      const ring = await focusRing(page, 6);
+      expect(ring.focusVisible, 'the last thumbnail is focus-visible').toBe(true);
+      expect(ring.outlineStyle, 'focused thumbnail draws its outline').toBe('solid');
+      expect(ring.inside, 'focus ring is not clipped by the rail').toBe(true);
+    });
+  });
+
+  // A coarse pointer keeps the 44px touch target as the floor, so a short desktop window scrolls
+  // the rail instead of shrinking the thumbnails below it.
+  test.describe('desktop rail with a coarse pointer', () => {
+    test.use({ viewport: { width: 1280, height: 560 }, hasTouch: true });
+
+    test('keeps 44px thumbnails and scrolls, clear of the light bar, at 1280x560', async ({
+      page,
+      request,
+    }) => {
+      await openShowroom(page, request, RAIL_PATH);
+      const tag = 'desktop 1280x560 coarse pointer';
+
+      expect(
+        await page.evaluate(() => matchMedia('(pointer: coarse)').matches),
+        `${tag}: the touch context reports a coarse pointer`,
+      ).toBe(true);
+      const reading = await readDesktopRail(page);
+      expect(reading.documentScrolls, `${tag}: document must not scroll`).toBe(false);
+      expect(reading.bottom, `${tag}: rail clears the light bar`).toBeLessThanOrEqual(
+        560 - LIGHT_BAR_RESERVE + 0.5,
+      );
+      for (const [i, size] of reading.sizes.entries()) {
+        expect(size.width, `${tag}: thumbnail ${i} is 44px`).toBeCloseTo(44, 1);
+        expect(size.height, `${tag}: thumbnail ${i} is 44px`).toBeCloseTo(44, 1);
+      }
+      expect(reading.scrollHeight, `${tag}: rail scrolls below the coarse floor`).toBeGreaterThan(
+        reading.clientHeight,
+      );
+      const ring = await focusRing(page, 6);
+      expect(ring.inside, `${tag}: last thumbnail ring is not clipped`).toBe(true);
+    });
+  });
+});
