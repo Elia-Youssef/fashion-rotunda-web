@@ -48,6 +48,7 @@ function resourceUrl(name: string): string {
   try {
     return new URL(name, window.location.href).href;
   } catch {
+    // An unresolvable name matches no expected path and drops only from the lobby's informational readout.
     return name;
   }
 }

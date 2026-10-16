@@ -243,6 +243,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
   function queuePreload(): void {
     preload = setTimeout(() => {
       preload = null;
+      // A failed preload published the walk error state (Retry Walk); this stops the unhandled rejection.
       void walkLoader.ensureReady().catch(() => {});
     }, 0);
   }

@@ -124,6 +124,7 @@ export function mountShare(options: ShareMountOptions): ShareMount {
     try {
       stored = musicStore.getItem(MUSIC_STORAGE_KEY);
     } catch {
+      // A throwing store says nothing (the policy in src/audio/preference.ts), so the boot default wins.
       return bootMusic;
     }
     // The raw read answers only whether the store has spoken at all, which a silent store and a

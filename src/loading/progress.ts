@@ -51,6 +51,7 @@ export function underContentBase(name: string, contentBase: string): boolean {
   try {
     return new URL(name).pathname.startsWith(prefix);
   } catch {
+    // A name that parses as no URL can be no scene file's, so it is skipped; the readout is advisory.
     return false;
   }
 }

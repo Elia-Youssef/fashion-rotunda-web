@@ -84,6 +84,7 @@ export async function loadStatics(options: StaticsOptions): Promise<void> {
     // have replaced parsed materials with upgraded instances by then, so each root is
     // collected as it is now, keeping the upgrade owned with the parse it came from.
     for (const load of loads) {
+      // A sibling's own rejection is dropped: the primary error rethrows below and is what the visitor sees.
       void load.then((owned: OwnedGltf) => {
         owned.owner.collect(owned.gltf.scene);
         owned.owner.retire();

@@ -84,11 +84,13 @@ export function mountModeSwitch(
   updateActive(mount.mode);
 
   function onOrbitClick(): void {
+    // Orbit cannot reject today: beginBlend settles it, and walk failures surface as the Retry Walk state.
     void mount.setMode('orbit').catch(() => {});
   }
 
   function onWalkClick(): void {
     if (mount.pendingMode !== 'walk' && mount.mode !== 'walk') {
+      // A failed walk load already published the Retry Walk state; this stops only the unhandled rejection.
       void mount.setMode('walk').catch(() => {});
     }
   }
@@ -120,6 +122,7 @@ export function mountModeSwitch(
 
     event.preventDefault();
     orbitShortcutPending = true;
+    // As onOrbitClick: orbit cannot reject today, and the finally still clears the shortcut's pending flag.
     void mount.setMode('orbit').catch(() => {}).finally(() => {
       if (disposed) return;
       orbitShortcutPending = false;
