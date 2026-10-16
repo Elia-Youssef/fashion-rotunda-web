@@ -65,6 +65,34 @@ describe('post grade LUT', () => {
         }
       }
     });
+
+    it('returns one zeroed cell when size is 1', () => {
+      const lut = identityLut(1);
+      expect(lut).toHaveLength(3);
+      expect(lut[0]).toBe(0);
+      expect(lut[1]).toBe(0);
+      expect(lut[2]).toBe(0);
+    });
+  });
+
+  describe('sampleLut', () => {
+    it('clamps coordinates below zero to the first cell', () => {
+      const lut = identityLut(LUT_SIZE);
+      expect(sampleLut(lut, LUT_SIZE, -0.75, -0.75, -0.75)).toEqual([0, 0, 0]);
+    });
+
+    it('clamps coordinates above one to the last cell', () => {
+      const lut = identityLut(LUT_SIZE);
+      expect(sampleLut(lut, LUT_SIZE, 1.9, 1.9, 1.9)).toEqual([1, 1, 1]);
+    });
+
+    it('clamps each channel independently', () => {
+      const lut = identityLut(LUT_SIZE);
+      const sampled = sampleLut(lut, LUT_SIZE, -1, 0.52, 2);
+      expect(sampled[0]).toBe(0);
+      expect(sampled[1]).toBeCloseTo(16 / 31, 6);
+      expect(sampled[2]).toBe(1);
+    });
   });
 
   describe('gradeLut', () => {
@@ -154,6 +182,73 @@ describe('post grade LUT', () => {
       const [r, g, b] = sampleLut(lut, LUT_SIZE, 0.05, 0.05, 0.05);
       expect(r).toBeGreaterThan(b);
       expect(g).toBeGreaterThan(b);
+    });
+
+    it('returns the designed shadow-lift cell when size is 1', () => {
+      const lut = gradeLut(1);
+      expect(lut).toHaveLength(3);
+      expect(lut[0]).toBeCloseTo(0.015, 6);
+      expect(lut[1]).toBeCloseTo(0.008, 6);
+      expect(lut[2]).toBe(0);
+    });
+
+    it('darkens lower midtones and brightens upper midtones', () => {
+      const lut = gradeLut(LUT_SIZE);
+      const step = 1 / (LUT_SIZE - 1);
+      const low = 8 * step;
+      const high = 24 * step;
+
+      const lowCell = sampleLut(lut, LUT_SIZE, low, low, low);
+      expect(lowCell[0]).toBeLessThan(low);
+      expect(lowCell[1]).toBeLessThan(low);
+      expect(lowCell[2]).toBeLessThan(low);
+
+      const highCell = sampleLut(lut, LUT_SIZE, high, high, high);
+      expect(highCell[0]).toBeGreaterThan(high);
+      expect(highCell[1]).toBeGreaterThan(high);
+      expect(highCell[2]).toBeGreaterThan(high);
+    });
+
+    it('matches the shipped grade values at representative cells', () => {
+      const lut = gradeLut(LUT_SIZE);
+      const step = 1 / (LUT_SIZE - 1);
+      const neutral = (i: number): [number, number, number] =>
+        sampleLut(lut, LUT_SIZE, i * step, i * step, i * step);
+
+      // The shipped look: per channel an 80/20 mix of linear and the
+      // smoothstep cubic, plus warm lifts of 0.015 red and 0.008 green that
+      // decay quadratically to zero at the highlight end. Coefficient drift
+      // moves these cells, so a deliberate look change updates them.
+      const pinned: Array<[number, number, number, number]> = [
+        [0, 0.015, 0.008, 0],
+        [8, 0.247792454097, 0.243939176261, 0.239535430163],
+        [16, 0.521252223826, 0.519613306032, 0.517740257125],
+        [24, 0.794131952603, 0.793775032728, 0.793367124299],
+        [31, 1, 1, 1],
+      ];
+      for (const [i, r, g, b] of pinned) {
+        const sampled = neutral(i);
+        expect(sampled[0]).toBeCloseTo(r, 6);
+        expect(sampled[1]).toBeCloseTo(g, 6);
+        expect(sampled[2]).toBeCloseTo(b, 6);
+      }
+
+      // The warm lift reaches the red and green slots from any channel's
+      // shadows, and the blue channel never takes a lift.
+      const primaryRed = sampleLut(lut, LUT_SIZE, 1, 0, 0);
+      expect(primaryRed[0]).toBeCloseTo(1, 6);
+      expect(primaryRed[1]).toBeCloseTo(0.008, 6);
+      expect(primaryRed[2]).toBe(0);
+
+      const primaryGreen = sampleLut(lut, LUT_SIZE, 0, 1, 0);
+      expect(primaryGreen[0]).toBeCloseTo(0.015, 6);
+      expect(primaryGreen[1]).toBeCloseTo(1, 6);
+      expect(primaryGreen[2]).toBe(0);
+
+      const primaryBlue = sampleLut(lut, LUT_SIZE, 0, 0, 1);
+      expect(primaryBlue[0]).toBeCloseTo(0.015, 6);
+      expect(primaryBlue[1]).toBeCloseTo(0.008, 6);
+      expect(primaryBlue[2]).toBeCloseTo(1, 6);
     });
   });
 });
