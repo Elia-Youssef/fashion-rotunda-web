@@ -62,6 +62,48 @@ async function expectProjectBackendAfterLoad(page: Page): Promise<void> {
 // under four software workers, the same budget the loading spec's hold uses.
 const HALF_ROTUNDA_HOLD_TIMEOUT_MS = 30_000;
 
+// Check the browser-selected picture before and through startup. Diagnostic tier overrides still
+// follow pointer media for the poster, while geometry follows the explicitly selected tier.
+test.describe('lobby poster requests', () => {
+  for (const profile of [
+    { name: 'touch default', hasTouch: true, tier: '', half: true },
+    { name: 'touch Base', hasTouch: true, tier: '&tier=base', half: true },
+    { name: 'touch Mid', hasTouch: true, tier: '&tier=mid', half: false },
+    { name: 'touch High', hasTouch: true, tier: '&tier=high', half: false },
+    { name: 'fine pointer Base', hasTouch: false, tier: '&tier=base', half: false },
+  ]) {
+    test.describe(profile.name, () => {
+      test.use({ viewport: { width: 390, height: 844 }, hasTouch: profile.hasTouch });
+      test('requests only the poster selected by the pointer media query', async ({ page }) => {
+        const posters: string[] = [];
+        const geometries: string[] = [];
+        page.on('request', (request) => {
+          const pathname = new URL(request.url()).pathname;
+          if (pathname.startsWith('/poster/')) posters.push(pathname);
+          if (pathname.endsWith('.glb')) geometries.push(pathname);
+        });
+        await page.goto(backendPath('/?e2e=1&gate=on&music=off' + profile.tier));
+        const lobby = page.locator('#entry-lobby');
+        const expected = profile.hasTouch ? '/poster/hero-phone.jpg' : '/poster/hero.jpg';
+        const image = lobby.locator('.entry-lobby__poster-img');
+        await expect.poll(() => image.evaluate((element: HTMLImageElement) =>
+          element.complete && element.naturalWidth > 0)).toBe(true);
+        expect(await image.evaluate((element: HTMLImageElement) => new URL(element.currentSrc).pathname))
+          .toBe(expected);
+        expect(posters).toEqual([expected]);
+        await lobby.locator('#lobby-load-btn').click();
+        await expectProjectBackendAfterLoad(page);
+        await waitForSceneInitialization(page, INITIALIZED_TIMEOUT);
+        expect(posters, 'no full-poster prefetch or startup replacement').toEqual([expected]);
+        expect(geometries.length).toBeGreaterThan(0);
+        for (const pathname of geometries) {
+          expect(pathname.startsWith('/content/half/'), pathname).toBe(profile.half);
+        }
+      });
+    });
+  }
+});
+
 // The pre-gesture absence window: after the lobby publishes idle, a premature fetch has this
 // long to appear in the request watcher before the zero-request reading. Absence is only
 // provable by wall time, so the length is kept; the anchor decides where it starts.

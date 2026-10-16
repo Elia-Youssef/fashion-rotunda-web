@@ -3,6 +3,11 @@
 // index.html ships that same DOM shape for the hydrating mount, and the two copies must be
 // kept identical. This module is the only code that builds the lobby element.
 
+import { TOUCH_POINTER_QUERY } from '../../tiers/decide';
+
+export const FULL_POSTER_URL = '/poster/hero.jpg';
+export const PHONE_POSTER_URL = '/poster/hero-phone.jpg';
+
 /** Builds the lobby element in its idle state; the caller appends it to the page. */
 export function buildLobbyMarkup(doc: Document): HTMLElement {
   const lobbyElement = doc.createElement('div');
@@ -16,7 +21,11 @@ export function buildLobbyMarkup(doc: Document): HTMLElement {
   lobbyElement.innerHTML = `
       <div class="entry-lobby__scrim" aria-hidden="true"></div>
       <div class="entry-lobby__poster" aria-hidden="true">
-        <img src="/poster/hero.jpg" alt="" class="entry-lobby__poster-img" />
+        <!-- A coarse-pointer ?tier= diagnostic override keeps the phone poster while loading another set. -->
+        <picture>
+          <source media="${TOUCH_POINTER_QUERY}" srcset="${PHONE_POSTER_URL}" />
+          <img src="${FULL_POSTER_URL}" alt="" class="entry-lobby__poster-img" />
+        </picture>
       </div>
 
       <header class="entry-lobby__header">

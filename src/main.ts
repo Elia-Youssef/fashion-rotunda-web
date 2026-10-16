@@ -35,7 +35,7 @@ import { SCENE_BACKGROUND, createShowroom } from './scene/showroom';
 import type { Showroom, TurntableState } from './scene/showroom';
 import { mountShare } from './share/mount';
 import { runBenchmark } from './tiers/benchmark';
-import { decideTier, tierOverrideFromUrl } from './tiers/decide';
+import { decideTier, tierOverrideFromUrl, TOUCH_POINTER_QUERY } from './tiers/decide';
 import type { TierInput } from './tiers/decide';
 import { TIERS } from './tiers/table';
 import type { TierName } from './tiers/table';
@@ -47,6 +47,7 @@ import { mountShell } from './ui/shell';
 import { createAudioEngine } from './audio/engine';
 import { lobbyWanted, mountEntryLobby } from './ui/entry-lobby';
 import type { EntryLobby } from './ui/entry-lobby';
+import { FULL_POSTER_URL, PHONE_POSTER_URL } from './ui/entry-lobby/markup';
 import { SceneRevealCoordinator } from './ui/scene-reveal';
 import type { ReadinessPredicates } from './ui/scene-reveal';
 import { createStartupFailureRouting, showStartupNotice } from './ui/startup-failure';
@@ -229,7 +230,7 @@ async function main(): Promise<void> {
       lobby.setUnsupported(UNSUPPORTED_BROWSER_MESSAGE);
     } else {
       showPoster(page, {
-        imageUrl: '/poster/hero.jpg',
+        imageUrl: window.matchMedia(TOUCH_POINTER_QUERY).matches ? PHONE_POSTER_URL : FULL_POSTER_URL,
         message: 'This page needs WebGPU or WebGL 2. Your browser has neither.',
         credit: 'Still from the Unreal Engine original.',
       });
@@ -441,7 +442,7 @@ async function main(): Promise<void> {
 
   // The tier: the URL override wins; otherwise the device decides, and a provisional High is
   // calibrated by the two-second benchmark at pixel ratio 1 before it is trusted.
-  const isTouch = window.matchMedia('(pointer: coarse)').matches;
+  const isTouch = window.matchMedia(TOUCH_POINTER_QUERY).matches;
   const tierInput: TierInput = {
     backend,
     gpuName,

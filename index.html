@@ -17,7 +17,11 @@
     <div id="entry-lobby" class="entry-lobby" role="dialog" aria-modal="true" aria-labelledby="entry-lobby-title" data-state="idle">
       <div class="entry-lobby__scrim" aria-hidden="true"></div>
       <div class="entry-lobby__poster" aria-hidden="true">
-        <img src="/poster/hero.jpg" alt="" class="entry-lobby__poster-img" />
+        <!-- A coarse-pointer ?tier= diagnostic override keeps the phone poster while loading another set. -->
+        <picture>
+          <source media="(pointer: coarse)" srcset="/poster/hero-phone.jpg" />
+          <img src="/poster/hero.jpg" alt="" class="entry-lobby__poster-img" />
+        </picture>
       </div>
 
       <header class="entry-lobby__header">

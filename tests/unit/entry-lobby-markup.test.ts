@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
+import { readFileSync, statSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { TOUCH_POINTER_QUERY } from '../../src/tiers/decide';
 import * as entryLobby from '../../src/ui/entry-lobby';
-import { buildLobbyMarkup } from '../../src/ui/entry-lobby/markup';
+import {
+  buildLobbyMarkup, FULL_POSTER_URL, PHONE_POSTER_URL,
+} from '../../src/ui/entry-lobby/markup';
 
 /**
  * The lobby markup must stay stable across refactors of src/ui/entry-lobby. The expected
@@ -33,6 +37,36 @@ describe('entry lobby markup pin', () => {
   });
 });
 
+describe('entry lobby poster selection', () => {
+  function posterMarkup(kind: 'built' | 'shipped'): Element {
+    const root = kind === 'built' ? buildLobbyMarkup(document) :
+      new DOMParser().parseFromString(readFileSync('index.html', 'utf8'), 'text/html');
+    return root.querySelector('.entry-lobby__poster')!;
+  }
+
+  it.each(['built', 'shipped'] as const)('puts the shared pointer query and both URLs in %s markup', (kind) => {
+    const poster = posterMarkup(kind);
+    const picture = poster.querySelector('picture');
+    expect(poster.children).toHaveLength(1);
+    expect(picture).not.toBeNull();
+    expect(Array.from(picture!.children, (element) => element.tagName)).toEqual(['SOURCE', 'IMG']);
+    expect(TOUCH_POINTER_QUERY).toBe('(pointer: coarse)');
+    expect(picture!.querySelector('source')?.getAttribute('media')).toBe(TOUCH_POINTER_QUERY);
+    expect(picture!.querySelector('source')?.getAttribute('srcset')).toBe(PHONE_POSTER_URL);
+    expect(picture!.querySelector('img')?.getAttribute('src')).toBe(FULL_POSTER_URL);
+  });
+
+  it('keeps the built and shipped poster markup identical', () => {
+    expect(posterMarkup('built').outerHTML).toBe(posterMarkup('shipped').outerHTML);
+  });
+
+  it('ships a phone poster within 100000 bytes', () => {
+    const bytes = statSync('public/poster/hero-phone.jpg').size;
+    expect(bytes).toBeGreaterThan(0);
+    expect(bytes).toBeLessThanOrEqual(100_000);
+  });
+});
+
 describe('entry lobby mounted markup pin', () => {
   let root: HTMLElement;
 
@@ -55,7 +89,11 @@ describe('entry lobby mounted markup pin', () => {
 const BUILT_LOBBY_MARKUP = `<div id="entry-lobby" class="entry-lobby" role="dialog" aria-modal="true" aria-labelledby="entry-lobby-title" data-state="idle">
       <div class="entry-lobby__scrim" aria-hidden="true"></div>
       <div class="entry-lobby__poster" aria-hidden="true">
-        <img src="/poster/hero.jpg" alt="" class="entry-lobby__poster-img">
+        <!-- A coarse-pointer ?tier= diagnostic override keeps the phone poster while loading another set. -->
+        <picture>
+          <source media="(pointer: coarse)" srcset="/poster/hero-phone.jpg">
+          <img src="/poster/hero.jpg" alt="" class="entry-lobby__poster-img">
+        </picture>
       </div>
 
       <header class="entry-lobby__header">
@@ -157,7 +195,11 @@ const BUILT_LOBBY_MARKUP = `<div id="entry-lobby" class="entry-lobby" role="dial
 const MOUNTED_LOBBY_MARKUP = `<div id="entry-lobby" class="entry-lobby" role="dialog" aria-modal="true" aria-labelledby="entry-lobby-title" data-state="idle" tabindex="-1">
       <div class="entry-lobby__scrim" aria-hidden="true"></div>
       <div class="entry-lobby__poster" aria-hidden="true">
-        <img src="/poster/hero.jpg" alt="" class="entry-lobby__poster-img">
+        <!-- A coarse-pointer ?tier= diagnostic override keeps the phone poster while loading another set. -->
+        <picture>
+          <source media="(pointer: coarse)" srcset="/poster/hero-phone.jpg">
+          <img src="/poster/hero.jpg" alt="" class="entry-lobby__poster-img">
+        </picture>
       </div>
 
       <header class="entry-lobby__header">

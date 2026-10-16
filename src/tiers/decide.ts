@@ -3,6 +3,12 @@
 import { TIER_ORDER } from './table';
 import type { TierName } from './table';
 
+/**
+ * The page's touch rule: a coarse primary pointer. A touch device always runs Base (decideTier), so the
+ * lobby poster markup and the unsupported poster page choose the phone poster by this same query.
+ */
+export const TOUCH_POINTER_QUERY = '(pointer: coarse)';
+
 export interface TierInput {
   backend: 'webgpu' | 'webgl2';
   gpuName: string;
