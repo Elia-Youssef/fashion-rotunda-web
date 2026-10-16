@@ -24,6 +24,12 @@ const UNSUPPORTED_QUIET_WINDOW_MS = 1_000;
 // post-error window above.
 const NO_FETCH_QUIET_WINDOW_MS = 1_000;
 
+// The unsupported surface: after the Load press the two support probes answer (requestAdapter and
+// a throwaway webgl2 context, src/renderer/support.ts) and setUnsupported then writes the terminal
+// error state (src/ui/entry-lobby.ts). Neither probe carries a code deadline, so the 15 s is plain
+// headroom for those round trips on a loaded machine, not a matched budget.
+const UNSUPPORTED_ERROR_TIMEOUT_MS = 15_000;
+
 function skipUnlessWebgl2(): void {
   test.skip(
     test.info().project.name !== 'webgl2',
@@ -90,7 +96,7 @@ test('flags: unsupported surface after Load, no retry drawn, no content request'
 
     // The adapter and context probes answer after the press; the lobby ends on the
     // unsupported surface, never on an eternal loading state.
-    await expect(lobby).toHaveAttribute('data-state', 'error', { timeout: 15_000 });
+    await expect(lobby).toHaveAttribute('data-state', 'error', { timeout: UNSUPPORTED_ERROR_TIMEOUT_MS });
 
     // The error state is terminal, so it anchors the absence window: the surface reads below
     // run inside the window instead of pushing the reading past the window's end.

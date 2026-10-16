@@ -14,6 +14,10 @@ const SWITCH_TIMEOUT_MS = 30_000;
 // The turntable publishes its yaw from rendered frames (mount.ts writeYaw inside update), so the
 // restored deep link's progress is polled past an earlier reading, never sampled after a fixed gap.
 const YAW_POLL_TIMEOUT_MS = 5_000;
+// The address bar is written by history.replaceState behind the share mount's throttle (at most
+// 4 Hz, src/share/mount.ts), so after an asserted switch the URL lands within one throttle window;
+// 5 s is generous headroom for a loaded machine, not time the write normally takes.
+const URL_WRITE_TIMEOUT_MS = 5_000;
 
 /** Reads the capture source buffer after the shared idle/frame-delivery proof. */
 async function settledDrawingBufferSize(page: Page): Promise<{ width: number; height: number }> {
@@ -38,8 +42,8 @@ test('updates the address bar when changing look and swatch', async ({ page, req
   await page.getByRole('radio', { name: 'Dark charcoal' }).click();
   await expect(canvas).toHaveAttribute('data-variant', 'dark', { timeout: SWITCH_TIMEOUT_MS });
 
-  await expect.poll(() => page.url(), { timeout: 5_000 }).toContain(`look=${third.id}`);
-  await expect.poll(() => page.url(), { timeout: 5_000 }).toContain('variant=dark');
+  await expect.poll(() => page.url(), { timeout: URL_WRITE_TIMEOUT_MS }).toContain(`look=${third.id}`);
+  await expect.poll(() => page.url(), { timeout: URL_WRITE_TIMEOUT_MS }).toContain('variant=dark');
 
   const entriesAfter = await page.evaluate(() => history.length);
   expect(entriesAfter, 'the state writes add no history entries').toBe(entriesBefore);

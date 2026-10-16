@@ -23,6 +23,20 @@ const SCENE_READY_TIMEOUT = 60_000;
  * data-post fails within it instead of stalling toward the test timeout.
  */
 const POST_ATTRIBUTE_TIMEOUT = 10_000;
+/**
+ * The ssgi token tracks the governor's scale, not motion (chain.ts currentFeatures), and the
+ * publisher writes the string from the frame loop, so after a drag release the full-resolution
+ * token is either already published or lands on the next drawn frame; 3 s fails a downgrade
+ * quickly instead of stalling toward the 120 s test timeout.
+ */
+const SSGI_RELEASE_TIMEOUT_MS = 3000;
+/**
+ * Motion keeps the dof token unpublished for MOTION_MS (500 ms, chain.ts), and the chain's stable
+ * rest callback re-arms at MOTION_REST_DELAY_MS (510 ms) before it requests the redraw that turns
+ * the token back on; 3 s is about six times that deadline, headroom for a loaded machine rather
+ * than a matched budget.
+ */
+const DOF_REST_TIMEOUT_MS = 3000;
 
 /**
  * The chain is created unconditionally once the tier settles (main.ts rebuildPostChain throws if it
@@ -313,7 +327,7 @@ test('diagnostic SSGI remains full resolution while the pointer drags on WebGPU'
 
   await expect
     .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'ssgi'), {
-      timeout: 3000,
+      timeout: SSGI_RELEASE_TIMEOUT_MS,
       message: 'data-post carries the full-resolution ssgi token again after the release',
     })
     .toBe(true);
@@ -386,7 +400,7 @@ test('depth of field follows camera rest and the walkthrough allowance on webgpu
 
   await expect
     .poll(async () => hasPostToken((await canvas.getAttribute('data-post')) ?? '', 'dof'), {
-      timeout: 3000,
+      timeout: DOF_REST_TIMEOUT_MS,
       message: 'depth of field turns back on after the rest window',
     })
     .toBe(true);

@@ -11,6 +11,10 @@ import type { Page } from '@playwright/test';
 // against the backend their project promises.
 
 const SCENE_READY_TIMEOUT = 60_000;
+// The demand loop draws only when something invalidates it, and the two disclosure interactions
+// change the canvas box, which the element ResizeObserver invalidates (src/main.ts); the frame is
+// owed at once, so 5 s is raf-scheduling headroom on a loaded machine, not wait time.
+const LOOP_WAKE_TIMEOUT_MS = 5_000;
 
 type RendererState = Omit<Awaited<ReturnType<typeof nextProofReading>>, 'drawCalls'>;
 
@@ -70,7 +74,7 @@ test('opening and closing Light Control preserves renderer state and returns to 
   await expect
     .poll(async () => Number(await canvas.getAttribute('data-frames')), {
       message: 'the two real interactions wake the demand loop',
-      timeout: 5_000,
+      timeout: LOOP_WAKE_TIMEOUT_MS,
     })
     .toBeGreaterThan(before.frames);
   const immediatelyAfter = await readRendererState(page);
