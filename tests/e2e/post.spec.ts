@@ -4,20 +4,23 @@ import type { Locator, Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 import { canvasStats } from './support/pixels';
 
-// The post chain's development slices on the WebGL 2 backend. main.ts creates the chain once the
-// tier settles and publishes its features string as data-post from the frame loop, so a canvas
-// whose data-post never appears is a defect: the waits below fail instead of skipping. On this
-// backend the tier decision is always mid (decide.ts lines 54-56), so the aa slice is TRAA and the
-// ao slice is GTAO, deterministically.
+// The post chain's development slices on the WebGL 2 backend. Every URL below pins ?webgl=1, so
+// both projects run these cases: the webgl2 project renders the pinned pages on the bundled
+// Chromium's software WebGL 2, the webgpu project on the installed Chrome's GPU driver, which is
+// the WebGL 2 implementation a visitor whose browser falls back actually gets. main.ts creates the
+// chain once the tier settles and publishes its features string as data-post from the frame loop,
+// so a canvas whose data-post never appears is a defect: the waits below fail instead of skipping.
+// On this backend the tier decision is always mid (decide.ts lines 54-56), so the aa slice is TRAA
+// and the ao slice is GTAO, deterministically.
 
 const SCENE_READY_TIMEOUT = 60_000;
 /**
- * data-post is written by the same frame loop that turned data-scene ready, not seconds later: on
- * the webgl2 project decideTier returns mid (decide.ts lines 54-56), so settleTier returns at its
- * first line without running the benchmark, and the chain is created and published within a frame
- * or two of data-scene="ready". Ten seconds is therefore a generous wait for something that is
- * either already there or never coming, and a slow machine cannot turn the intended skip into a
- * 30-second stall inside the test timeout.
+ * data-post is written by the same frame loop that turned data-scene ready, not seconds later: the
+ * pinned ?webgl=1 makes the backend webgl2 on both projects, so decideTier returns mid (decide.ts
+ * lines 54-56), settleTier returns at its first line without running the benchmark, and the chain
+ * is created and published within a frame or two of data-scene="ready". Ten seconds is therefore a
+ * generous wait for something that is either already there or never coming, and a missing
+ * data-post fails within it instead of stalling toward the test timeout.
  */
 const POST_ATTRIBUTE_TIMEOUT = 10_000;
 
@@ -116,8 +119,9 @@ const POST_TOKEN_ORDER = [
 ];
 
 /**
- * What each development slice publishes as data-post on this project's mid tier. SSGI and SSR are
- * absent from every row because the backend rules them out, not because the slice does.
+ * What each development slice publishes as data-post on the mid tier the pinned WebGL 2 backend
+ * always earns on both projects. SSGI and SSR are absent from every row because the backend rules
+ * them out, not because the slice does.
  */
 const EXPECTED_POST: Record<string, string> = { off: 'off', ao: 'ao', aa: 'traa' };
 
@@ -131,22 +135,15 @@ function hasPostToken(dataPost: string, token: string): boolean {
  * The grid the two frames are reduced to before they are compared, and the tolerance a cell's
  * average channel has to exceed to count as changed, out of 255. Cells rather than raw pixels
  * because the resolution scaler decides each load's backing-store size from how heavy that load's
- * own frames were, and the AO load is the heavier one: measured on this project, a pass-through
- * frame rendered at 521x375 against the same frame rendered at 948x683 moves 0.2508 of its pixels
- * purely by being upscaled to the same CSS box, which is more than the AO moves. The same pair
- * moves 0.0068 of its cells. The AO moves 0.2422 of them.
+ * own frames were, and the AO load is the heavier one: measured on the webgl2 project's software
+ * renderer, a pass-through frame rendered at 521x375 against the same frame at 948x683 moves
+ * 0.2508 of its pixels purely by being upscaled to the same CSS box, which is more than the AO
+ * moves. The same pair moves 0.0068 of its cells. The AO moves 0.2422 of them.
  */
 const COMPARISON_CELLS = 32;
 const CHANNEL_TOLERANCE = 4;
 /** The share of changed cells the AO has to reach: 7 times the measured control, 5 times under it. */
 const MIN_CHANGED_RATIO = 0.05;
-
-function skipUnlessWebgl2(): void {
-  test.skip(
-    test.info().project.name !== 'webgl2',
-    'run once on webgl2: every URL below pins ?webgl=1, so the webgpu project would rerun the same pages',
-  );
-}
 
 /**
  * Opens a slice and returns the canvas once the chain has published what it turned on. The hard
@@ -222,7 +219,6 @@ function changedCellRatio(before: Buffer, after: Buffer): number {
 }
 
 test('ambient occlusion reaches the screen on webgl2', async ({ page }) => {
-  skipUnlessWebgl2();
   // Two full loads in one test: the pass-through frame is the control the AO frame is measured
   // against, and a chain that silently fell back to pass-through would otherwise pass every
   // assertion in this file.
@@ -249,7 +245,6 @@ test('ambient occlusion reaches the screen on webgl2', async ({ page }) => {
 });
 
 test('anti-aliasing reaches the screen on webgl2', async ({ page }) => {
-  skipUnlessWebgl2();
   const canvas = await openSlice(page, 'aa');
 
   const stats = await canvasStats(canvas);
@@ -259,8 +254,6 @@ test('anti-aliasing reaches the screen on webgl2', async ({ page }) => {
 });
 
 test('max slice on webgl2 retains ao and traa without ssgi or ssr', async ({ page }) => {
-  skipUnlessWebgl2();
-
   await page.goto('/?webgl=1&gate=off&post=max');
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
@@ -327,8 +320,6 @@ test('diagnostic SSGI remains full resolution while the pointer drags on WebGPU'
 });
 
 test('finishing pass reaches the screen on webgl2 on max and is absent on off', async ({ page }) => {
-  skipUnlessWebgl2();
-
   await page.goto('/?webgl=1&gate=off&post=max');
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });

@@ -1,17 +1,13 @@
 import { expect, test, expectConsoleError } from './support/fixtures';
 
 // The loss notice is the page's answer to a GPU that disappears mid-session. The URL pins ?webgl=1,
-// so the lost device is the page's forced WebGL 2 context, reached through WEBGL_lose_context; the
-// check runs once on the webgl2 project because the webgpu project would rerun the same pinned
-// scenario. It deliberately loses the device while the Scene reveal veil is frozen black: that is
-// the hard case in which both the lobby retry and page-level Reload recovery must remain operable
-// without exposing an unready scene.
+// so the lost device is the page's forced WebGL 2 context, reached through WEBGL_lose_context, and
+// both projects run the case: the webgl2 project loses the bundled Chromium's software-rendered
+// context, the webgpu project the installed Chrome's GPU-driver context, which is the WebGL 2
+// implementation a visitor whose browser falls back actually gets. It deliberately loses the device
+// while the Scene reveal veil is frozen black: that is the hard case in which both the lobby retry
+// and page-level Reload recovery must remain operable without exposing an unready scene.
 test('fails closed and keeps reload recovery operable when WebGL is lost during black-hold', async ({ page }) => {
-  test.skip(
-    test.info().project.name !== 'webgl2',
-    'run once on webgl2: the URL pins ?webgl=1, so the webgpu project would rerun the same forced loss',
-  );
-
   await page.goto('/?webgl=1&e2e=1&gate=on&freeze=black-hold');
   const lobby = page.locator('#entry-lobby');
   const veil = page.locator('#scene-veil');
