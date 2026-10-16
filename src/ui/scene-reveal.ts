@@ -175,8 +175,11 @@ export class SceneRevealCoordinator {
     return { ...this.timestamps };
   }
 
-  /** Fails closed from renderer errors or device loss without hiding the retry/reload recovery UI. */
-  public fail(error: Error | string): void {
+  /**
+   * Fails closed from renderer errors or device loss without hiding the retry/reload recovery UI.
+   * `options` reaches the lobby's error pane unchanged (see EntryLobby.setError).
+   */
+  public fail(error: Error | string, options?: { announce?: boolean }): void {
     if (this.disposed || this.failed || this.currentState === 'revealed') {
       return;
     }
@@ -187,7 +190,7 @@ export class SceneRevealCoordinator {
     this.veilElement.hidden = true;
     this.veilElement.style.display = 'none';
     const message = error instanceof Error ? error.message : String(error);
-    this.options.lobby?.setError(message);
+    this.options.lobby?.setError(message, options);
     this.options.onError?.(message);
   }
 

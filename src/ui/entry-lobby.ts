@@ -63,7 +63,12 @@ export interface EntryLobby {
   setBlackHold(): void;
   setRevealing(): void;
   setRevealed(): void;
-  setError(message: string): void;
+  /**
+   * Shows a failure in the error pane. `announce: false` when another surface already announces
+   * this failure: the pane then shows without its alert role, so assistive technology hears the
+   * failure once. Announced by default.
+   */
+  setError(message: string, options?: { announce?: boolean }): void;
   setUnsupported(message: string): void;
   waitUntilReadyHidden(): Promise<void>;
   prepareForReveal(): void;
@@ -163,8 +168,13 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
    * surface. The title and message are written while the pane is still hidden, because a
    * live region announces only the changes that happen while it is rendered, and the pane
    * then appears with its alert role: one announcement per error, the same on every path.
+   * When another surface announces the failure, the pane drops the role before its text
+   * changes, so a pane still visible from an earlier failure does not speak the new message.
    */
-  function showErrorPane(message: string, title: string | null): void {
+  function showErrorPane(message: string, title: string | null, announce: boolean): void {
+    if (!announce) {
+      errorPane?.removeAttribute('role');
+    }
     if (title !== null && errorTitle !== null) {
       errorTitle.textContent = title;
     }
@@ -172,7 +182,9 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       errorMessage.textContent = message;
     }
     if (errorPane !== null) {
-      errorPane.setAttribute('role', 'alert');
+      if (announce) {
+        errorPane.setAttribute('role', 'alert');
+      }
       errorPane.hidden = false;
     }
   }
@@ -190,7 +202,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       errorMessage.id = 'lobby-unsupported-message';
       loadBtn?.setAttribute('aria-describedby', errorMessage.id);
     }
-    showErrorPane(message, '3D unavailable');
+    showErrorPane(message, '3D unavailable', true);
     if (retryBtn !== null) {
       retryBtn.hidden = true;
     }
@@ -419,7 +431,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       lobby.remove();
     },
 
-    setError(message: string): void {
+    setError(message: string, options?: { announce?: boolean }): void {
       if (currentState === 'disposed') {
         return;
       }
@@ -435,7 +447,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       if (loadingPane !== null) {
         loadingPane.hidden = true;
       }
-      showErrorPane(message, null);
+      showErrorPane(message, null, options?.announce !== false);
       if (cardElement !== null) {
         cardElement.dataset['view'] = 'error';
       }

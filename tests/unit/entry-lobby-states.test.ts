@@ -153,6 +153,32 @@ describe('error pane is announced once on every error path', () => {
     expect(pane.getAttribute('role')).toBe('alert');
     expect(pane.querySelector('.entry-lobby__error-message')?.textContent).toBe('Second failure');
   });
+
+  it('shows a failure another surface announces without the alert role', () => {
+    const { lobby, element } = mountLobby();
+    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+    const pane = paneOf(element);
+    lobby.setError('The graphics device was lost.', { announce: false });
+    expect(pane.hidden).toBe(false);
+    expect(pane.hasAttribute('role')).toBe(false);
+    expect(pane.querySelector('.entry-lobby__error-message')?.textContent).toBe('The graphics device was lost.');
+  });
+
+  it('drops the alert role before the message changes when a later failure is announced elsewhere', async () => {
+    const { lobby, element } = mountLobby();
+    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+    const pane = paneOf(element);
+    lobby.setError('Connection lost during asset download');
+    await vi.advanceTimersByTimeAsync(0);
+    const order = recordPaneMutations(pane);
+    lobby.setError('The graphics device was lost.', { announce: false });
+    await vi.advanceTimersByTimeAsync(0);
+    const roleAt = order.indexOf('pane role');
+    expect(roleAt, 'the alert role is removed').toBeGreaterThan(-1);
+    expect(roleAt, 'role removed before the message changes')
+      .toBeLessThan(order.indexOf('text: entry-lobby__error-message'));
+    expect(pane.hasAttribute('role')).toBe(false);
+  });
 });
 
 describe('unsupported surface after the Load press', () => {

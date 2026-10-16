@@ -293,11 +293,14 @@ async function main(): Promise<void> {
       recovery.setRendererError(true);
       updateRecoveryEligibility();
       canvas.dataset['scene'] = 'error';
+      // The loss notice below is this failure's one announcement (an alert carrying the reason and
+      // Reload); the lobby shows the same failure without announcing it a second time.
+      const announcedByNotice = { announce: false };
       if (revealCoordinator !== null) {
-        revealCoordinator.fail(message);
+        revealCoordinator.fail(message, announcedByNotice);
       } else {
         // Before the coordinator exists, the opaque lobby is already the fail-closed surface.
-        lobby?.setError(message);
+        lobby?.setError(message, announcedByNotice);
       }
       showLossNotice(document.body, info, () => location.reload());
     },

@@ -306,8 +306,23 @@ describe('SceneRevealCoordinator', () => {
     expect(coordinator.state).toBe('error');
     expect(coordinator.veil.dataset.state).toBe('error');
     expect(coordinator.veil.hidden).toBe(true);
-    expect(mockLobby.setError).toHaveBeenCalledWith('renderer lost during reveal');
+    expect(mockLobby.setError).toHaveBeenCalledWith('renderer lost during reveal', undefined);
     expect(onError).toHaveBeenCalledWith('renderer lost during reveal');
+  });
+
+  it('passes the announcement choice to the lobby when another surface announces the failure', () => {
+    const coordinator = new SceneRevealCoordinator({
+      canvas,
+      search: '',
+      lobby: mockLobby,
+      predicates: createAllPassingPredicates(),
+      wakeRenderer: vi.fn(),
+      onFrameRequest: vi.fn().mockResolvedValue(undefined),
+    });
+
+    coordinator.fail('The graphics device was lost.', { announce: false });
+
+    expect(mockLobby.setError).toHaveBeenCalledWith('The graphics device was lost.', { announce: false });
   });
 
   it('reduced motion takes the instant path without decorative delays', async () => {
