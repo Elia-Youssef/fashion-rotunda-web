@@ -232,6 +232,61 @@ describe('mountProductCard', () => {
   });
 });
 
+describe('the card region name', () => {
+  it('names the region from its own heading instead of a static label', () => {
+    mount();
+    const card = root.querySelector<HTMLElement>('.product-card')!;
+    expect(card.getAttribute('aria-label')).toBeNull();
+    const labelledBy = card.getAttribute('aria-labelledby');
+    expect(labelledBy).not.toBeNull();
+    const heading = root.querySelector<HTMLElement>('.product-card__name')!;
+    expect(heading.tagName).toBe('H2');
+    // The reference must resolve, inside this card, to the heading that shows the look name.
+    expect(labelledBy).toBe(heading.id);
+    expect(document.getElementById(labelledBy!)).toBe(heading);
+    expect(heading.textContent).toBe('Wallis Dress');
+  });
+
+  it('follows look switches on the same heading element', () => {
+    const handle = mount();
+    const card = root.querySelector<HTMLElement>('.product-card')!;
+    const heading = root.querySelector<HTMLElement>('.product-card__name')!;
+    handle.setLook(OTHER, 'base');
+    // The heading node survives the switch, so the id stays valid and the region reads the new
+    // look's name without any per-switch update.
+    expect(root.querySelector('.product-card__name')).toBe(heading);
+    expect(card.getAttribute('aria-labelledby')).toBe(heading.id);
+    expect(heading.textContent).toBe('Zoot Suit');
+    expect(document.getElementById(heading.id)?.textContent).toBe('Zoot Suit');
+  });
+
+  it('gives each mounted card a heading id of its own', () => {
+    mount();
+    const secondRoot = document.createElement('aside');
+    document.body.appendChild(secondRoot);
+    try {
+      const second = mountProductCard(secondRoot, {
+        look: OTHER,
+        variant: 'base',
+        thumbnailUrl: (look: CatalogLook): string => `/content/${look.thumbnail ?? ''}`,
+        actions: actions(),
+      });
+      const first = root.querySelector<HTMLElement>('.product-card')!;
+      const secondCard = secondRoot.querySelector<HTMLElement>('.product-card')!;
+      const firstId = first.getAttribute('aria-labelledby');
+      const secondId = secondCard.getAttribute('aria-labelledby');
+      expect(firstId).not.toBe(secondId);
+      expect(first.contains(document.getElementById(firstId!))).toBe(true);
+      expect(secondCard.contains(document.getElementById(secondId!))).toBe(true);
+      expect(document.getElementById(firstId!)?.textContent).toBe('Wallis Dress');
+      expect(document.getElementById(secondId!)?.textContent).toBe('Zoot Suit');
+      second.dispose();
+    } finally {
+      secondRoot.remove();
+    }
+  });
+});
+
 describe('ProductCardHandle.setVariant', () => {
   it('moves the check and clears it with null', () => {
     const handle = mount();

@@ -33,7 +33,10 @@ export interface ProductCardHandle {
   dispose(): void;
 }
 
-/** Ids must be unique per document, so two cards on one page cannot collide on aria-controls. */
+/**
+ * Ids must be unique per document, so two cards on one page cannot collide on aria-controls or
+ * the heading that names the region.
+ */
 let cardSerial = 0;
 
 // The swatches keep the catalogue's variant ids in URLs and data attributes, but name themselves
@@ -52,10 +55,13 @@ export function variantDisplayName(variant: string): string {
 export function mountProductCard(root: HTMLElement, options: ProductCardOptions): ProductCardHandle {
   cardSerial += 1;
   const swatchesId = `product-card-${cardSerial}-swatches`;
+  const nameId = `product-card-${cardSerial}-name`;
 
   const card = document.createElement('section');
   card.className = 'product-card';
-  card.setAttribute('aria-label', 'Look');
+  // Named by the visible heading: the region name follows every look switch for free, where a
+  // static aria-label would have to be rewritten on each one.
+  card.setAttribute('aria-labelledby', nameId);
 
   const head = document.createElement('div');
   head.className = 'product-card__head';
@@ -70,6 +76,7 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
   heading.className = 'product-card__heading';
   const name = document.createElement('h2');
   name.className = 'product-card__name';
+  name.id = nameId;
   const description = document.createElement('p');
   description.className = 'product-card__description';
   const source = document.createElement('a');
