@@ -52,8 +52,11 @@ export class ErrorGuard {
         location: `${source.url}:${source.lineNumber}:${source.columnNumber}`,
       };
       this.record(page, report);
-      // Inspect object arguments before navigation or closure destroys their handles. Keep the
-      // synchronous text even if an object is no longer available at teardown.
+      // Each handle.evaluate grants the page user activation. Only errors and warnings need
+      // object details: backend errors and post-fallback warnings can hide GPU diagnostics in
+      // truncated previews. Keep their inspection before navigation destroys the handles;
+      // every other console type is checked from its synchronous text without touching the page.
+      if (report.type !== 'error' && report.type !== 'warning') return;
       const task = Promise.all(message.args().map((handle) => handle.evaluate((value: unknown) => {
         if (typeof value === 'object' && value !== null) {
           return ['name', 'type', 'message'].map((key) => {

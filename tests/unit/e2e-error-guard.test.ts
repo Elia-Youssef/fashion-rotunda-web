@@ -1,9 +1,10 @@
 import { EventEmitter } from 'node:events';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Browser, BrowserContext, ConsoleMessage, Page } from '@playwright/test';
 import { ErrorGuard } from '../e2e/support/error-guard';
 
 class FakePage extends EventEmitter {
+  readonly inspectArgument = vi.fn(async (fn: (value: unknown) => string, value: unknown) => fn(value));
   url(): string { return 'http://localhost/test'; }
   context(): BrowserContext { return this.owner as unknown as BrowserContext; }
   constructor(private readonly owner?: FakeContext) { super(); }
@@ -13,7 +14,9 @@ class FakePage extends EventEmitter {
     this.emit('console', {
       type: () => type, text: () => text,
       location: () => ({ url: 'startup.ts', lineNumber: 12, columnNumber: 3 }),
-      args: () => args.map((value) => ({ evaluate: async (fn: (value: unknown) => string) => fn(value) })),
+      args: () => args.map((value) => ({
+        evaluate: (fn: (value: unknown) => string) => this.inspectArgument(fn, value),
+      })),
     } as unknown as ConsoleMessage);
   }
 }
@@ -37,7 +40,32 @@ function setup() {
   return { guard, page };
 }
 
+// All console event types other than errors and warnings carry text-only diagnostics.
+const TEXT_ONLY_TYPES = [
+  'log', 'debug', 'info', 'dir', 'dirxml', 'table', 'trace', 'clear', 'startGroup',
+  'startGroupCollapsed', 'endGroup', 'assert', 'profile', 'profileEnd', 'count', 'time', 'timeEnd',
+] satisfies ReturnType<ConsoleMessage['type']>[];
+
 describe('browser error guard', () => {
+  it.each(TEXT_ONLY_TYPES)('collects %s without evaluating any argument', async (type) => {
+    const { guard, page } = setup();
+    page.console(type, 'ordinary output', ['text', { message: 'diagnostic' }]);
+    await guard.settled();
+    await expect(guard.assertClean()).resolves.toBeUndefined();
+    expect(page.inspectArgument).not.toHaveBeenCalled();
+    expect(guard.reports(page.page)).toEqual([{
+      kind: 'console', type, text: 'ordinary output', detail: 'ordinary output',
+      location: 'startup.ts:12:3',
+    }]);
+  });
+
+  it.each(TEXT_ONLY_TYPES)('still rejects GPU diagnostics in %s text without evaluation', async (type) => {
+    const { guard, page } = setup();
+    page.console(type, 'GPUValidationError: invalid binding', [{ message: 'diagnostic' }]);
+    await expect(guard.assertClean()).rejects.toThrow(`Unexpected console ${type}: GPUValidationError`);
+    expect(page.inspectArgument).not.toHaveBeenCalled();
+  });
+
   it('fails for every unexpected console error with its message and location', async () => {
     const { guard, page } = setup();
     page.console('error', 'startup broke');
@@ -103,10 +131,27 @@ describe('browser error guard', () => {
     await expect(guard.assertClean()).rejects.toThrow(text);
   });
 
-  it('awaits object arguments to catch validation errors hidden by the console preview', async () => {
+  it.each(['error', 'warning'])('awaits hidden GPU object details in %s events', async (type) => {
     const { guard, page } = setup();
-    page.console('warning', 'GPU object', [{ name: 'GPUValidationError', message: 'Texture copy range overflow' }]);
+    page.console(type, 'GPU object', [{ name: 'GPUValidationError', message: 'Texture copy range overflow' }]);
     await expect(guard.assertClean()).rejects.toThrow('GPUValidationError: Texture copy range overflow');
+    expect(page.inspectArgument).toHaveBeenCalledOnce();
+  });
+
+  it('retains hidden error fields for expected console error declarations', async () => {
+    const { guard, page } = setup();
+    guard.expectError(page.page, 'console', /Error: Device Lost/, 'deliberate device loss');
+    page.console('error', 'backend object', [new Error('Device Lost')]);
+    await expect(guard.assertClean()).resolves.toBeUndefined();
+    expect(page.inspectArgument).toHaveBeenCalledOnce();
+  });
+
+  it('cannot excuse a hidden GPU warning with a console error declaration', async () => {
+    const { guard, page } = setup();
+    guard.expectError(page.page, 'console', /GPUInternalError/, 'deliberate backend error');
+    page.console('warning', 'backend object', [{ type: 'GPUInternalError' }]);
+    await expect(guard.assertClean()).rejects.toThrow('Unexpected console warning: backend object | GPUInternalError');
+    await expect(guard.assertClean()).rejects.toThrow('Missing expected console');
   });
 
   it('retains synchronous errors when argument handles were destroyed on navigation', async () => {
