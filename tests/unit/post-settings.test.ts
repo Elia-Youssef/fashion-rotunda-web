@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { postSettingsFor, settingsForLevel } from '../../src/post/settings';
-import type { Backend } from '../../src/post/settings';
+import type { Backend, PostSettings } from '../../src/post/settings';
 import { TIERS, TIER_ORDER } from '../../src/tiers/table';
 import type { TierSettings } from '../../src/tiers/table';
 
@@ -404,5 +404,75 @@ describe('postSettingsFor pinned against TIERS', () => {
       expect(degraded.ao).toBe(initial.ao);
       expect(degraded.traa).toBe(initial.traa);
     });
+  });
+});
+
+describe('postSettingsFor on rows the shipped table cannot express', () => {
+  // Every shipped row carries ssgi 'off' and lut true, so the table-driven tests above cannot
+  // separate the real mapping from a hardcoded 'off', a hardcoded vignette, or a missing webgl2
+  // guard on a live row. This row turns each of those knobs the other way.
+  const row: TierSettings = {
+    pixelRatioCap: 2,
+    frameCapTouch: null,
+    frameBudgetMs: 16.7,
+    scalerSteps: [1.0, 0.85, 0.7, 0.55],
+    shadowMapSize: 2048,
+    antialiasing: 'traa',
+    ao: 'gtao-half',
+    ssgi: 'full-with-half-fallback',
+    ssr: true,
+    bloom: false,
+    lut: false,
+    dof: 'at-rest',
+    assetSet: 'full',
+  };
+
+  it('passes a live SSGI row through on webgpu', () => {
+    expect(postSettingsFor(row, false, 'webgpu').ssgi).toBe('full-with-half-fallback');
+  });
+
+  it('forces the compute effects off on webgl2 even when the row enables them', () => {
+    const settings = postSettingsFor(row, false, 'webgl2');
+    expect(settings.ssgi).toBe('off');
+    expect(settings.ssr).toBe(false);
+    expect(settings.dof).toBe('off');
+  });
+
+  it('rides the vignette with the lut when the row turns the lut off', () => {
+    const settings = postSettingsFor(row, false, 'webgpu');
+    expect(settings.lut).toBe(false);
+    expect(settings.vignette).toBe(false);
+  });
+});
+
+describe('settingsForLevel on a live SSGI record', () => {
+  // The diagnostic gi slice builds a record whose ssgi is 'full-with-half-fallback' while the
+  // governor sits parked at 'full', and a tier row that turns SSGI back on would walk the whole
+  // ladder, so every level has to derive from a live record correctly. Each test builds its own
+  // record: a derivation that mutated its input must not hide behind an earlier test's damage.
+  function liveRecord(): PostSettings {
+    return { ...postSettingsFor(TIERS.high, false, 'webgpu'), ssgi: 'full-with-half-fallback' };
+  }
+
+  it('keeps the live SSGI at full and ssgi-half', () => {
+    const record = liveRecord();
+    expect(settingsForLevel(record, 'full')).toEqual(record);
+    expect(settingsForLevel(record, 'ssgi-half')).toEqual(record);
+  });
+
+  it('turns the live SSGI off at every degraded level', () => {
+    const record = liveRecord();
+    expect(settingsForLevel(record, 'no-ssgi').ssgi).toBe('off');
+    expect(settingsForLevel(record, 'no-ssr').ssgi).toBe('off');
+    expect(settingsForLevel(record, 'base').ssgi).toBe('off');
+  });
+
+  it('derives every level without touching the record it was given', () => {
+    const record = liveRecord();
+    const snapshot = { ...record };
+    for (const level of ['full', 'ssgi-half', 'no-ssgi', 'no-ssr', 'base'] as const) {
+      settingsForLevel(record, level);
+      expect(record).toEqual(snapshot);
+    }
   });
 });
