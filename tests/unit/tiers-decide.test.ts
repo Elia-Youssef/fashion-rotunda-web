@@ -40,6 +40,22 @@ describe('isIntegratedGpu', () => {
     expect(isIntegratedGpu(gpuName)).toBe(false);
   });
 
+  // Each probe name carries exactly one marker, so removing or renaming any single
+  // marker is observable here even when the other probes still pass through another
+  // marker ("Intel(R) UHD Graphics" contains both "intel" and "uhd").
+  it.each([
+    ['Intel(R) HD Graphics 620'],
+    ['UHD Graphics 770'],
+    ['Iris Xe Graphics'],
+    ['Mali-G710'],
+    ['Adreno 830'],
+    ['SwiftShader 6.0'],
+    ['llvmpipe (LLVM 16.0.7, 256 bits)'],
+    ['Microsoft Basic Render Driver'],
+  ])('classifies %s as integrated on that marker alone', (gpuName) => {
+    expect(isIntegratedGpu(gpuName)).toBe(true);
+  });
+
   it('matches case-insensitively', () => {
     expect(isIntegratedGpu('intel(r) uhd graphics')).toBe(true);
     expect(isIntegratedGpu('APPLE M2')).toBe(true);
