@@ -17,7 +17,7 @@ import { WALK_EYE_HEIGHT, WALK_RADIUS, WALK_SPEED } from '../../src/camera/walk-
 // value (tests/unit/camera-walkthrough.test.ts, "initializes at [0, 0, 5.5] ...", "moves forward
 // with KeyW and stops before a collision wall", "doubles speed when Shift is held", and the
 // collision baselines), and the blended walk entry pose [0, 1.65, 5.5] built from
-// WALK_EYE_HEIGHT in src/camera/mount.ts (tests/unit/camera-mount.test.ts, "cuts only after
+// WALK_EYE_HEIGHT in src/camera/mount.ts (tests/unit/camera-mount-ownership.test.ts, "cuts only after
 // readiness under reduced motion and releases the animation hold").
 
 let canvas: HTMLCanvasElement;

@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 //
 // Media query preludes are exempt by the same rule the CSS spec imposes: var() cannot appear in
 // a media query, so the 768px/1200px breakpoints are the one place a number must stay literal.
-// The numbers are pinned to the shell's BREAKPOINTS by tests/unit/chrome-shell.test.ts instead.
+// The numbers are pinned to the shell's BREAKPOINTS by tests/unit/chrome-shell-breakpoints.test.ts instead.
 
 /** The folders under src that hold component stylesheets; each one is scanned in full. */
 const COMPONENT_DIRS = ['ui', 'proof', 'camera'] as const;
