@@ -78,7 +78,7 @@ describe('texture caps by complete slot usage', () => {
     })).toBe(1024);
   });
 
-  it('preserves the half set across slot and file classes', () => {
+  it('applies the reduced half caps across slot and file classes', () => {
     const slotSets = [[], ['baseColorTexture'], ['metallicRoughnessTexture'], ['occlusionTexture'],
       ['metallicRoughnessTexture', 'occlusionTexture'], ['metallicRoughnessTexture', 'baseColorTexture'],
       ['normalTexture'], ['clearcoatNormalTexture']];
@@ -87,7 +87,7 @@ describe('texture caps by complete slot usage', () => {
         for (const floor of [false, true]) {
           for (const mannequin of [false, true]) {
             const normalOnly = slots.length > 0 && slots.every((slot) => /normal/i.test(slot));
-            const expected = mannequin || normalOnly ? 512 : 1024;
+            const expected = mannequin || normalOnly ? 256 : 512;
             expect(textureCapForUsage('half', slots, {
               file, look: file.startsWith('looks/') ? {} : undefined, floor, mannequin,
             })).toBe(expected);

@@ -17,9 +17,9 @@ describe('TEXTURE_CAPS', () => {
     });
   });
 
-  it('pins the phone caps: 1024, and 512 for mannequin and garment-normal maps', () => {
+  it('pins the phone caps: 512, and 256 for mannequin and normal maps', () => {
     expect(TEXTURE_CAPS.half).toEqual({
-      default: 1024, floor: 1024, mannequin: 512, staticNormal: 512, garmentNormal: 512,
+      default: 512, floor: 512, mannequin: 256, staticNormal: 256, garmentNormal: 256,
     });
   });
 
@@ -31,18 +31,18 @@ describe('TEXTURE_CAPS', () => {
 describe('textureCap', () => {
   it('gives an ordinary texture the default cap', () => {
     expect(textureCap('full', {})).toBe(2048);
-    expect(textureCap('half', {})).toBe(1024);
+    expect(textureCap('half', {})).toBe(512);
     expect(textureCap('full')).toBe(2048);
   });
 
   it('gives the floor the wider cap on desktop and no exception on a phone', () => {
     expect(textureCap('full', { floor: true })).toBe(4096);
-    expect(textureCap('half', { floor: true })).toBe(1024);
+    expect(textureCap('half', { floor: true })).toBe(512);
   });
 
   it('gives the mannequin the tighter cap, and lets it win over the floor flag', () => {
-    expect(textureCap('half', { mannequin: true })).toBe(512);
-    expect(textureCap('half', { mannequin: true, floor: true })).toBe(512);
+    expect(textureCap('half', { mannequin: true })).toBe(256);
+    expect(textureCap('half', { mannequin: true, floor: true })).toBe(256);
     expect(textureCap('full', { mannequin: true })).toBe(512);
   });
 
@@ -91,16 +91,16 @@ describe('staticNormal cap', () => {
   it('halves a normal map on the rotunda or the plinth, and yields to the mannequin cap', () => {
     expect(textureCap('full', { staticNormal: true })).toBe(1024);
     expect(textureCap('full', { staticNormal: true, floor: true })).toBe(1024);
-    expect(textureCap('half', { staticNormal: true })).toBe(512);
-    expect(textureCap('half', { staticNormal: true, mannequin: true })).toBe(512);
+    expect(textureCap('half', { staticNormal: true })).toBe(256);
+    expect(textureCap('half', { staticNormal: true, mannequin: true })).toBe(256);
   });
 });
 
 describe('garmentNormal cap', () => {
   it('bounds garment-only normal maps without changing mannequin precedence', () => {
     expect(textureCap('full', { garmentNormal: true })).toBe(1024);
-    expect(textureCap('half', { garmentNormal: true })).toBe(512);
+    expect(textureCap('half', { garmentNormal: true })).toBe(256);
     expect(textureCap('full', { garmentNormal: true, mannequin: true })).toBe(512);
-    expect(textureCap('half', { garmentNormal: true, mannequin: true })).toBe(512);
+    expect(textureCap('half', { garmentNormal: true, mannequin: true })).toBe(256);
   });
 });

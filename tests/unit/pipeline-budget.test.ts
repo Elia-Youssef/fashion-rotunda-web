@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync, statSync } from 'node:fs';
 import {
   BUDGETS,
   BYTES_PER_PIXEL,
@@ -9,6 +10,7 @@ import {
   MIP_FACTOR,
 } from '../../pipeline/gltf/lib/budget.mjs';
 import { fileEntry, textureEntry } from '../../pipeline/gltf/lib/manifest.mjs';
+import type { Manifest } from '../../pipeline/gltf/lib/manifest.mjs';
 
 // gpuBytes is the only number in the project with no runtime instrument behind it: renderer.info
 // reports texture counts, not bytes. The proof panel and the budget report both print this, so the
@@ -16,6 +18,40 @@ import { fileEntry, textureEntry } from '../../pipeline/gltf/lib/manifest.mjs';
 
 // Decimal megabytes, the unit budget.mjs uses for its targets and its printout.
 const MB = 1_000_000;
+// The measured opening scene bodies before the phone texture reduction, excluding HTTP overhead.
+const PREVIOUS_PHONE_OPENING_BYTES = 4_503_656;
+const REQUIRED_PHONE_OPENING_SAVING = 1_500_000;
+
+describe('shipped phone budget rows', () => {
+  const manifest = JSON.parse(readFileSync('public/content/manifest.json', 'utf8')) as Manifest;
+  const catalog = JSON.parse(readFileSync('public/content/half/catalog.json', 'utf8')) as {
+    rotunda: { file: string }; plinth: { file: string }; looks: { file: string }[];
+  };
+  const files = manifest.sets['half']!.files;
+  const firstLook = catalog.looks[0]!.file;
+  const measured = budgetRows('half', files, firstLook, null);
+
+  it('saves at least 1500000 bytes in the three opening files without changing the default look', () => {
+    expect(firstLook).toBe('looks/wallis-dress.glb');
+    const names = [catalog.rotunda.file, catalog.plinth.file, firstLook];
+    const diskBytes = names.reduce((sum, name) => {
+      const bytes = statSync('public/content/half/' + name).size;
+      expect(files[name]?.bytes, name).toBe(bytes);
+      return sum + bytes;
+    }, 0);
+    expect(measured.rows.find((r) => r.key === 'firstFrameBytes')?.actual).toBe(diskBytes);
+    expect(PREVIOUS_PHONE_OPENING_BYTES - diskBytes).toBeGreaterThanOrEqual(REQUIRED_PHONE_OPENING_SAVING);
+  });
+
+  it('reports the smaller texture and payload rows against the existing phone allowances', () => {
+    expect(measured.rows.every((r) => r.pass)).toBe(true);
+    expect(measured.rows.find((r) => r.key === 'largestTexture')?.actual).toBeLessThanOrEqual(512);
+    expect(measured.rows.find((r) => r.key === 'largestNonFloorTexture')?.actual).toBeLessThanOrEqual(512);
+    expect(formatBudgetTable('half', measured.rows, measured.info))
+      .toContain('encoding caps 512 px colour/data, 512 px floor, 256 px mannequin, 256/256 px static/garment normals');
+    expect(manifest.errors).toEqual([]);
+  });
+});
 
 describe('gpuBytes', () => {
   it('pins the mip factor and the bytes per pixel of each format', () => {

@@ -13,15 +13,15 @@ export const FLOOR_MESH_NAME = 'SM_Floor_A';
 /**
  * Caps per set, in pixels on the longest side.
  *
- * The half set is the phone set. The texture plan fixes it at 1024 max with 512 for the mannequin maps,
- * and states no floor exception, so the floor is capped at 1024 there too: half of the full set's
- * 2048 today, and still inside the budget's 2048 phone allowance if the floor is ever re-exported
- * at 4096.
+ * The phone opening budget needs smaller maps rather than further garment decimation. Colour and
+ * scalar data keep 512 pixels, including the floor; normal and mannequin maps keep 256. This trades
+ * fine marble, weave and skin detail for transfer size on every half-set asset, with no named-map
+ * exceptions and no change to the full set.
  */
 export const TEXTURE_CAPS = {
   // Scalar surface data and mannequin detail need less resolution than the architectural colour maps.
   full: { default: 2048, floor: 4096, mannequin: 512, staticData: 1024, staticNormal: 1024, garmentNormal: 1024 },
-  half: { default: 1024, floor: 1024, mannequin: 512, staticNormal: 512, garmentNormal: 512 },
+  half: { default: 512, floor: 512, mannequin: 256, staticNormal: 256, garmentNormal: 256 },
 };
 
 /**
@@ -34,7 +34,7 @@ export const TEXTURE_CAPS = {
  *   `staticNormal` marks a normal map on the rotunda or the plinth: tiled marble detail seen mostly at
  *   grazing angles, capped at half the default because six such maps at 2048 UASTC were 6 MB of a
  *   13.6 MB first frame against a 10 MB budget (measured 2026-09-19). `garmentNormal` is a normal map
- *   used only by a look garment (not its mannequin). It is capped at 1024 full / 512 half after the
+ *   used only by a look garment (not its mannequin). It is capped at 1024 full / 256 half after the
  *   Zoot output gate measured the full asset at 8.11 MB against its 6 MB ceiling, driven by its Hat
  *   normal's 3.14 MB 2048 UASTC payload.
  *   `staticData` marks exclusively metallic-roughness/occlusion maps on static files. The full set

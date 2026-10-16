@@ -39,7 +39,7 @@ describe('texture plan', () => {
         { floor: false, cap: 2048, target: [2048, 1024] },
         { floor: true, cap: 1024, target: [1024, 512] },
       ]);
-    expect(planTextures(document, 'half', STATIC_FILE).map(({ cap }) => cap)).toEqual([1024, 1024, 512]);
+    expect(planTextures(document, 'half', STATIC_FILE).map(({ cap }) => cap)).toEqual([512, 512, 256]);
   });
 
   it('finds mannequin usage through extensions and sharing and keeps the tighter cap over floor', () => {
@@ -52,7 +52,8 @@ describe('texture plan', () => {
     floor(document, other);
     for (const set of ['full', 'half'] as const) {
       expect(planTextures(document, set, LOOK_FILE)[0]).toMatchObject({
-        texture: shared, floor: true, mannequin: true, role: 'mannequin', cap: 512, target: [512, 256],
+        texture: shared, floor: true, mannequin: true, role: 'mannequin',
+        cap: set === 'full' ? 512 : 256, target: set === 'full' ? [512, 256] : [256, 128],
       });
     }
   });
@@ -63,9 +64,9 @@ describe('texture plan', () => {
     document.createMaterial('dress').setExtension('KHR_materials_clearcoat',
       document.createExtension(KHRMaterialsClearcoat).createClearcoat().setClearcoatNormalTexture(normal));
     expect(planTextures(document, 'full', STATIC_FILE)[0]).toMatchObject({ cap: 1024, encoding: 'uastc' });
-    expect(planTextures(document, 'half', { file: 'plinth.glb' })[0]?.cap).toBe(512);
+    expect(planTextures(document, 'half', { file: 'plinth.glb' })[0]?.cap).toBe(256);
     expect(planTextures(document, 'full', LOOK_FILE)[0]?.cap).toBe(1024);
-    expect(planTextures(document, 'half', LOOK_FILE)[0]?.cap).toBe(512);
+    expect(planTextures(document, 'half', LOOK_FILE)[0]?.cap).toBe(256);
     expect(planTextures(document, 'full', { file: LOOK_FILE.file })[0]?.cap).toBe(2048);
   });
 
@@ -78,7 +79,7 @@ describe('texture plan', () => {
     floor(document, material);
     document.createMaterial('mixed').setBaseColorTexture(mixed).setNormalTexture(mixed);
     expect(planTextures(document, 'full', STATIC_FILE).map(({ cap }) => cap)).toEqual([1024, 2048, 2048]);
-    expect(planTextures(document, 'half', STATIC_FILE).map(({ cap }) => cap)).toEqual([1024, 1024, 1024]);
+    expect(planTextures(document, 'half', STATIC_FILE).map(({ cap }) => cap)).toEqual([512, 512, 512]);
     expect(planTextures(document, 'full', LOOK_FILE).map(({ cap }) => cap)).toEqual([4096, 2048, 2048]);
     expect(planTextures(document, 'full', STATIC_FILE)[1]).toMatchObject({ encoding: 'uastc', colorSpace: 'srgb' });
   });
@@ -111,7 +112,7 @@ describe('texture plan', () => {
     texture(document, 'tiny', [1, 2]);
     expect(planTextures(document, 'full', STATIC_FILE).map(({ target }) => target))
       .toEqual([[2048, 1024], [28, 16], [4, 4]]);
-    expect(planTextures(document, 'half', STATIC_FILE)[0]?.target).toEqual([1024, 512]);
+    expect(planTextures(document, 'half', STATIC_FILE)[0]?.target).toEqual([512, 256]);
   });
 
   it('skips sizing for missing images but still plans naming encoding and colour space', () => {

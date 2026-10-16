@@ -6,7 +6,7 @@
 //
 // Targets come from the project budget table and from nowhere else. Change them there first.
 
-import { FLOOR_MESH_NAME } from './sizing.mjs';
+import { FLOOR_MESH_NAME, TEXTURE_CAPS } from './sizing.mjs';
 
 /**
  * Mip chain overhead. A full chain adds 1/4 + 1/16 + ... = 1/3 of the base level, and the data
@@ -160,6 +160,9 @@ export function formatBudgetTable(set, rows, info) {
       `  ${row.label.padEnd(52)} ${actual.padStart(12)} ${target.padStart(12)}  ${row.pass ? 'ok' : 'MISS'}`,
     );
   }
+  const caps = TEXTURE_CAPS[set];
+  lines.push(`  note: encoding caps ${caps.default} px colour/data, ${caps.floor} px floor, ` +
+    `${caps.mannequin} px mannequin, ${caps.staticNormal}/${caps.garmentNormal} px static/garment normals`);
   if (info) {
     lines.push(`  note: all files together ${formatMb(info.allFilesGpuBytes)} on the GPU, ` +
       `${formatMb(info.allFilesBytes)} on disk`);
