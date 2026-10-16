@@ -13,7 +13,7 @@ import {
   mountEntryLobby,
   trackFirstFrameProgress,
 } from '../../src/ui/entry-lobby';
-import type { EntryLobby, ProgressReading } from '../../src/ui/entry-lobby';
+import type { EntryLobby, LobbyState, ProgressReading } from '../../src/ui/entry-lobby';
 import { lobbyWanted as gateWanted } from '../../src/ui/entry-lobby/gate';
 import { createLobbyMusicSwitch } from '../../src/ui/entry-lobby/music-switch';
 import { bindFocusTrap, focusInitially } from '../../src/ui/entry-lobby/focus-trap';
@@ -244,6 +244,40 @@ describe('one-shot Load activation and input modes', () => {
     expect(lobby.state).toBe('loading');
     await vi.advanceTimersByTimeAsync(0);
     expect(resolveCount).toBe(1);
+  });
+});
+
+describe('load button aria-busy names only the load in progress', () => {
+  it('carries no aria-busy before the press', () => {
+    const { element } = mountLobby();
+    expect(element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.hasAttribute('aria-busy'))
+      .toBe(false);
+  });
+
+  // Every state the lobby can leave loading through, including the paths that skip ready.
+  const loadEnds: Array<{ label: string; state: LobbyState; end: (lobby: EntryLobby) => void }> = [
+    { label: 'ready', state: 'ready-hidden', end: (lobby) => lobby.setReady() },
+    { label: 'cover-to-black', state: 'cover-to-black', end: (lobby) => lobby.setCoverToBlack() },
+    { label: 'black-hold', state: 'black-hold', end: (lobby) => lobby.setBlackHold() },
+    { label: 'revealing', state: 'revealing', end: (lobby) => lobby.setRevealing() },
+    { label: 'revealed', state: 'revealed', end: (lobby) => lobby.setRevealed() },
+    { label: 'error', state: 'error', end: (lobby) => lobby.setError('Loading failed') },
+    {
+      label: 'unsupported',
+      state: 'error',
+      end: (lobby) => lobby.setUnsupported('This exhibition requires WebGPU or WebGL 2.'),
+    },
+    { label: 'disposal', state: 'disposed', end: (lobby) => lobby.dispose() },
+  ];
+
+  it.each(loadEnds)('clears aria-busy when the load ends in $label', ({ state, end }) => {
+    const { lobby, element } = mountLobby();
+    const btn = element.querySelector<HTMLButtonElement>('#lobby-load-btn')!;
+    btn.click();
+    expect(btn.getAttribute('aria-busy')).toBe('true');
+    end(lobby);
+    expect(lobby.state).toBe(state);
+    expect(btn.getAttribute('aria-busy')).toBe(null);
   });
 });
 

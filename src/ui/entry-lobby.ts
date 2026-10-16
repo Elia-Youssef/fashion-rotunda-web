@@ -136,7 +136,23 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
   const errorMessage = lobby.querySelector<HTMLElement>('.entry-lobby__error-message');
 
   let currentState: LobbyState = 'idle';
-  lobby.dataset['state'] = currentState;
+
+  /**
+   * The one transition every state change goes through. The load button's aria-busy is
+   * derived from the state alone: present while the load it names is in progress, removed
+   * by whatever ends that load, so the attribute never outlives the state it describes.
+   */
+  function transitionTo(next: LobbyState): void {
+    currentState = next;
+    lobby.dataset['state'] = next;
+    if (next === 'loading') {
+      loadBtn?.setAttribute('aria-busy', 'true');
+    } else {
+      loadBtn?.removeAttribute('aria-busy');
+    }
+  }
+
+  transitionTo('idle');
 
   const listeners = new AbortController();
   const musicSwitch = createLobbyMusicSwitch(musicSwitchBtn, options.search, store, listeners.signal);
@@ -208,12 +224,12 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
     if (currentState !== 'idle' || loadBtn?.disabled) {
       return;
     }
-    currentState = 'loading';
-    lobby.dataset['state'] = currentState;
+    transitionTo('loading');
 
+    // The press is one-shot: Load stays disabled for the lobby's remaining life. Only
+    // aria-busy tracks the load itself, and transitionTo clears it when the load ends.
     if (loadBtn !== null) {
       loadBtn.disabled = true;
-      loadBtn.setAttribute('aria-busy', 'true');
     }
 
     if (idlePane !== null) {
@@ -335,8 +351,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
         stopProgressTrackingFn();
         stopProgressTrackingFn = null;
       }
-      currentState = 'ready-hidden';
-      lobby.dataset['state'] = currentState;
+      transitionTo('ready-hidden');
 
       if (statusElement !== null) {
         statusElement.textContent = 'Experience ready';
@@ -355,24 +370,21 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       if (currentState === 'disposed' || currentState === 'error') {
         return;
       }
-      currentState = 'cover-to-black';
-      lobby.dataset['state'] = currentState;
+      transitionTo('cover-to-black');
     },
 
     setBlackHold(): void {
       if (currentState === 'disposed' || currentState === 'error') {
         return;
       }
-      currentState = 'black-hold';
-      lobby.dataset['state'] = currentState;
+      transitionTo('black-hold');
     },
 
     setRevealing(): void {
       if (currentState === 'disposed' || currentState === 'error') {
         return;
       }
-      currentState = 'revealing';
-      lobby.dataset['state'] = currentState;
+      transitionTo('revealing');
     },
 
     setRevealed(): void {
@@ -385,8 +397,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       }
       inputListeners.abort();
       listeners.abort();
-      currentState = 'revealed';
-      lobby.dataset['state'] = currentState;
+      transitionTo('revealed');
       lobby.setAttribute('inert', '');
       lobby.setAttribute('aria-hidden', 'true');
       lobby.hidden = true;
@@ -404,8 +415,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
         stopProgressTrackingFn();
         stopProgressTrackingFn = null;
       }
-      currentState = 'error';
-      lobby.dataset['state'] = currentState;
+      transitionTo('error');
 
       if (idlePane !== null) {
         idlePane.hidden = true;
@@ -435,8 +445,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
         stopProgressTrackingFn();
         stopProgressTrackingFn = null;
       }
-      currentState = 'error';
-      lobby.dataset['state'] = currentState;
+      transitionTo('error');
 
       if (idlePane !== null) {
         idlePane.hidden = true;
@@ -473,7 +482,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       }
       inputListeners.abort();
       listeners.abort();
-      currentState = 'disposed';
+      transitionTo('disposed');
       lobby.remove();
     },
   };
