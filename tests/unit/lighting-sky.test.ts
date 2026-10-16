@@ -3,7 +3,13 @@
 // back to the HDR.
 
 import { Buffer } from 'node:buffer';
-import { DataUtils, EquirectangularReflectionMapping, HalfFloatType, LinearSRGBColorSpace } from 'three';
+import {
+  DataUtils,
+  EquirectangularReflectionMapping,
+  HalfFloatType,
+  LinearFilter,
+  LinearSRGBColorSpace,
+} from 'three';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -231,6 +237,12 @@ describe('gradientSkyPixels', () => {
     expect(() => gradientSkyPixels(visibleSkyPalette(), 8, 1)).toThrow(RangeError);
     expect(() => gradientSkyPixels(visibleSkyPalette(), 0, 8)).toThrow(RangeError);
   });
+
+  it('refuses a fractional width or height', () => {
+    // Row and column indexing assumes whole texels; a fractional side has no defined layout.
+    expect(() => gradientSkyPixels(visibleSkyPalette(), 8.5, 16)).toThrow(RangeError);
+    expect(() => gradientSkyPixels(visibleSkyPalette(), 512, 127.5)).toThrow(RangeError);
+  });
 });
 
 describe('createGradientSkyTexture', () => {
@@ -248,6 +260,20 @@ describe('createGradientSkyTexture', () => {
     const last = 4 * SKY_WIDTH * (SKY_HEIGHT - 1);
     expect(DataUtils.fromHalfFloat(data[last + 2])).toBeCloseTo(zenith[2], 2);
     expect(DataUtils.fromHalfFloat(data[0])).toBeLessThan(DataUtils.fromHalfFloat(data[last]));
+    texture.dispose();
+  });
+
+  it('carries the given name and the filtering the dome read path needs', () => {
+    // Linear mag and min filtering is what makes the gradient smooth on WebGL 2 without the
+    // float-linear extension (see the doc comment on createGradientSkyTexture); one level, no
+    // generated mipmaps, and an upload flag: three's needsUpdate is write-only, so the visible
+    // contract is the texture version it bumps.
+    const texture = createGradientSkyTexture(visibleSkyPalette(), 'visible sky');
+    expect(texture.name).toBe('visible sky');
+    expect(texture.magFilter).toBe(LinearFilter);
+    expect(texture.minFilter).toBe(LinearFilter);
+    expect(texture.generateMipmaps).toBe(false);
+    expect(texture.version).toBeGreaterThan(0);
     texture.dispose();
   });
 });
