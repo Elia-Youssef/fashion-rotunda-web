@@ -56,6 +56,13 @@ export const ONBOARDING_STORAGE_KEY = 'fashion-rotunda.onboarded';
 
 const MARGIN_PX = 16;
 
+// Fallback cadence for the anchor wait in showStep(): the poll re-queries the step's anchor
+// while the MutationObserver watches for its insertion, one querySelector per tick. The
+// observer is the prompt signal, so the backstop keeps a coarse 100 ms cadence, and the
+// 50-attempt cap beside it bounds the fallback wait at about 5 s.
+const ANCHOR_POLL_INTERVAL_MS = 100;
+const ANCHOR_POLL_MAX_ATTEMPTS = 50;
+
 interface SafeAreaInsets {
   top: number;
   right: number;
@@ -259,8 +266,8 @@ export function mountOnboarding(options: OnboardingOptions): OnboardingHandle {
       if (el !== null) {
         stopWaiting();
         present(el, step.id);
-      } else if (attempts < 50 && running) {
-        pollTimer = setTimeout(poll, 100);
+      } else if (attempts < ANCHOR_POLL_MAX_ATTEMPTS && running) {
+        pollTimer = setTimeout(poll, ANCHOR_POLL_INTERVAL_MS);
       }
     }
     poll();
