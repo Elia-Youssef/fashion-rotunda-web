@@ -1,8 +1,9 @@
 // Unit tests for the attract loop state machine with a fake clock.
 // Verifies idle start, input interruption, tour order, hold/move timing, reduced motion, the
-// reused tick reading, and exact replay against poses recorded from the allocating tour.
+// reused tick reading, the setEnabled contract, degenerate view lists, the default clock, and
+// exact replay against poses recorded from the allocating tour.
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
   ATTRACT_HOLD_MS,
@@ -52,6 +53,46 @@ describe('attract loop state machine', () => {
     expect(attract.running).toBe(true);
     expect(reading).not.toBeNull();
     expect(reading?.viewId).toBe('entrance');
+  });
+
+  it('anchors the idle wait at creation, not at the epoch', () => {
+    let clock = 7_000;
+    const attract = createAttract({
+      views: VIEWS,
+      idleMs: 5_000,
+      holdMs: 2_000,
+      moveMs: 1_000,
+      enabled: true,
+      reducedMotion: false,
+      now: () => clock,
+    });
+
+    clock = 11_999;
+    expect(attract.tick()).toBeNull();
+    clock = 12_000;
+    expect(attract.tick()).not.toBeNull();
+    expect(attract.running).toBe(true);
+  });
+
+  it('uses the real clock when no now is provided', () => {
+    vi.useFakeTimers({ toFake: ['performance'] });
+    try {
+      const attract = createAttract({
+        views: VIEWS,
+        idleMs: ATTRACT_IDLE_MS,
+        holdMs: ATTRACT_HOLD_MS,
+        moveMs: ATTRACT_MOVE_MS,
+        enabled: true,
+        reducedMotion: false,
+      });
+
+      expect(attract.tick()).toBeNull();
+      vi.advanceTimersByTime(ATTRACT_IDLE_MS);
+      expect(attract.tick()).not.toBeNull();
+      expect(attract.running).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('stops immediately on input and restarts the idle wait', () => {
@@ -136,6 +177,49 @@ describe('attract loop state machine', () => {
     expect(nextMoving?.fov).toBeLessThan(52);
   });
 
+  it('tours the only view when the list has one entry', () => {
+    let clock = 0;
+    const attract = createAttract({
+      views: [VIEWS[0]],
+      idleMs: 1_000,
+      holdMs: 2_000,
+      moveMs: 1_000,
+      enabled: true,
+      reducedMotion: false,
+      now: () => clock,
+    });
+
+    clock = 1_000;
+    const launch = attract.tick();
+    expect(launch?.viewId).toBe('proof');
+    expect(attract.running).toBe(true);
+
+    // The glide to itself lands and holds; the wraparound stays on the only view.
+    clock = 2_000;
+    expect(attract.tick()?.pose.position[2]).toBeCloseTo(VIEWS[0].position[2], 5);
+    clock = 4_000;
+    const wrapped = attract.tick();
+    expect(wrapped?.viewId).toBe('proof');
+    expect(wrapped?.pose.position).toEqual(VIEWS[0].position);
+  });
+
+  it('never tours when the view list is empty', () => {
+    let clock = 0;
+    const attract = createAttract({
+      views: [],
+      idleMs: 1_000,
+      holdMs: 2_000,
+      moveMs: 1_000,
+      enabled: true,
+      reducedMotion: false,
+      now: () => clock,
+    });
+
+    clock = 50_000;
+    expect(attract.tick()).toBeNull();
+    expect(attract.running).toBe(false);
+  });
+
   it('cuts instantly under reduced motion (moveMs is 0)', () => {
     let clock = 0;
     const attract = createAttract({
@@ -186,6 +270,70 @@ describe('attract loop state machine', () => {
     clock = 51_000;
     expect(attract.tick()).not.toBeNull();
     expect(attract.running).toBe(true);
+  });
+
+  it('disabling mid-tour stops it and restarts the idle wait from that moment', () => {
+    let clock = 0;
+    const attract = createAttract({
+      views: VIEWS,
+      idleMs: 5_000,
+      holdMs: 2_000,
+      moveMs: 1_000,
+      enabled: true,
+      reducedMotion: false,
+      now: () => clock,
+    });
+    expect(attract.enabled).toBe(true);
+
+    clock = 5_000;
+    expect(attract.tick()).not.toBeNull();
+    expect(attract.running).toBe(true);
+
+    clock = 6_000;
+    attract.setEnabled(false);
+    expect(attract.enabled).toBe(false);
+    expect(attract.running).toBe(false);
+    expect(attract.tick()).toBeNull();
+
+    // Re-enabling does not resume the tour: the idle wait runs from the disable at 6,000.
+    clock = 6_500;
+    attract.setEnabled(true);
+    expect(attract.enabled).toBe(true);
+    expect(attract.tick()).toBeNull();
+
+    clock = 10_999;
+    expect(attract.tick()).toBeNull();
+    clock = 11_000;
+    expect(attract.tick()).not.toBeNull();
+    expect(attract.running).toBe(true);
+  });
+
+  it('a repeated disable leaves the idle wait where the first disable set it', () => {
+    let clock = 0;
+    const attract = createAttract({
+      views: VIEWS,
+      idleMs: 5_000,
+      holdMs: 2_000,
+      moveMs: 1_000,
+      enabled: true,
+      reducedMotion: false,
+      now: () => clock,
+    });
+
+    clock = 5_000;
+    expect(attract.tick()).not.toBeNull();
+
+    clock = 6_000;
+    attract.setEnabled(false);
+    clock = 9_000;
+    attract.setEnabled(false); // Same value: must not restart the idle clock.
+
+    clock = 9_500;
+    attract.setEnabled(true);
+    clock = 10_999;
+    expect(attract.tick()).toBeNull(); // 10,999 - 6,000 = 4,999
+    clock = 11_000;
+    expect(attract.tick()).not.toBeNull(); // 11,000 - 6,000 = 5,000
   });
 
   it('hands out the same reading, pose and arrays on every tick', () => {
