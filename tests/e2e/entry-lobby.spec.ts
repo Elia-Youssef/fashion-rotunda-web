@@ -25,6 +25,26 @@ const VIEWPORTS = [
 // checks observe; the budget is the same one the reveal waits in this file share.
 const INITIALIZED_TIMEOUT = 60_000;
 
+// The wait from the load press to the held ready-hidden phase covers the adapter probe, the
+// renderer start and the whole first-load content set; 60 s matches the loading spec's budget for
+// the same span under four software workers.
+const READY_HIDDEN_TIMEOUT_MS = 60_000;
+
+// The tracker polls (the bar value, the readout total and the status count) must settle while the
+// held rotunda keeps the lobby loading; 20 s gives the other tracked files time to arrive yet
+// stays inside the HALF_ROTUNDA_HOLD_TIMEOUT_MS window that bounds the loading phase.
+const TRACKER_READING_TIMEOUT_MS = 20_000;
+
+// The bar-to-end poll after the hold releases covers the held file's download and decode with the
+// rest of the set; 60 s covers the slowest cold load under four software workers, the loading
+// spec's budget for the same reading.
+const LOAD_COMPLETE_TIMEOUT_MS = 60_000;
+
+// The lobby removal wait covers the boot's last leg, from the last reading to the detached lobby:
+// the load finishes, the black veil holds until the scene proves stable frames, then the fade
+// completes; 60 s is the loading spec's reveal budget for the same reading.
+const REVEAL_TIMEOUT_MS = 60_000;
+
 // The backend pin's budget: the load action creates the renderer (src/renderer/create.ts
 // publishes canvas[data-backend] once it initializes), and on the software WebGL 2 project under
 // the configured workers that creation can outlast the five-second assertion default.
@@ -89,7 +109,7 @@ test('releases page keyboard navigation after the lobby reveal', async ({ page }
   const lobby = page.locator('#entry-lobby');
   await expect(lobby).toHaveAttribute('data-state', 'idle');
   await lobby.locator('#lobby-load-btn').click();
-  await expect(lobby).toHaveCount(0, { timeout: 60_000 });
+  await expect(lobby).toHaveCount(0, { timeout: REVEAL_TIMEOUT_MS });
   await expect(lobby).toBeHidden();
   await expect(page.locator('canvas#scene')).toHaveAttribute('data-backend', projectBackend());
 
@@ -160,7 +180,7 @@ test('proves deferred load: zero /content/ or music requests before user gesture
     .toBeGreaterThan(0);
 
   // Wait for ready-hidden
-  await expect(lobby).toHaveAttribute('data-state', 'ready-hidden', { timeout: 60_000 });
+  await expect(lobby).toHaveAttribute('data-state', 'ready-hidden', { timeout: READY_HIDDEN_TIMEOUT_MS });
   await expect(canvas).toHaveAttribute('data-scene', 'ready');
 });
 
@@ -240,13 +260,13 @@ test('proves music preference persistence: Music off fetches no audio during or 
   await expectProjectBackendAfterLoad(page);
 
   // The held phase: ready-hidden stays observable until the test releases it.
-  await expect(lobby).toHaveAttribute('data-state', 'ready-hidden', { timeout: 60_000 });
+  await expect(lobby).toHaveAttribute('data-state', 'ready-hidden', { timeout: READY_HIDDEN_TIMEOUT_MS });
   await page.evaluate(() => window.archvizTransitionSeam?.unfreeze());
 
   // The zero-audio reading observes the actual end of boot, not a fixed delay after ready-hidden:
   // the watcher accumulates every request since the goto, so one reading at the initialized state
   // covers during and after the boot, however long the boot takes.
-  await expect(lobby).toHaveCount(0, { timeout: 60_000 });
+  await expect(lobby).toHaveCount(0, { timeout: REVEAL_TIMEOUT_MS });
   await waitForSceneInitialization(page, INITIALIZED_TIMEOUT);
 
   expect(watcher.musicUrls(), 'music=off resulted in zero audio requests').toEqual([]);
@@ -313,7 +333,7 @@ test.describe('lobby progress on the touch half set', () => {
     await expect
       .poll(async () => Number((await progress.getAttribute('value')) ?? '0'), {
         message: 'the bar rises above zero while the lobby is still loading',
-        timeout: 20_000,
+        timeout: TRACKER_READING_TIMEOUT_MS,
       })
       .toBeGreaterThan(0);
     expect(
@@ -323,7 +343,7 @@ test.describe('lobby progress on the touch half set', () => {
 
     await rotunda.release();
     await rotunda.waitUntilContinued();
-    await expect(lobby).toHaveCount(0, { timeout: 60_000 });
+    await expect(lobby).toHaveCount(0, { timeout: REVEAL_TIMEOUT_MS });
 
     expect(glbPaths.length, 'the scene geometry was requested').toBeGreaterThan(0);
     for (const pathname of glbPaths) {
@@ -382,13 +402,13 @@ test('counts the deep-linked look: the bar rises and reaches its total', async (
   await expect
     .poll(async () => (await readout.textContent()) ?? '', {
       message: `the readout total is the deep-linked look total (${(expectedBytes / 1_000_000).toFixed(1)} MB)`,
-      timeout: 20_000,
+      timeout: TRACKER_READING_TIMEOUT_MS,
     })
     .toMatch(expectedTotal);
   await expect
     .poll(async () => (await lobby.locator('.entry-lobby__status').textContent()) ?? '', {
       message: 'the status publishes the three tracked files while the load runs',
-      timeout: 20_000,
+      timeout: TRACKER_READING_TIMEOUT_MS,
     })
     .toMatch(/ of 3 files$/);
 
@@ -396,7 +416,7 @@ test('counts the deep-linked look: the bar rises and reaches its total', async (
   await expect
     .poll(async () => Number((await progress.getAttribute('value')) ?? '0'), {
       message: 'the bar rises above zero while the lobby is still loading',
-      timeout: 20_000,
+      timeout: TRACKER_READING_TIMEOUT_MS,
     })
     .toBeGreaterThan(0);
   expect(
@@ -410,10 +430,10 @@ test('counts the deep-linked look: the bar rises and reaches its total', async (
   await expect
     .poll(async () => Number((await progress.getAttribute('value')) ?? '0'), {
       message: 'the bar reaches the deep-linked look total',
-      timeout: 60_000,
+      timeout: LOAD_COMPLETE_TIMEOUT_MS,
     })
     .toBe(1);
-  await expect(lobby).toHaveCount(0, { timeout: 60_000 });
+  await expect(lobby).toHaveCount(0, { timeout: REVEAL_TIMEOUT_MS });
 
   expect(glbPaths, 'the deep-linked look was requested').toContain('/content/looks/zoot-suit.glb');
 });
