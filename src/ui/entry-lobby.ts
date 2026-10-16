@@ -134,6 +134,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
   const factText = lobby.querySelector<HTMLElement>('.entry-lobby__fact-text');
   const retryBtn = lobby.querySelector<HTMLButtonElement>('#lobby-retry-btn');
   const errorMessage = lobby.querySelector<HTMLElement>('.entry-lobby__error-message');
+  const errorTitle = lobby.querySelector<HTMLElement>('.entry-lobby__error-title');
 
   let currentState: LobbyState = 'idle';
 
@@ -158,6 +159,25 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
   const musicSwitch = createLobbyMusicSwitch(musicSwitchBtn, options.search, store, listeners.signal);
 
   /**
+   * The error pane's one announcement path, shared by the load failure and the unsupported
+   * surface. The title and message are written while the pane is still hidden, because a
+   * live region announces only the changes that happen while it is rendered, and the pane
+   * then appears with its alert role: one announcement per error, the same on every path.
+   */
+  function showErrorPane(message: string, title: string | null): void {
+    if (title !== null && errorTitle !== null) {
+      errorTitle.textContent = title;
+    }
+    if (errorMessage !== null) {
+      errorMessage.textContent = message;
+    }
+    if (errorPane !== null) {
+      errorPane.setAttribute('role', 'alert');
+      errorPane.hidden = false;
+    }
+  }
+
+  /**
    * The unsupported surface, shared by the mount-time knowledge (no API even exists) and the
    * post-press knowledge (no backend can start): the error pane becomes a support explanation
    * with no retry, because reloading cannot create support the browser lacks.
@@ -168,17 +188,9 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
     }
     if (errorMessage !== null) {
       errorMessage.id = 'lobby-unsupported-message';
-      errorMessage.textContent = message;
       loadBtn?.setAttribute('aria-describedby', errorMessage.id);
     }
-    if (errorPane !== null) {
-      errorPane.setAttribute('role', 'alert');
-      errorPane.hidden = false;
-      const errorTitle = errorPane.querySelector<HTMLElement>('.entry-lobby__error-title');
-      if (errorTitle !== null) {
-        errorTitle.textContent = '3D unavailable';
-      }
-    }
+    showErrorPane(message, '3D unavailable');
     if (retryBtn !== null) {
       retryBtn.hidden = true;
     }
@@ -423,14 +435,9 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       if (loadingPane !== null) {
         loadingPane.hidden = true;
       }
-      if (errorPane !== null) {
-        errorPane.hidden = false;
-      }
+      showErrorPane(message, null);
       if (cardElement !== null) {
         cardElement.dataset['view'] = 'error';
-      }
-      if (errorMessage !== null) {
-        errorMessage.textContent = message;
       }
       if (retryBtn !== null) {
         retryBtn.focus();

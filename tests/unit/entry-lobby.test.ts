@@ -538,6 +538,99 @@ describe('error state and clean retry', () => {
   });
 });
 
+describe('error pane is announced once on every error path', () => {
+  function paneOf(element: HTMLElement): HTMLElement {
+    const pane = element.querySelector<HTMLElement>('.entry-lobby__error-pane');
+    if (pane === null) {
+      throw new Error('entry-lobby error pane not found');
+    }
+    return pane;
+  }
+
+  // A live region announces only changes that happen while it is rendered, so the order the
+  // pane mutates in decides how many announcements a screen reader makes. The recorder keeps
+  // that order: which text was written, when the alert role landed, when the pane appeared.
+  function recordPaneMutations(pane: HTMLElement): string[] {
+    const order: string[] = [];
+    new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.type === 'attributes' && record.attributeName !== null) {
+          if (record.target === pane) {
+            order.push(record.attributeName === 'hidden' ? 'pane shown' : 'pane role');
+          } else {
+            order.push('other hidden');
+          }
+        } else {
+          order.push(`text: ${(record.target as HTMLElement).className}`);
+        }
+      }
+    }).observe(pane, {
+      attributes: true,
+      attributeFilter: ['hidden', 'role'],
+      attributeOldValue: true,
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+    return order;
+  }
+
+  it.each([false, true])('gives the load failure the same alert as the unsupported path (hydration=%s)',
+    (withPreExistingDOM) => {
+      const { lobby, element } = mountLobby({ withPreExistingDOM });
+      element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+      const pane = paneOf(element);
+      expect(pane.hasAttribute('role')).toBe(false);
+      lobby.setError('Connection lost during asset download');
+      expect(pane.hidden).toBe(false);
+      expect(pane.getAttribute('role')).toBe('alert');
+      expect(pane.querySelector('.entry-lobby__error-message')?.textContent)
+        .toBe('Connection lost during asset download');
+    });
+
+  it('writes the message and the alert role before the pane appears on the failure path', async () => {
+    const { lobby, element } = mountLobby();
+    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+    const pane = paneOf(element);
+    const order = recordPaneMutations(pane);
+    lobby.setError('Connection lost during asset download');
+    await vi.advanceTimersByTimeAsync(0);
+    const shownAt = order.indexOf('pane shown');
+    expect(shownAt).toBeGreaterThan(-1);
+    expect(order.lastIndexOf('text: entry-lobby__error-message'), 'message before the pane appears')
+      .toBeLessThan(shownAt);
+    const roleAt = order.indexOf('pane role');
+    expect(roleAt, 'the alert role is set').toBeGreaterThan(-1);
+    expect(roleAt, 'alert role before the pane appears').toBeLessThan(shownAt);
+  });
+
+  it('writes the title and message before the pane appears on the unsupported path', async () => {
+    const { lobby, element } = mountLobby();
+    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+    const pane = paneOf(element);
+    const order = recordPaneMutations(pane);
+    lobby.setUnsupported('This exhibition requires WebGPU or WebGL 2.');
+    await vi.advanceTimersByTimeAsync(0);
+    const shownAt = order.indexOf('pane shown');
+    expect(shownAt).toBeGreaterThan(-1);
+    expect(order.lastIndexOf('text: entry-lobby__error-title'), 'title before the pane appears')
+      .toBeLessThan(shownAt);
+    expect(order.lastIndexOf('text: entry-lobby__error-message'), 'message before the pane appears')
+      .toBeLessThan(shownAt);
+  });
+
+  it('keeps the pane an alert when a later failure replaces the message', () => {
+    const { lobby, element } = mountLobby();
+    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+    const pane = paneOf(element);
+    lobby.setError('First failure');
+    lobby.setError('Second failure');
+    expect(pane.hidden).toBe(false);
+    expect(pane.getAttribute('role')).toBe('alert');
+    expect(pane.querySelector('.entry-lobby__error-message')?.textContent).toBe('Second failure');
+  });
+});
+
 describe('unsupported surface after the Load press', () => {
   const message = 'This exhibition requires WebGPU or WebGL 2.';
 
