@@ -40,25 +40,55 @@ afterEach(() => {
 /**
  * Each orbit gets its own element, so gestures meant for one never reach another. Pass a clock to
  * drive the stale-release guard by hand; without one the orbit reads performance.now, which the
- * tests that do not care about the release window leave in place.
+ * tests that do not care about the release window leave in place. Damping and the camera's
+ * starting position are overridable for the edge poses the default never produces.
  */
-function make(clock?: { ms: number }): { element: HTMLElement; orbit: OrbitHandle; camera: PerspectiveCamera } {
+function make(
+  clock?: { ms: number },
+  damping = 0.12,
+  position: [number, number, number] = PROOF_POSITION,
+): { element: HTMLElement; orbit: OrbitHandle; camera: PerspectiveCamera } {
   const element = document.createElement('div');
   document.body.appendChild(element);
   const camera = new PerspectiveCamera(40, 1, 0.1, 100);
-  camera.position.set(...PROOF_POSITION);
+  camera.position.set(...position);
   camera.lookAt(...TARGET);
   const orbit = createOrbit({
     camera,
     element,
     target: TARGET,
     limits: LIMITS,
-    damping: 0.12,
+    damping,
     onChange,
     ...(clock === undefined ? {} : { now: (): number => clock.ms }),
   });
   mounted.push({ element, orbit });
   return { element, orbit, camera };
+}
+
+/** A pointerdown with a chosen button, the way middle and right clicks arrive. */
+function buttonDown(target: { element: HTMLElement }, button: number): void {
+  target.element.dispatchEvent(
+    new PointerEvent('pointerdown', {
+      pointerId: 1,
+      pointerType: 'mouse',
+      button,
+      buttons: button,
+      clientX: 100,
+      clientY: 100,
+      bubbles: true,
+      cancelable: true,
+    }),
+  );
+}
+
+/** Mounts an element whose pointer capture can be observed through mocks. */
+function makeWithCaptureMocks(): { element: HTMLElement; orbit: OrbitHandle; release: ReturnType<typeof vi.fn> } {
+  const target = make();
+  const release = vi.fn();
+  target.element.setPointerCapture = vi.fn();
+  target.element.releasePointerCapture = release;
+  return { element: target.element, orbit: target.orbit, release };
 }
 
 /** The camera's spherical state around the target, recomputed from the position it renders from. */
@@ -496,5 +526,364 @@ describe('createOrbit', () => {
     pointer(target, 'pointerdown', 100, 100);
     pointer(target, 'pointermove', 200, 100);
     expect(target.orbit.moving).toBe(true);
+  });
+
+  it('keeps gliding when the caller asks for damping of exactly one', () => {
+    // damping 1 is the log(0) edge the constructor clamps away; the release glide must
+    // still move the camera once and then settle.
+    const target = make(undefined, 1);
+    drag(target, 40, 0);
+    const released = readSpherical(target.orbit).theta;
+    expect(target.orbit.moving).toBe(true);
+    target.orbit.update(16.7);
+    expect(readSpherical(target.orbit).theta).toBeLessThan(released);
+    expect(target.orbit.moving).toBe(false);
+  });
+
+  it('arms nothing at damping zero: a released drag stops dead and the pose stays finite', () => {
+    const target = make(undefined, 0);
+    drag(target, 40, 0);
+    expect(target.orbit.moving).toBe(false);
+    expect(target.orbit.update(16.7)).toBe(false);
+    const position = target.orbit.position;
+    expect(Number.isFinite(position[0])).toBe(true);
+    expect(Number.isFinite(position[1])).toBe(true);
+    expect(Number.isFinite(position[2])).toBe(true);
+  });
+
+  it('reads the wall clock when no clock is injected: a held-still release does not glide', async () => {
+    const target = make();
+    pointer(target, 'pointerdown', 100, 100);
+    pointer(target, 'pointermove', 140, 100);
+    const held = readSpherical(target.orbit).theta;
+    // 150 ms of real stillness, past the 80 ms stale-release window.
+    await new Promise((resolve) => {
+      setTimeout(resolve, 150);
+    });
+    pointer(target, 'pointerup', 140, 100);
+    expect(target.orbit.moving).toBe(false);
+    expect(readSpherical(target.orbit).theta).toBeCloseTo(held, 12);
+  });
+
+  it('reports motion from the drag alone, before any move has armed a glide', () => {
+    // The post chain lowers its heavy effects while this reads true, so a grabbed but
+    // not yet moved subject must already count as motion.
+    const target = make();
+    pointer(target, 'pointerdown', 100, 100);
+    expect(target.orbit.moving).toBe(true);
+  });
+
+  it('arrow keys are discrete steps and never arm the release glide', () => {
+    const target = make();
+    key(target, 'ArrowLeft');
+    expect(readSpherical(target.orbit).theta).toBeCloseTo(Math.PI / 60, 9);
+    expect(target.orbit.moving).toBe(false);
+    expect(target.orbit.update(16.7)).toBe(false);
+    expect(readSpherical(target.orbit).theta).toBeCloseTo(Math.PI / 60, 9);
+  });
+
+  it('ignores wheel and keys while disabled, not only pointer gestures', () => {
+    const target = make();
+    const before = readSpherical(target.orbit);
+    target.orbit.setEnabled(false);
+    onChange.mockClear();
+    wheel(target, 100);
+    key(target, 'ArrowLeft');
+    key(target, '-');
+    expect(readSpherical(target.orbit).radius).toBeCloseTo(before.radius, 12);
+    expect(readSpherical(target.orbit).theta).toBeCloseTo(before.theta, 12);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(target.orbit.moving).toBe(false);
+  });
+
+  it('treats middle and right mouse buttons as non-inspection inputs', () => {
+    for (const button of [1, 2]) {
+      const target = make();
+      buttonDown(target, button);
+      expect(target.orbit.moving).toBe(false);
+      pointer(target, 'pointermove', 300, 100);
+      expect(readSpherical(target.orbit).theta).toBeCloseTo(0, 9);
+    }
+  });
+
+  it('a move with no delta neither rotates nor refreshes the release window', () => {
+    const clock = { ms: 1000 };
+    const target = make(clock);
+    pointer(target, 'pointerdown', 100, 100);
+    pointer(target, 'pointermove', 140, 100);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    clock.ms += 200;
+    pointer(target, 'pointermove', 140, 100);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    pointer(target, 'pointerup', 140, 100);
+    expect(target.orbit.moving).toBe(false);
+  });
+
+  it('a pointer the control never grabbed cannot end a released glide', () => {
+    const clock = { ms: 1000 };
+    const target = make(clock);
+    drag(target, 40, 0);
+    expect(target.orbit.moving).toBe(true);
+    clock.ms += 200;
+    pointer(target, 'pointerup', 140, 100, 99);
+    expect(target.orbit.moving).toBe(true);
+    expect(target.orbit.update(16.7)).toBe(true);
+  });
+
+  it('after a pinch the surviving finger rotates from where it actually is', () => {
+    const target = make();
+    pointer(target, 'pointerdown', 100, 100, 1);
+    pointer(target, 'pointerdown', 300, 100, 2);
+    pointer(target, 'pointermove', 200, 100, 1);
+    pointer(target, 'pointerup', 300, 100, 2);
+    pointer(target, 'pointermove', 250, 100, 1);
+    expect(readSpherical(target.orbit).theta).toBeCloseTo(-50 * 0.005, 9);
+  });
+
+  it('a pinch whose fingers meet exactly changes nothing', () => {
+    const target = make();
+    pointer(target, 'pointerdown', 100, 100, 1);
+    pointer(target, 'pointerdown', 200, 100, 2);
+    pointer(target, 'pointermove', 100, 100, 2);
+    pointer(target, 'pointermove', 150, 100, 2);
+    expect(readSpherical(target.orbit).radius).toBeCloseTo(PROOF_RADIUS, 9);
+  });
+
+  it('scales Firefox line-mode and page-mode wheels back to pixel notches', () => {
+    const target = make();
+    target.element.dispatchEvent(
+      new WheelEvent('wheel', { deltaY: 3, deltaMode: 1, bubbles: true, cancelable: true }),
+    );
+    expect(readSpherical(target.orbit).radius).toBeCloseTo(PROOF_RADIUS * Math.pow(1.1, 0.99), 9);
+    target.element.dispatchEvent(
+      new WheelEvent('wheel', { deltaY: 1, deltaMode: 2, bubbles: true, cancelable: true }),
+    );
+    expect(readSpherical(target.orbit).radius).toBeCloseTo(PROOF_RADIUS * Math.pow(1.1, 0.99) * 1.1, 9);
+  });
+
+  it("treats '=' as '+' for the dolly-in key", () => {
+    const target = make();
+    key(target, '=');
+    expect(readSpherical(target.orbit).radius).toBeCloseTo(PROOF_RADIUS / 1.1, 9);
+  });
+
+  it('reset lands inside the limits even when the built-in pose was authored outside them', () => {
+    const low = make(undefined, 0.12, [0, -5, 3]);
+    low.orbit.reset();
+    expect(readSpherical(low.orbit).phi).toBeCloseTo(LIMITS.maxPolar, 9);
+    const far = make(undefined, 0.12, [0, 1.7, 70]);
+    far.orbit.reset();
+    expect(readSpherical(far.orbit).radius).toBeCloseTo(LIMITS.maxDistance, 9);
+  });
+
+  it('a single over-long update lands exactly on the glide destination', async () => {
+    const target = make();
+    const glide = target.orbit.glideTo([0, 2, 3], TARGET, 300);
+    target.orbit.update(400);
+    await glide;
+    expect(target.orbit.position[0]).toBeCloseTo(0, 9);
+    expect(target.orbit.position[1]).toBeCloseTo(2, 9);
+    expect(target.orbit.position[2]).toBeCloseTo(3, 9);
+    expect(target.orbit.moving).toBe(false);
+  });
+
+  it('a glide between opposite sides of the target never leaves the limits', () => {
+    // The straight Cartesian chord between the two sides passes through the target, so
+    // the interpolated pose dips under both the polar and the distance floor mid-glide.
+    const target = make(undefined, 0.12, [4, 1.5, 0]);
+    void target.orbit.glideTo([-4, 1.5, 0], TARGET, 1000);
+    target.orbit.update(500);
+    const state = readSpherical(target.orbit);
+    expect(state.phi).toBeCloseTo(LIMITS.minPolar, 5);
+    expect(state.radius).toBeCloseTo(LIMITS.minDistance, 5);
+  });
+
+  it('a glide toward a below-horizon destination eases toward the polar limit, not pinned at it', () => {
+    const target = make();
+    target.orbit.setPose([0, 4, 4.2], TARGET);
+    void target.orbit.glideTo([0, -5, 3], TARGET, 1000);
+    target.orbit.update(500);
+    expect(readSpherical(target.orbit).phi).toBeLessThan(LIMITS.maxPolar - 0.05);
+  });
+
+  it('a glide toward a too-far destination eases toward the distance limit, not pinned at it', () => {
+    const target = make();
+    void target.orbit.glideTo([0, 1.7, 40], TARGET, 1000);
+    target.orbit.update(500);
+    expect(readSpherical(target.orbit).radius).toBeLessThan(LIMITS.maxDistance - 0.05);
+  });
+
+  it('update with a zero frame integrates nothing and asks for no frame', () => {
+    const gliding = make();
+    void gliding.orbit.glideTo([0, 2, 3], TARGET, 300);
+    onChange.mockClear();
+    gliding.orbit.update(0);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(gliding.orbit.moving).toBe(true);
+
+    const clock = { ms: 1000 };
+    const armed = make(clock);
+    drag(armed, 40, 0);
+    onChange.mockClear();
+    armed.orbit.update(0);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(readSpherical(armed.orbit).theta).toBeCloseTo(-40 * 0.005, 9);
+  });
+
+  it('grabbing the subject resolves a glide in flight instead of leaving it pending', async () => {
+    const target = make();
+    let resolved = false;
+    const glide = target.orbit.glideTo([0, 2, 3], TARGET, 300).then(() => {
+      resolved = true;
+    });
+    pointer(target, 'pointerdown', 100, 100);
+    await glide;
+    expect(resolved).toBe(true);
+    expect(target.orbit.position[1]).toBeLessThan(2);
+  });
+
+  it('setPose finishes a glide in flight and keeps the pose it was given', async () => {
+    const target = make();
+    const glide = target.orbit.glideTo([0, 2, 3], TARGET, 300);
+    target.orbit.setPose([2, 1.6, 3], TARGET);
+    await glide;
+    expect(target.orbit.moving).toBe(false);
+    target.orbit.update(150);
+    expect(target.orbit.position[0]).toBeCloseTo(2, 9);
+    expect(target.orbit.position[1]).toBeCloseTo(1.6, 9);
+    expect(target.orbit.position[2]).toBeCloseTo(3, 9);
+  });
+
+  it('placeAt finishes a glide in flight and keeps the pose it was given', async () => {
+    const target = make();
+    const glide = target.orbit.glideTo([0, 2, 3], TARGET, 300);
+    target.orbit.placeAt([2, 1.6, 3], TARGET);
+    await glide;
+    expect(target.orbit.moving).toBe(false);
+    target.orbit.update(300);
+    expect(target.orbit.position[0]).toBeCloseTo(2, 9);
+    expect(target.orbit.position[1]).toBeCloseTo(1.6, 9);
+  });
+
+  it('placeAt clamps the live fov when the pose gives none', () => {
+    const target = make();
+    target.camera.fov = 400;
+    target.orbit.placeAt([2, 1.6, 3], TARGET);
+    expect(target.orbit.fov).toBe(179);
+  });
+
+  it('a glide toward an extreme fov eases toward the clamped value', async () => {
+    const target = make();
+    const glide = target.orbit.glideTo([0, 2, 3], TARGET, 300, 250);
+    target.orbit.update(150);
+    expect(target.camera.fov).toBeCloseTo((40 + 179) / 2, 1);
+    target.orbit.update(150);
+    await glide;
+    expect(target.camera.fov).toBe(179);
+  });
+
+  it('a zero-ms glide cancels an armed release glide', async () => {
+    const clock = { ms: 1000 };
+    const target = make(clock);
+    drag(target, 40, 0);
+    expect(target.orbit.moving).toBe(true);
+    await target.orbit.glideTo([0, 2, 3], TARGET, 0);
+    expect(target.orbit.moving).toBe(false);
+    expect(target.orbit.update(16.7)).toBe(false);
+  });
+
+  it('a timed glide cancels an armed release glide and leaves nothing behind after it lands', async () => {
+    const clock = { ms: 1000 };
+    const target = make(clock);
+    drag(target, 40, 0);
+    const glide = target.orbit.glideTo([0, 2, 3], TARGET, 50);
+    target.orbit.update(50);
+    await glide;
+    expect(target.orbit.moving).toBe(false);
+    expect(target.orbit.update(16.7)).toBe(false);
+  });
+
+  it('glideTo asks the loop for the frame that will animate it', () => {
+    const target = make();
+    onChange.mockClear();
+    void target.orbit.glideTo([0, 2, 3], TARGET, 300);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('moveTo carries the fov through to the pose it places', () => {
+    const target = make();
+    target.orbit.moveTo([2, 1.6, 3], TARGET, 50);
+    expect(target.orbit.fov).toBe(50);
+  });
+
+  it('enabling input does not cancel motion already in flight', async () => {
+    const target = make();
+    const glide = target.orbit.glideTo([0, 2, 3], TARGET, 300);
+    target.orbit.setEnabled(true);
+    expect(target.orbit.moving).toBe(true);
+    target.orbit.update(150);
+    target.orbit.update(150);
+    await glide;
+    expect(target.orbit.position[1]).toBeCloseTo(2, 9);
+  });
+
+  it('disabling mid-gesture releases the captured pointer', () => {
+    const target = makeWithCaptureMocks();
+    pointer(target, 'pointerdown', 100, 100);
+    target.orbit.setEnabled(false);
+    expect(target.release).toHaveBeenCalledWith(1);
+  });
+
+  it('disabling stops a held drag and a glide in flight, without leaving motion reported', async () => {
+    const clock = { ms: 1000 };
+    const held = make(clock);
+    pointer(held, 'pointerdown', 100, 100);
+    pointer(held, 'pointermove', 140, 100);
+    held.orbit.setEnabled(false);
+    expect(held.orbit.moving).toBe(false);
+    expect(held.orbit.update(16.7)).toBe(false);
+
+    const gliding = make();
+    const glide = gliding.orbit.glideTo([0, 2, 3], TARGET, 300);
+    gliding.orbit.setEnabled(false);
+    await glide;
+    expect(gliding.orbit.moving).toBe(false);
+  });
+
+  it('dispose releases the captured pointer', () => {
+    const target = makeWithCaptureMocks();
+    pointer(target, 'pointerdown', 100, 100);
+    target.orbit.dispose();
+    expect(target.release).toHaveBeenCalledWith(1);
+  });
+
+  it('dispose stops reporting motion and resolves a glide in flight', async () => {
+    const clock = { ms: 1000 };
+    const held = make(clock);
+    pointer(held, 'pointerdown', 100, 100);
+    pointer(held, 'pointermove', 140, 100);
+    held.orbit.dispose();
+    expect(held.orbit.moving).toBe(false);
+
+    const gliding = make();
+    const glide = gliding.orbit.glideTo([0, 2, 3], TARGET, 300);
+    gliding.orbit.dispose();
+    await glide;
+    expect(gliding.orbit.moving).toBe(false);
+  });
+
+  it('an unchanged fov never recomputes the projection matrix', async () => {
+    const target = make();
+    const spy = vi.spyOn(target.camera, 'updateProjectionMatrix');
+    target.orbit.placeAt([2, 1.6, 3], TARGET);
+    target.orbit.setPose([0, 1.7, 4.2], TARGET, 40);
+    const glide = target.orbit.glideTo([0, 2, 3], TARGET, 300);
+    target.orbit.update(150);
+    target.orbit.update(150);
+    expect(spy).not.toHaveBeenCalled();
+    await glide;
+    target.orbit.setPose([0, 1.7, 4.2], TARGET, 55);
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
   });
 });
