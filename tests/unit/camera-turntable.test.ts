@@ -49,6 +49,16 @@ describe('createTurntable', () => {
     expect(yaw).toBeGreaterThan(2 * Math.PI);
   });
 
+  it('update notifies on each advancing step', () => {
+    const { turntable, onChange } = make(20);
+    turntable.start();
+    onChange.mockClear();
+    turntable.update(100);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    turntable.update(50);
+    expect(onChange).toHaveBeenCalledTimes(2);
+  });
+
   it('holds the yaw while stopped: update returns it and notifies nothing', () => {
     const { turntable, onChange } = make(20);
     turntable.start();
@@ -67,6 +77,15 @@ describe('createTurntable', () => {
     expect(turntable.update(1000)).toBeCloseTo(20 * DEG, 12);
   });
 
+  it('a non-positive dt notifies nothing while running', () => {
+    const { turntable, onChange } = make(20);
+    turntable.start();
+    onChange.mockClear();
+    expect(turntable.update(0)).toBe(0);
+    expect(turntable.update(-100)).toBe(0);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('setYaw moves the yaw directly and notifies', () => {
     const { turntable, onChange } = make();
     turntable.setYaw(0.5);
@@ -82,5 +101,18 @@ describe('createTurntable', () => {
     const { turntable, onChange } = make();
     turntable.setYaw(0);
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('the yaw getter reads the unbounded accumulator, not a wrapped angle', () => {
+    const { turntable } = make(20);
+    turntable.start();
+    const yaw = turntable.update(20000);
+    // Callers compare the getter by identity against the yaw update returned, so wrapping the
+    // read would make every later comparison read as a change.
+    expect(turntable.yaw).toBe(yaw);
+    expect(turntable.yaw).toBeGreaterThan(2 * Math.PI);
+    turntable.stop();
+    turntable.setYaw(yaw + 0.5);
+    expect(turntable.yaw).toBe(yaw + 0.5);
   });
 });
