@@ -528,6 +528,59 @@ describe('mountProofPanel', () => {
     root.remove();
   });
 
+  it('marks the measuring status as the only polite live region, excluding the button', async () => {
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    let resolveMeasure: () => void = () => {};
+    const measure = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveMeasure = resolve;
+        }),
+    );
+
+    const handle = mountProofPanel(root, { read: vi.fn(sampleSnapshot), measure });
+    const status = root.querySelector<HTMLElement>('.proof-panel__status')!;
+    // Exactly one live region, the status span itself: a region on the actions row would also
+    // announce the static Measure label, and one on the section the whole table.
+    expect(root.querySelectorAll('[aria-live], [role="status"]')).toHaveLength(1);
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    const button = root.querySelector<HTMLButtonElement>('button.proof-panel__measure')!;
+    expect(status.contains(button)).toBe(false);
+    expect(status.textContent).not.toContain('Measure');
+
+    button.click();
+    expect(status.textContent).toBe('measuring...');
+    resolveMeasure();
+    await vi.waitFor(() => expect(button.disabled).toBe(false));
+    expect(status.textContent).toBe('');
+
+    handle.dispose();
+    root.remove();
+  });
+
+  it('announces a failed measurement through the same polite status region', async () => {
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    const measure = vi.fn(async () => {
+      throw new Error('camera not mounted yet');
+    });
+
+    const handle = mountProofPanel(root, { read: vi.fn(sampleSnapshot), measure });
+    const status = root.querySelector<HTMLElement>('.proof-panel__status')!;
+    const button = root.querySelector<HTMLButtonElement>('button.proof-panel__measure')!;
+    button.click();
+
+    await vi.waitFor(() => expect(button.disabled).toBe(false));
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    expect(status.textContent).toBe('camera not mounted yet');
+
+    handle.dispose();
+    root.remove();
+  });
+
   it('refreshes at the specified interval and disposes cleanly', () => {
     const root = document.createElement('div');
     document.body.appendChild(root);

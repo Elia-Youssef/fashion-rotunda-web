@@ -119,6 +119,10 @@ export function mountProofPanel(root: HTMLElement, options: PanelOptions): Panel
 
   const status = document.createElement('span');
   status.className = 'proof-panel__status';
+  // The span is itself the live region, so only its own text changes are announced; a region on
+  // the actions row would read the static Measure label out with every status change.
+  status.setAttribute('role', 'status');
+  status.setAttribute('aria-live', 'polite');
   actions.appendChild(status);
 
   section.appendChild(actions);
