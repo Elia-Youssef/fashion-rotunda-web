@@ -16,6 +16,13 @@ export interface ProgressReading {
   fromCache: boolean;
 }
 
+/**
+ * Refresh cadence of the lobby progress readout in trackFirstFrameProgress(): each tick
+ * re-reads Resource Timing and pushes a reading, alongside the PerformanceObserver's
+ * resource events.
+ */
+const READOUT_REFRESH_INTERVAL_MS = 250;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -125,7 +132,7 @@ export function trackFirstFrameProgress(
     }
   }
 
-  const ticker = window.setInterval(update, 250);
+  const ticker = window.setInterval(update, READOUT_REFRESH_INTERVAL_MS);
 
   void (async () => {
     try {
