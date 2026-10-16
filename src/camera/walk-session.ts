@@ -48,7 +48,10 @@ function mountJoystickLayer(canvas: HTMLCanvasElement): JoystickLayer {
 /** Owns temporary and collision-ready controllers, parsed geometry and touch controls. */
 export function createWalkSession(options: WalkSessionOptions): WalkSession {
   const { camera, canvas, isTouch, onChange, now } = options;
-  let currentWalk: WalkthroughHandle | null = null;
+  // Assigned by the constructor below before the session is returned (a constructor that throws
+  // returns nothing), and from then on only replaced by setupCollision with fully constructed
+  // controllers: never null on a session that exists.
+  let currentWalk: WalkthroughHandle;
   let ownedGeometry: BufferGeometry | null = new BufferGeometry();
   let joystick: JoystickHandle | null = null;
   let joystickLayer: JoystickLayer | null = null;
@@ -76,7 +79,7 @@ export function createWalkSession(options: WalkSessionOptions): WalkSession {
     disposed = true;
     cancelParse?.();
     cancelParse = null;
-    currentWalk?.dispose();
+    currentWalk.dispose();
     joystick?.dispose();
     joystickLayer?.dispose();
     ownedGeometry?.dispose();
@@ -84,7 +87,7 @@ export function createWalkSession(options: WalkSessionOptions): WalkSession {
   }
 
   function setupCollision(geometry: BufferGeometry): void {
-    const previous = currentWalk!;
+    const previous = currentWalk;
     const previousFoot = previous.foot;
     const previousYaw = previous.yaw;
     const previousPitch = previous.pitch;
@@ -108,17 +111,22 @@ export function createWalkSession(options: WalkSessionOptions): WalkSession {
     for (const listener of readyListeners) listener();
   }
 
+  // Keep the transitional controller private until validated collision replaces it. Its
+  // construction is the first allocation: when it throws, the placeholder geometry is the only
+  // resource to roll back. Anything mounted after it fails through the shared dispose.
   try {
-    // Keep the transitional controller private until validated collision replaces it.
     currentWalk = createController(ownedGeometry);
+  } catch (error) {
+    ownedGeometry.dispose();
+    throw error;
+  }
+  try {
     if (isTouch) {
       joystickLayer = mountJoystickLayer(canvas);
       joystick = mountJoystick(joystickLayer.root, (x, y) => {
-        currentWalk!.setJoystickVector(x, y);
+        currentWalk.setJoystickVector(x, y);
       });
     }
-
-
   } catch (error) {
     dispose();
     throw error;
@@ -126,7 +134,7 @@ export function createWalkSession(options: WalkSessionOptions): WalkSession {
 
   return {
     get walk(): WalkthroughHandle {
-      return currentWalk!;
+      return currentWalk;
     },
     get ready(): boolean {
       return ready;

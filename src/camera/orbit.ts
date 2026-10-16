@@ -260,6 +260,8 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
   /** The first two tracked pointers define the pinch, including when more fingers arrive. */
   function readPinchSpread(): number {
     const values = pointers.values();
+    // Callers hold pointers.size >= 2 (the else of size === 1 in onPointerDown, the check in
+    // onPointerMove), so the first two next() results each hold a tracked pointer.
     const a = values.next().value!;
     const b = values.next().value!;
     return Math.hypot(a.x - b.x, a.y - b.y);
@@ -329,6 +331,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     releaseCapture(event.pointerId);
     if (pointers.size === 1) {
       // The pinch is over; the surviving finger rotates again, anchored where it actually is.
+      // delete() removed a pointer above and one entry remains, so next() holds that pointer.
       const remaining = pointers.values().next().value!;
       dragging = true;
       lastX = remaining.x;

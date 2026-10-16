@@ -298,17 +298,25 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
   // Mode switching & blending
   const modeListeners = new Set<(mode: CameraMode) => void>();
 
-  interface ActiveBlend {
+  interface BlendFields {
     fromPose: Pose;
     toPose: Pose;
     durationMs: number;
     elapsedMs: number;
-    targetMode: CameraMode;
-    targetFoot?: [number, number, number];
-    targetYaw?: number;
-    targetPitch?: number;
     resolve: () => void;
   }
+  /** Lands in orbit mode: the orbit control takes over the final pose. */
+  interface OrbitBlend extends BlendFields {
+    targetMode: 'orbit';
+  }
+  /** Lands in walk mode: the walk controller takes the pose the blend carried. */
+  interface WalkBlend extends BlendFields {
+    targetMode: 'walk';
+    targetFoot: [number, number, number];
+    targetYaw: number;
+    targetPitch: number;
+  }
+  type ActiveBlend = OrbitBlend | WalkBlend;
   let activeBlend: ActiveBlend | null = null;
   // The blend writes its interpolation here once per frame instead of allocating a fresh pose.
   const blendDestination: Pose = { position: [0, 0, 0], target: [0, 0, 0] };
@@ -334,6 +342,8 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     canvas.dataset['camera'] = mode;
     const walkSession = walkLoader.session;
     if (mode === 'walk') {
+      // Walk handovers come only from blends begun at walkLoader state 'ready', which the
+      // loader publishes together with the session and revokes only on its dispose.
       orbit.setEnabled(false);
       walkSession!.walk.enable();
       walkSession!.setJoystickVisible(true);
@@ -391,6 +401,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     orbit.setEnabled(false);
     walkSession?.walk.disable();
     walkSession?.setJoystickVisible(false);
+    // setMode begins a walk blend only under walkLoader state 'ready', which implies the session.
     if (mode === 'walk') walkSession!.walk.setPose(storedWalkFoot, storedWalkYaw, storedWalkPitch);
     const duration = prefersReducedMotion() ? 0 : BLEND_MS;
     if (duration === 0) {
@@ -404,13 +415,16 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
       return;
     }
     hold();
-    activeBlend = {
-      fromPose, toPose, durationMs: duration, elapsedMs: 0, targetMode: mode,
-      ...(mode === 'walk' ? {
+    activeBlend = mode === 'walk'
+      ? {
+        fromPose, toPose, durationMs: duration, elapsedMs: 0, targetMode: 'walk',
         targetFoot: storedWalkFoot, targetYaw: storedWalkYaw, targetPitch: storedWalkPitch,
-      } : {}),
-      resolve: () => finishRequest(current),
-    };
+        resolve: () => finishRequest(current),
+      }
+      : {
+        fromPose, toPose, durationMs: duration, elapsedMs: 0, targetMode: 'orbit',
+        resolve: () => finishRequest(current),
+      };
     loop.invalidate();
   }
 
@@ -519,7 +533,9 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
             const blend = activeBlend;
             activeBlend = null;
             if (blend.targetMode === 'walk') {
-              walkLoader.session!.walk.setPose(blend.targetFoot!, blend.targetYaw!, blend.targetPitch!);
+              // A walk blend exists only under that readiness gate; the loader keeps its
+              // session until dispose, and dispose stops update() before this line.
+              walkLoader.session!.walk.setPose(blend.targetFoot, blend.targetYaw, blend.targetPitch);
             } else {
               orbit.moveTo(blend.toPose.position, blend.toPose.target);
             }
