@@ -84,6 +84,43 @@ function swatchNames(): string[] {
 }
 
 describe('mountProductCard', () => {
+  it('shows the empty thumbnail on image failure and restores an image for a later look', () => {
+    const handle = mount();
+    const empty = root.querySelector<HTMLElement>('.product-card__thumb-empty');
+    for (const look of [LOOK, OTHER]) {
+      handle.setLook(look, 'base');
+      const image = root.querySelector<HTMLImageElement>('.product-card__thumb');
+      expect(image?.hidden).toBe(false);
+      expect(image?.getAttribute('src')).toBe(`/content/${look.thumbnail}`);
+      expect(empty?.hidden).toBe(true);
+      image?.dispatchEvent(new Event('error'));
+      expect(image?.hidden).toBe(true);
+      expect(empty?.hidden).toBe(false);
+      expect(empty?.getAttribute('aria-hidden')).toBe('true');
+      expect(empty?.textContent).toBe('');
+      expect(root.querySelector('.product-card__name')?.textContent).toBe(look.name);
+    }
+    handle.setLook(LOOK, 'base');
+    expect(root.querySelector<HTMLImageElement>('.product-card__thumb')?.hidden).toBe(false);
+    expect(empty?.hidden).toBe(true);
+  });
+
+  it.each(['replacement', 'no-look', 'disposal'] as const)(
+    'retires failed-thumbnail listeners after %s', (retirement) => {
+      const handle = mount();
+      const image = root.querySelector<HTMLImageElement>('.product-card__thumb');
+      expect(image?.hidden).toBe(false);
+      if (retirement === 'disposal') handle.dispose();
+      else handle.setLook(retirement === 'no-look' ? null : OTHER, 'base');
+      image?.dispatchEvent(new Event('error'));
+      expect(image?.hidden).toBe(false);
+      if (retirement === 'replacement') {
+        expect(root.querySelector<HTMLImageElement>('.product-card__thumb')?.hidden).toBe(false);
+        expect(root.querySelector<HTMLElement>('.product-card__thumb-empty')?.hidden).toBe(true);
+      }
+    },
+  );
+
   it('renders a native, focusable Source link under the description with safe new-tab attributes', () => {
     const sourceUrl = 'https://example.com/source?id=42';
     mount({ look: { ...LOOK, sourceUrl } });

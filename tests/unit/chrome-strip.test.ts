@@ -81,6 +81,35 @@ function buttonFor(id: string): HTMLButtonElement {
 }
 
 describe('mountCatalogStrip', () => {
+  it('replaces failed thumbnails with the existing empty box and preserves every button name and action', () => {
+    const onSelect = vi.fn();
+    mount({ onSelect, current: LOOKS[0].id });
+    for (const look of LOOKS) {
+      const button = buttonFor(look.id);
+      const image = button.querySelector('img');
+      expect(image).not.toBeNull();
+      image?.dispatchEvent(new Event('error'));
+      expect(button.querySelector('img')).toBeNull();
+      const empty = button.querySelector('.catalog-strip__empty');
+      expect(empty?.getAttribute('aria-hidden')).toBe('true');
+      expect(empty?.textContent).toBe('');
+      expect(button.querySelector('.catalog-strip__label')?.textContent).toBe(look.name);
+      button.click();
+      expect(onSelect).toHaveBeenLastCalledWith(look.id);
+    }
+    expect(buttonFor(LOOKS[0].id).getAttribute('aria-current')).toBe('true');
+  });
+
+  it('retires the thumbnail error handler on disposal', () => {
+    const handle = mount();
+    const button = buttonFor(LOOKS[0].id);
+    const image = button.querySelector('img');
+    handle.dispose();
+    image?.dispatchEvent(new Event('error'));
+    expect(button.querySelector('img')).toBe(image);
+    expect(button.querySelector('.catalog-strip__empty')).toBeNull();
+  });
+
   it('renders one native button per look, in catalogue order', () => {
     mount();
     const rendered = buttons();

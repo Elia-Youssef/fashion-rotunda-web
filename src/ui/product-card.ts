@@ -60,7 +60,7 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
   const head = document.createElement('div');
   head.className = 'product-card__head';
 
-  const thumb = document.createElement('img');
+  let thumb = document.createElement('img');
   thumb.className = 'product-card__thumb';
   const thumbEmpty = document.createElement('span');
   thumbEmpty.className = 'product-card__thumb-empty';
@@ -244,7 +244,11 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
     retireSwatches();
     thumbnailAssignment?.abort();
     thumbnailAssignment = new AbortController();
-    thumb.removeAttribute('src');
+    // Each look owns its image, so a queued error from the old URL cannot reach the new look.
+    const image = document.createElement('img');
+    image.className = 'product-card__thumb';
+    thumb.replaceWith(image);
+    thumb = image;
     source.hidden = look?.sourceUrl === undefined;
     if (look?.sourceUrl !== undefined) source.href = look.sourceUrl;
     else source.removeAttribute('href');
@@ -261,6 +265,10 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
     thumb.hidden = true;
     thumbEmpty.hidden = false;
     if (url !== '') {
+      image.addEventListener('error', () => {
+        image.hidden = true;
+        thumbEmpty.hidden = false;
+      }, { signal: thumbnailAssignment.signal, once: true });
       afterFirstFrame(() => {
         thumb.src = url;
         thumb.hidden = false;

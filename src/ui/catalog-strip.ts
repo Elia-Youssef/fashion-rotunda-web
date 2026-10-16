@@ -71,6 +71,14 @@ export function mountCatalogStrip(
   // alone would leave a caller-held button able to fire its handler.
   const listeners = new AbortController();
 
+  function emptyThumbnail(): HTMLSpanElement {
+    const empty = document.createElement('span');
+    empty.className = 'catalog-strip__empty';
+    // The name is on the hidden label below; the box needs no text of its own.
+    empty.setAttribute('aria-hidden', 'true');
+    return empty;
+  }
+
   for (const look of options.looks) {
     const item = document.createElement('li');
     item.className = 'catalog-strip__item';
@@ -85,17 +93,16 @@ export function mountCatalogStrip(
     if (url !== '') {
       const image = document.createElement('img');
       image.className = 'catalog-strip__thumb';
-      afterFirstFrame(() => { image.src = url; }, listeners.signal);
+      image.addEventListener('error', () => {
+        image.replaceWith(emptyThumbnail());
+      }, { signal: listeners.signal, once: true });
       // The hidden label below carries the name; an empty alt keeps the thumbnail decorative so
       // a screen reader does not read the look name twice.
       image.alt = '';
       button.appendChild(image);
+      afterFirstFrame(() => { image.src = url; }, listeners.signal);
     } else {
-      const empty = document.createElement('span');
-      empty.className = 'catalog-strip__empty';
-      // The name is on the hidden label below; the box needs no text of its own.
-      empty.setAttribute('aria-hidden', 'true');
-      button.appendChild(empty);
+      button.appendChild(emptyThumbnail());
     }
 
     // The name alongside the image, hidden from the eye but present for a screen reader, so the

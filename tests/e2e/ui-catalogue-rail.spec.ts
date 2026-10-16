@@ -1,7 +1,7 @@
-import { expect, test } from './support/fixtures';
+import { expect, expectConsoleError, test } from './support/fixtures';
 import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import type { Page } from '@playwright/test';
-import { openShowroom } from './support/showroom';
+import { openShowroom, readCatalog } from './support/showroom';
 import { holdFirstRequest } from './support/held-request';
 
 // Catalogue rail E2E verification.
@@ -24,6 +24,26 @@ const SWITCH_TIMEOUT = 30_000;
 // the backend its project promises through the canvas data-backend attribute before any DOM
 // reading, and waits on past the first frame to the mounted strip and card.
 const RAIL_PATH = '/?gate=off&e2e=1&proof=1&attract=0&post=off';
+
+for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+  test(`failed strip thumbnail shows an empty box at ${viewport.width}x${viewport.height}`, async ({ page, request }) => {
+    await page.setViewportSize(viewport);
+    const catalog = await readCatalog(request);
+    const look = catalog.looks[0];
+    expect(look.thumbnail).not.toBeNull();
+    await page.route(`**/content/${look.thumbnail}`, (route) => route.abort());
+    expectConsoleError(page, /^Failed to load resource: net::ERR_FAILED/,
+      'the opening look thumbnail is deliberately aborted in the strip and card');
+    await openShowroom(page, request, RAIL_PATH);
+    const button = page.locator(`#looks button[data-look="${look.id}"]`);
+    await expect(button.locator('.catalog-strip__empty')).toBeVisible();
+    await expect(button.locator('.catalog-strip__empty')).toHaveAttribute('aria-hidden', 'true');
+    await expect(button.locator('.catalog-strip__empty')).toHaveText('');
+    await expect(button.locator('img')).toHaveCount(0);
+    await expect(button).toHaveAccessibleName(look.name);
+    await expect(button).toHaveAttribute('aria-current', 'true');
+  });
+}
 
 interface SafeArea {
   top: number;
