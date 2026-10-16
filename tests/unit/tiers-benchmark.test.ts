@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runBenchmark } from '../../src/tiers/benchmark';
 import { createLoop } from '../../src/loop/loop';
 
@@ -236,5 +236,121 @@ describe('runBenchmark', () => {
     // Frames 4..8 cost 3 each and are the samples; the run ends once the clock passes 800.
     expect(draws).toBe(8);
     expect(p95).toBe(3);
+  });
+
+  it('treats the third frame as the last warm-up frame, excluded from the samples', async () => {
+    // A 50 ms spike on exactly the third frame: the warm-up absorbs it, so the p95 stays 4.
+    // Measuring from the third frame on (>= instead of >) would resolve 50.
+    const costs = [2, 2, 50, 4, 4, 4, 4];
+    let clock = 0;
+    let draws = 0;
+    const renderFrame = (): void => {
+      const cost = costs[draws];
+      // A behaviour change that stretches the run past the script must fail here, not hang.
+      if (cost === undefined) {
+        throw new Error(`frame ${draws + 1} has no scripted cost`);
+      }
+      clock += cost;
+      draws += 1;
+    };
+    const now = (): number => clock;
+    const callbacks: ((t: number) => void)[] = [];
+    const raf = (cb: (t: number) => void): number => {
+      callbacks.push(cb);
+      return callbacks.length;
+    };
+    const benchmark = runBenchmark({ renderFrame, durationMs: 70, now, raf });
+    for (let guard = 0; guard < 16 && callbacks.length > 0; guard += 1) {
+      callbacks.shift()!(0);
+      await Promise.resolve();
+    }
+    // The seventh frame ends the run exactly at 70 ms of accumulated clock.
+    expect(draws).toBe(7);
+    expect(await benchmark).toBe(4);
+  });
+
+  it('resolves the p95 of the measured work, not a lower percentile', async () => {
+    // Five cheap frames and one 9 ms frame after the warm-up: the p95 ranks the 9 ms tail,
+    // the p50 does not. The tier decision reads the p95, so a lower percentile would
+    // understate a slow tail and hand a marginal GPU the high tier.
+    const costs = [1, 1, 1, 1, 1, 1, 1, 1, 9];
+    let clock = 0;
+    let draws = 0;
+    const renderFrame = (): void => {
+      const cost = costs[draws];
+      // A behaviour change that stretches the run past the script must fail here, not hang.
+      if (cost === undefined) {
+        throw new Error(`frame ${draws + 1} has no scripted cost`);
+      }
+      clock += cost;
+      draws += 1;
+    };
+    const now = (): number => clock;
+    const callbacks: ((t: number) => void)[] = [];
+    const raf = (cb: (t: number) => void): number => {
+      callbacks.push(cb);
+      return callbacks.length;
+    };
+    const benchmark = runBenchmark({ renderFrame, durationMs: 17, now, raf });
+    for (let guard = 0; guard < 16 && callbacks.length > 0; guard += 1) {
+      callbacks.shift()!(0);
+      await Promise.resolve();
+    }
+    // The ninth frame ends the run exactly at 17 ms of accumulated clock.
+    expect(draws).toBe(9);
+    expect(await benchmark).toBe(9);
+  });
+});
+
+describe('runBenchmark defaults', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('times the calibration on the real performance clock when now is omitted', async () => {
+    // Frames ride one macrotask each, so the real clock advances between them. A frozen
+    // fallback clock would leave the promise pending; the sentinel ends the race instead
+    // of hanging the worker.
+    const callbacks: ((t: number) => void)[] = [];
+    const raf = (cb: (t: number) => void): number => {
+      callbacks.push(cb);
+      return callbacks.length;
+    };
+    const renderFrame = vi.fn();
+    const benchmark = runBenchmark({ renderFrame, durationMs: 15, raf });
+    for (let guard = 0; callbacks.length > 0 && guard < 60; guard += 1) {
+      await new Promise((release) => { setTimeout(release, 1); });
+      callbacks.splice(0).forEach((cb) => cb(0));
+    }
+    const outcome = await Promise.race([
+      benchmark.then(() => 'resolved'),
+      new Promise((release) => { setTimeout(() => release('unresolved'), 1200); }),
+    ]);
+    expect(outcome).toBe('resolved');
+    expect(renderFrame).toHaveBeenCalled();
+  });
+
+  it('draws through the page requestAnimationFrame when raf is omitted', async () => {
+    const callbacks: ((t: number) => void)[] = [];
+    const pageRaf = vi.fn((cb: (t: number) => void): number => {
+      callbacks.push(cb);
+      return callbacks.length;
+    });
+    vi.stubGlobal('requestAnimationFrame', pageRaf);
+    let clock = 0;
+    let draws = 0;
+    const renderFrame = (): void => {
+      clock += 5;
+      draws += 1;
+    };
+    const benchmark = runBenchmark({ renderFrame, durationMs: 25, now: () => clock });
+    // The first frame is requested through the page scheduler up front, before any await.
+    expect(pageRaf).toHaveBeenCalledTimes(1);
+    for (let guard = 0; guard < 16 && callbacks.length > 0; guard += 1) {
+      callbacks.shift()!(0);
+      await Promise.resolve();
+    }
+    expect(draws).toBe(5);
+    expect(await benchmark).toBe(5);
   });
 });
