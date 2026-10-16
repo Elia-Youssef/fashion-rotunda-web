@@ -65,6 +65,14 @@ function requireTextures(parser: GLTFParser): GLTFLoaderPlugin {
   return { name: 'require-textures' };
 }
 
+/**
+ * Page lifetime: one instance per page load, no dispose path. The single call site is
+ * createShowroom in src/scene/showroom.ts, which starts this factory once and awaits the same
+ * loader for every room, plinth and look parse. The KTX2 transcoder workers are therefore built
+ * once and reused for the page's life; releasing them would only matter if loaders were created
+ * and retired within a page, which the one call site rules out. GLTFLoader has no dispose to
+ * call, and the browser discards the workers when the page closes.
+ */
 export async function createGltfLoader(
   renderer: WebGPURenderer,
   contentBase: string,
