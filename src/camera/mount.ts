@@ -6,6 +6,7 @@ import { Vector3 } from 'three/webgpu';
 import type { PerspectiveCamera } from 'three/webgpu';
 
 import type { CatalogView } from '../catalog/catalog';
+import { afterFirstFrame } from '../proof/marks';
 import { prefersReducedMotion } from '../ui/announce';
 import { ATTRACT_HOLD_MS, ATTRACT_IDLE_MS, ATTRACT_MOVE_MS, createAttract } from './attract';
 import type { AttractHandle } from './attract';
@@ -236,11 +237,21 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     },
   });
 
-  // Keep the boot preload for the eager transition; first-use loading is a separate change.
-  let preload: ReturnType<typeof setTimeout> | null = setTimeout(() => {
-    preload = null;
-    void walkLoader.ensureReady().catch(() => {});
-  }, 0);
+  // Touch startup reserves bandwidth for the opening scene. Explicit Walk still loads immediately.
+  const preloadLifetime = new AbortController();
+  let preload: ReturnType<typeof setTimeout> | null = null;
+  function queuePreload(): void {
+    preload = setTimeout(() => {
+      preload = null;
+      void walkLoader.ensureReady().catch(() => {});
+    }, 0);
+  }
+  function cancelPreload(): void {
+    preloadLifetime.abort();
+    if (preload !== null) { clearTimeout(preload); preload = null; }
+  }
+  if (isTouch) afterFirstFrame(queuePreload, preloadLifetime.signal);
+  else queuePreload();
 
   // Presets
   const presets = createPresets(views, orbit, prefersReducedMotion);
@@ -405,7 +416,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
 
   function setMode(mode: CameraMode): Promise<void> {
     if (disposed) return Promise.resolve();
-    if (preload !== null) { clearTimeout(preload); preload = null; }
+    cancelPreload();
     if (request?.mode === mode) return request.promise;
     const interrupted = activeBlend !== null;
     activeBlend = null;
@@ -575,7 +586,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     dispose(): void {
       if (disposed) return;
       disposed = true;
-      if (preload !== null) clearTimeout(preload);
+      cancelPreload();
       request?.resolve();
       request = null;
       unlistenLoad();
