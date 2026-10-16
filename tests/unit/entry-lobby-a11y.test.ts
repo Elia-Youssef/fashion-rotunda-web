@@ -103,6 +103,58 @@ describe('accessibility and focus containment', () => {
     expect(document.activeElement).toBe(dialog);
   });
 
+  it('counts a focused control with no layout box as focusable', () => {
+    const dialog = document.createElement('div');
+    const moving = document.createElement('button');
+    const middle = document.createElement('button');
+    const end = document.createElement('button');
+    dialog.append(moving, middle, end);
+    root.appendChild(dialog);
+    for (const button of [middle, end]) {
+      Object.defineProperty(button, 'offsetParent', { configurable: true, get: () => dialog });
+    }
+    const controller = new AbortController();
+    const key = (value: string, shiftKey = false): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', { key: value, shiftKey, cancelable: true });
+      document.dispatchEvent(event);
+      return event;
+    };
+    try {
+      bindFocusTrap(document, dialog, controller.signal, () => false);
+      // The focused control reports no layout box (jsdom default), as a real control does
+      // mid-transition; it still takes part in the wrap order.
+      moving.focus();
+      // Forward Tab from a focused control that is not the last one is left to the browser.
+      expect(key('Tab').defaultPrevented).toBe(false);
+      expect(document.activeElement).toBe(moving);
+      // Shift+Tab from it, as the first focusable, wraps to the last one.
+      expect(key('Tab', true).defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(end);
+    } finally {
+      controller.abort();
+    }
+  });
+
+  it('takes initial focus when the document reports no focused element', () => {
+    const dialog = document.createElement('div');
+    const load = document.createElement('button');
+    dialog.appendChild(load);
+    root.appendChild(dialog);
+    const realActiveElement = Object.getOwnPropertyDescriptor(Document.prototype, 'activeElement')!
+      .get!;
+    Object.defineProperty(document, 'activeElement', { configurable: true, get: () => null });
+    try {
+      focusInitially(document, dialog, load, true);
+    } finally {
+      Object.defineProperty(document, 'activeElement', {
+        configurable: true,
+        get: realActiveElement,
+      });
+    }
+    expect(document.activeElement).toBe(load);
+    expect(dialog.tabIndex).toBe(-1);
+  });
+
   it('traps Tab navigation inside the lobby dialog', () => {
     const { element } = mountLobby();
     const loadBtn = element.querySelector<HTMLButtonElement>('#lobby-load-btn')!;

@@ -227,4 +227,17 @@ describe('Music preference contract in lobby', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(reportedPreference).toBe('off');
   });
+
+  it('resolves the preference without a music switch button', () => {
+    // A lobby whose markup carries no music switch (the facade passes querySelector's null)
+    // must still resolve the preference the Load press carries, without touching the DOM.
+    const controller = new AbortController();
+    try {
+      const music = createLobbyMusicSwitch(null, '?music=off', store, controller.signal);
+      expect(music.preference).toBe('off');
+      expect(store.getItem('fashion-rotunda.music')).toBeNull();
+    } finally {
+      controller.abort();
+    }
+  });
 });
