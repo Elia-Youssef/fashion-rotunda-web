@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mountJoystick } from '../../src/camera/joystick';
 
+// The pin below and its negative control share this probe, so the control proves the probe
+// discriminates between a hidden and an exposed joystick instead of passing vacuously.
+function hiddenFromAssistiveTech(element: HTMLElement): boolean {
+  return element.getAttribute('aria-hidden') === 'true';
+}
+
 describe('mountJoystick', () => {
   let root: HTMLElement;
 
@@ -23,6 +29,32 @@ describe('mountJoystick', () => {
     handle.setVisible(true);
     expect(handle.visible).toBe(true);
     expect(container.hidden).toBe(false);
+
+    handle.dispose();
+  });
+
+  it('stays hidden from assistive technology, including while visible', () => {
+    const onVector = vi.fn();
+    const handle = mountJoystick(root, onVector);
+
+    const container = root.querySelector('.archviz-joystick') as HTMLElement;
+    expect(hiddenFromAssistiveTech(container)).toBe(true);
+
+    handle.setVisible(true);
+    expect(container.hidden).toBe(false);
+    expect(hiddenFromAssistiveTech(container)).toBe(true);
+
+    handle.dispose();
+  });
+
+  it('reports a joystick left exposed to assistive technology', () => {
+    // Negative control: the pre-fix joystick carried no aria attributes at all, so the probe
+    // must report it as exposed once the attribute is missing.
+    const handle = mountJoystick(root, vi.fn());
+
+    const container = root.querySelector('.archviz-joystick') as HTMLElement;
+    container.removeAttribute('aria-hidden');
+    expect(hiddenFromAssistiveTech(container)).toBe(false);
 
     handle.dispose();
   });
