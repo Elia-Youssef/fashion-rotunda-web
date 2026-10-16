@@ -6,6 +6,10 @@ import { RAIL_PATH } from './support/catalogue-rail';
 
 const SCENE_READY_TIMEOUT = 60_000;
 const SWITCH_TIMEOUT = 30_000;
+// The click marks its own button busy synchronously in selectLook (strip.setBusy before the look
+// fetch starts, src/ui/chrome.ts), so the wait covers only the click dispatch itself; 5 s is
+// headroom for a loaded machine, not a matched budget.
+const BUSY_MARK_TIMEOUT_MS = 5000;
 
 test.describe('Catalogue Rail Parity', () => {
   test('selection via pointer, Enter, Space, and focus continuity across breakpoints', async ({
@@ -129,7 +133,7 @@ test.describe('Catalogue Rail Parity', () => {
     await targetBtn.click();
 
     // Immediately verify aria-busy is set
-    await expect(targetBtn).toHaveAttribute('aria-busy', 'true', { timeout: 5000 });
+    await expect(targetBtn).toHaveAttribute('aria-busy', 'true', { timeout: BUSY_MARK_TIMEOUT_MS });
 
     // Verify semantic readings of the busy state
     await expect.poll(async () => {
