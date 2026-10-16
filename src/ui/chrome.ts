@@ -1,20 +1,26 @@
 // The chrome module: the one place that binds the catalogue strip and the product card to the
-// page. It owns no DOM of its own; it owns the rules; which look is busy, what a swatch click does
+// page. It owns the failure notice and the rules; which look is busy, what a swatch click does
 // to the showroom, what order Reset runs in, and that every action ends with onChange so the loop
 // draws the frame the visitor just asked for.
 
 import './chrome.css';
+import './share.css';
+import '../camera/mode-switch.css';
 
 import { contentUrl } from '../catalog/catalog';
 import type { Catalog, CatalogLook } from '../catalog/catalog';
 import { mountCatalogStrip } from './catalog-strip';
 import { mountProductCard } from './product-card';
+import type { Announcer } from './announce';
+
+const LOOK_LOAD_FAILURE = 'That look could not load. Select it again to try once more.';
 
 export interface ChromeOptions {
   catalog: Catalog;
   contentBase: string;
   stripRoot: HTMLElement;
   cardRoot: HTMLElement;
+  announcer: Pick<Announcer, 'say'>;
   showroom: {
     showLook(id: string): Promise<void>;
     setVariant(name: string): Promise<void>;
@@ -38,6 +44,21 @@ export interface ChromeHandle {
 
 export function mountChrome(options: ChromeOptions): ChromeHandle {
   const { catalog, showroom } = options;
+  // Reuse the share status line and the fixed notice box (the look-status rule beside the Walk
+  // hint's in mode-switch.css) so a closed phone sheet cannot hide it. Speech belongs to the page
+  // announcer; this visible copy is not another live region.
+  const status = document.createElement('div');
+  status.className = 'share__status look-status';
+  status.dataset['lookStatus'] = '';
+  status.hidden = true;
+  options.stripRoot.ownerDocument.body.appendChild(status);
+  let disposed = false;
+  let selection = 0;
+
+  function notify(text: string): void {
+    status.textContent = text;
+    status.hidden = text === '';
+  }
 
   /** A look without a thumbnail is an empty string, never a URL the caller would have to check. */
   function thumbnailUrl(look: CatalogLook): string {
@@ -82,18 +103,27 @@ export function mountChrome(options: ChromeOptions): ChromeHandle {
   }
 
   function selectLook(id: string): void {
+    const requested = ++selection;
     pendingSwitches += 1;
     strip.setBusy(id);
     // Promise.resolve().then keeps a synchronous throw from showLook inside the chain: the strip
     // still settles, clears its busy mark and follows whatever look is on screen.
     void Promise.resolve()
       .then(() => showroom.showLook(id))
+      .then(() => {
+        if (!disposed && requested === selection && showroom.currentLook === id) notify('');
+      })
       .catch((error: unknown) => {
         // The switcher keeps the previous look on screen; the sync below follows it.
         console.warn(`[archviz] the look "${id}" did not load`, error);
+        if (!disposed && requested === selection) {
+          notify(LOOK_LOAD_FAILURE);
+          options.announcer.say(LOOK_LOAD_FAILURE);
+        }
       })
       .then(() => {
         pendingSwitches -= 1;
+        if (disposed) return;
         if (pendingSwitches === 0) {
           strip.setBusy(null);
         }
@@ -164,6 +194,8 @@ export function mountChrome(options: ChromeOptions): ChromeHandle {
       syncToCurrent();
     },
     dispose(): void {
+      disposed = true;
+      status.remove();
       strip.dispose();
       card.dispose();
     },

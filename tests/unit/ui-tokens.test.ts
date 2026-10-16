@@ -53,7 +53,9 @@ const FROZEN_SHEET_HASHES: Readonly<Record<string, string>> = {
   'camera/joystick.css': 'f4770d13697af60904f86b3d169e2b9034de09c3824bbe1148ed46e7b99851f9',
   // 2026-10-15: reserve all Walk labels through intrinsic layout without adding
   // colour, font or length literals; freeze the resulting layout rules too.
-  'camera/mode-switch.css': '2203f6b2d6fb97c2bd82f44f49bf55557b4bd24bfb2ceab54fcb9537592856b0',
+  // 2026-10-16: the notice box rule also styles the failed look-switch notice (.look-status),
+  // selectors only, no new literal.
+  'camera/mode-switch.css': '44e3ecc5bd5bb80af814e03ac6cde840e0ef1a6a0f47d46f1d10dafb1e773c5f',
 };
 
 function stripComments(css: string): string {

@@ -129,6 +129,7 @@ afterEach(() => {
 });
 
 interface MountOverrides {
+  say?: (text: string) => void;
   showroom?: FakeShowroom;
   initialLook?: string;
   onRotateToggle?: () => boolean;
@@ -147,6 +148,7 @@ function mount(overrides: MountOverrides = {}): { handle: ChromeHandle; showroom
     contentBase: '/content',
     stripRoot,
     cardRoot,
+    announcer: { say: overrides.say ?? vi.fn() },
     showroom,
     onRotateToggle,
     onResetCamera,
@@ -206,6 +208,69 @@ describe('mountChrome', () => {
 });
 
 describe('selecting a look', () => {
+  it.each(['rejection', 'throw'] as const)(
+    'reports a failed switch after a %s and clears the notice after retry succeeds', async (failure) => {
+      const say = vi.fn();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { showroom } = mount({ say });
+      const error = new Error('content unavailable');
+      if (failure === 'throw') showroom.showLook.mockImplementationOnce(() => { throw error; });
+      else showroom.showLook.mockRejectedValueOnce(error);
+      const message = 'That look could not load. Select it again to try once more.';
+      const status = document.querySelector<HTMLElement>('[data-look-status]');
+      expect(status?.hidden).toBe(true);
+
+      stripButton('zoot-suit').click();
+      await vi.waitFor(() => expect(say).toHaveBeenCalledExactlyOnceWith(message));
+      expect(status?.textContent).toBe(message);
+      expect(status?.hidden).toBe(false);
+      expect(status?.hasAttribute('aria-live')).toBe(false);
+      expect(status?.hasAttribute('role')).toBe(false);
+      expect(document.querySelectorAll('[data-look-status]')).toHaveLength(1);
+      expect(showroom.currentLook).toBe('wallis-dress');
+      expect(stripButton('wallis-dress').getAttribute('aria-current')).toBe('true');
+      expect(stripButton('zoot-suit').hasAttribute('aria-busy')).toBe(false);
+      expect(cardText('.product-card h2')).toBe('Wallis Dress');
+
+      stripButton('zoot-suit').click();
+      await vi.waitFor(() => expect(showroom.showLook).toHaveBeenCalledTimes(2));
+      showroom.settleNextSwitch();
+      await vi.waitFor(() => expect(status?.hidden).toBe(true));
+      expect(status?.textContent).toBe('');
+      expect(showroom.currentLook).toBe('zoot-suit');
+      expect(say).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith('[archviz] the look "zoot-suit" did not load', error);
+      warn.mockRestore();
+    },
+  );
+
+  it('ignores a retired failure after a newer selection or disposal', async () => {
+    const say = vi.fn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { handle, showroom } = mount({ say });
+    let reject: (error: Error) => void = () => { throw new Error('request not started'); };
+    showroom.showLook.mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail; }));
+    stripButton('zoot-suit').click();
+    await vi.waitFor(() => expect(showroom.showLook).toHaveBeenCalledTimes(1));
+    stripButton('new-look-dress').click();
+    await vi.waitFor(() => expect(showroom.showLook).toHaveBeenCalledTimes(2));
+    showroom.settleNextSwitch();
+    reject(new Error('retired request'));
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledTimes(1));
+    expect(say).not.toHaveBeenCalled();
+    expect(document.querySelector<HTMLElement>('[data-look-status]')?.hidden).toBe(true);
+
+    showroom.showLook.mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail; }));
+    stripButton('zoot-suit').click();
+    await vi.waitFor(() => expect(showroom.showLook).toHaveBeenCalledTimes(3));
+    handle.dispose();
+    reject(new Error('disposed request'));
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledTimes(2));
+    expect(say).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-look-status]')).toBeNull();
+    warn.mockRestore();
+  });
+
   it('shows busy on the chosen item, then follows the showroom when it settles', async () => {
     const onChange = vi.fn();
     const { showroom } = mount({ onChange });

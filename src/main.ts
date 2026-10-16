@@ -806,6 +806,7 @@ async function main(): Promise<void> {
       chain?.setDepthOfFieldAllowed(depthOfFieldAllowed);
     });
     mountChrome({
+      announcer,
       catalog,
       contentBase: base,
       stripRoot: requireElement('#looks', 'looks strip'),

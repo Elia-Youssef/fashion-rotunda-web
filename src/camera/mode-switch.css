@@ -14,7 +14,10 @@
   -webkit-backdrop-filter: blur(8px);
 }
 
-.archviz-walk-hint {
+/* The fixed notice box under the header, shared by the Walk hint and the failed look-switch notice
+   (src/ui/chrome.ts). Each keeps its own class, so a selector for one never finds the other. */
+.archviz-walk-hint,
+.look-status {
   position: fixed;
   top: calc(var(--header-height, 3.5rem) + var(--safe-area-top, 0px) + var(--space-2, 0.5rem));
   left: 50%;
@@ -33,7 +36,8 @@
   pointer-events: none;
 }
 
-.archviz-walk-hint[hidden] {
+.archviz-walk-hint[hidden],
+.look-status[hidden] {
   display: none;
 }
 
