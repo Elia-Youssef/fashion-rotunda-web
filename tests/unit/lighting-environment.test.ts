@@ -1,5 +1,5 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-import type { RenderTarget, Texture } from 'three';
+import type { Texture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
 
 const state = vi.hoisted(() => ({
@@ -16,6 +16,9 @@ const state = vi.hoisted(() => ({
   output: null as RenderTarget | null,
   roomBlur: 0,
   hdrUrl: '',
+  hdrWidth: 64,
+  hdrHeight: 32,
+  skyPalettes: [] as { name: string; palette: unknown }[],
   boundTarget: null as unknown,
   boundFace: 2,
   boundLevel: 1,
@@ -120,7 +123,8 @@ vi.mock('three/addons/loaders/HDRLoader.js', async () => {
         load(url: string, onLoad: (source: Texture) => void, _progress: unknown, onError: (error: unknown) => void) {
           state.hdrUrl = url;
           step('load-start');
-          const source = record('source', new actual.DataTexture(new Float32Array(64 * 32 * 4), 64, 32,
+          const source = record('source', new actual.DataTexture(
+            new Float32Array(state.hdrWidth * state.hdrHeight * 4), state.hdrWidth, state.hdrHeight,
             undefined, actual.FloatType));
           source.flipY = true;
           if (state.fail === 'orient') {
@@ -145,7 +149,8 @@ vi.mock('../../src/lighting/sky', async (importOriginal) => {
   const actual = await vi.importActual<typeof import('three')>('three');
   return {
     ...sky,
-    createGradientSkyTexture: vi.fn((_palette: unknown, name: string) => {
+    createGradientSkyTexture: vi.fn((palette: unknown, name: string) => {
+      state.skyPalettes.push({ name, palette });
       const label = name.endsWith('lighting') ? 'source' : 'background';
       step(`${label}-create`);
       return record(label, new actual.DataTexture(new Uint16Array(512 * 256 * 4), 512, 256,
@@ -154,9 +159,32 @@ vi.mock('../../src/lighting/sky', async (importOriginal) => {
   };
 });
 
-import { CubeUVReflectionMapping, HalfFloatType, LinearFilter, LinearSRGBColorSpace, RGBAFormat, Scene } from 'three';
-import { createHdrEnvironment, createProceduralEnvironment, createRoomEnvironment } from '../../src/lighting/environment';
+import {
+  CubeUVReflectionMapping,
+  DataTexture,
+  DataUtils,
+  EquirectangularReflectionMapping,
+  FloatType,
+  HalfFloatType,
+  LinearFilter,
+  LinearMipmapLinearFilter,
+  LinearSRGBColorSpace,
+  RepeatWrapping,
+  RGBAFormat,
+  RenderTarget,
+  Scene,
+  SRGBColorSpace,
+  UnsignedByteType,
+} from 'three';
+import {
+  createHdrEnvironment,
+  createProceduralEnvironment,
+  createRoomEnvironment,
+  createSkyOnlyBackground,
+  fromRenderTarget,
+} from '../../src/lighting/environment';
 import type { Environment } from '../../src/lighting/environment';
+import { environmentSkyPalette, visibleSkyPalette } from '../../src/lighting/sky';
 
 interface FactorySpec {
   name: string;
@@ -246,6 +274,9 @@ beforeEach(() => {
   state.output = null;
   state.roomBlur = 0;
   state.hdrUrl = '';
+  state.hdrWidth = 64;
+  state.hdrHeight = 32;
+  state.skyPalettes = [];
   state.boundTarget = previousTarget;
   state.boundFace = 2;
   state.boundLevel = 1;
@@ -315,6 +346,7 @@ for (const spec of specs) {
       expect(target.texture.generateMipmaps).toBe(false);
       expect(target.texture).toHaveProperty('isPMREMTexture', true);
       expect(target.texture.name).toBe('PMREM.cubeUv');
+      expect(target.scissorTest).toBe(true);
       const scene = new Scene();
       environment.apply(scene, 0.4, 0.25);
       expect(scene.environment).toBe(target.texture);
@@ -325,6 +357,10 @@ for (const spec of specs) {
       if (spec.name === 'hdr') {
         expect(state.hdrUrl).toBe('/sky.hdr');
         expect(state.input!.flipY).toBe(true);
+        // orientHdrEquirectangular ran before the visible copy was derived, so the copy the
+        // visitor sees through the dome carries the equirectangular mapping of its source.
+        const visible = background as DataTexture | undefined;
+        expect(visible?.mapping).toBe(EquirectangularReflectionMapping);
       }
       for (const { name, resource } of state.resources) {
         expect(resource.dispose).toHaveBeenCalledTimes(spec.retained.some((retained) => retained === name) ? 0 : 1);
@@ -366,3 +402,145 @@ for (const spec of specs) {
     });
   });
 }
+
+describe('environment construction contracts', () => {
+  it('rounds a non-power-of-two panorama quarter down to the PMREM cube size', async () => {
+    state.hdrWidth = 600;
+    state.hdrHeight = 300;
+    const environment = await createHdrEnvironment(renderer as unknown as WebGPURenderer, '/sky.hdr');
+    expect(state.output!.width).toBe(384);
+    expect(state.output!.height).toBe(512);
+    environment.dispose();
+  });
+
+  it('prefilters the procedural lighting copy, not the visible background', async () => {
+    const environment = await createProceduralEnvironment(renderer as unknown as WebGPURenderer);
+    const source = state.resources.find((entry) => entry.name === 'source')?.resource;
+    expect(state.input).toBe(source);
+    environment.dispose();
+  });
+
+  it('prefilters the loaded HDR panorama, not the derived visible background', async () => {
+    const environment = await createHdrEnvironment(renderer as unknown as WebGPURenderer, '/sky.hdr');
+    const source = state.resources.find((entry) => entry.name === 'source')?.resource;
+    expect(state.input).toBe(source);
+    environment.dispose();
+  });
+
+  it('builds the lighting copy from the environment palette and the visible copy from the visible palette', async () => {
+    const environment = await createProceduralEnvironment(renderer as unknown as WebGPURenderer);
+    environment.dispose();
+    const byName = new Map(state.skyPalettes.map((call) => [call.name, call.palette] as const));
+    expect(byName.get('procedural sky lighting')).toEqual(environmentSkyPalette());
+    expect(byName.get('procedural sky visible')).toEqual(visibleSkyPalette());
+  });
+
+  it('applies the documented default background intensity and blur', async () => {
+    const environment = await createProceduralEnvironment(renderer as unknown as WebGPURenderer);
+    const scene = new Scene();
+    environment.apply(scene, 0.4);
+    expect(scene.environmentIntensity).toBe(0.4);
+    expect(scene.backgroundIntensity).toBe(0.25);
+    expect(scene.backgroundBlurriness).toBe(0.08);
+    environment.dispose();
+
+    const room = await createRoomEnvironment(renderer as unknown as WebGPURenderer);
+    const bare = new Scene();
+    room.apply(bare, 0.5);
+    expect(bare.background).toBeNull();
+    expect(bare.backgroundIntensity).toBe(1);
+    expect(bare.backgroundBlurriness).toBe(0);
+    room.dispose();
+  });
+
+  it('releases a texture used as both background and source exactly once', () => {
+    const target = new RenderTarget(16, 16);
+    const shared = new DataTexture(new Float32Array(2 * 2 * 4), 2, 2, undefined, FloatType);
+    fromRenderTarget(target, shared, shared).dispose();
+    expect(shared.dispose).toHaveBeenCalledTimes(1);
+    expect(target.dispose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('visible HDR background derivation', () => {
+  it('rejects sources that are not half or full floating-point HDR data textures', () => {
+    const misTyped = new DataTexture(new Float32Array(2 * 4 * 4), 2, 4, undefined, FloatType);
+    misTyped.type = UnsignedByteType;
+    expect(() => createSkyOnlyBackground(misTyped)).toThrow(TypeError);
+    expect(() => createSkyOnlyBackground(misTyped))
+      .toThrowError('HDR background source must use half or full floating-point pixels');
+
+    const singleColumn = new DataTexture(new Float32Array(1 * 4 * 4), 1, 4, undefined, FloatType);
+    expect(() => createSkyOnlyBackground(singleColumn))
+      .toThrowError('HDR background source must be a floating-point data texture');
+
+    const bytePixels = new DataTexture(new Uint8Array(2 * 4 * 4), 2, 4, undefined, UnsignedByteType);
+    expect(() => createSkyOnlyBackground(bytePixels))
+      .toThrowError('HDR background source must be a floating-point data texture');
+  });
+
+  it('caps the derived background at 512 by half that in pixels, and at two rows', () => {
+    const wide = new DataTexture(new Float32Array(600 * 600 * 4), 600, 600, undefined, FloatType);
+    wide.name = 'school field';
+    wide.mapping = EquirectangularReflectionMapping;
+    wide.colorSpace = SRGBColorSpace;
+    wide.wrapS = RepeatWrapping;
+    wide.wrapT = RepeatWrapping;
+    wide.magFilter = LinearFilter;
+    wide.minFilter = LinearMipmapLinearFilter;
+    wide.anisotropy = 8;
+    wide.generateMipmaps = false;
+    wide.flipY = true;
+    const background = createSkyOnlyBackground(wide) as DataTexture;
+    expect(background.image.width).toBe(512);
+    expect(background.image.height).toBe(256);
+    expect(background.name).toBe('school field visible sky');
+    expect(background.type).toBe(FloatType);
+    expect(background.mapping).toBe(EquirectangularReflectionMapping);
+    expect(background.colorSpace).toBe(SRGBColorSpace);
+    expect(background.wrapS).toBe(RepeatWrapping);
+    expect(background.wrapT).toBe(RepeatWrapping);
+    expect(background.magFilter).toBe(LinearFilter);
+    expect(background.minFilter).toBe(LinearMipmapLinearFilter);
+    expect(background.anisotropy).toBe(8);
+    expect(background.generateMipmaps).toBe(false);
+    expect(background.flipY).toBe(true);
+    // three's needsUpdate is a write-only setter that bumps version, so the readable proof
+    // that createSkyOnlyBackground flagged the copy for upload is a positive version.
+    expect(background.version).toBeGreaterThan(0);
+
+    const tiny = new DataTexture(new Float32Array(2 * 4 * 4), 2, 4, undefined, FloatType);
+    const small = createSkyOnlyBackground(tiny) as DataTexture;
+    expect(small.image.width).toBe(2);
+    expect(small.image.height).toBe(2);
+    expect(small.name).toBe('HDR visible sky');
+  });
+
+  it('round-trips half-float sky pixels through the derived background', () => {
+    const encode = DataUtils.toHalfFloat;
+    const decode = DataUtils.fromHalfFloat;
+    const width = 2;
+    const height = 2;
+    const top = [1.5, 0.5, 2, 1];
+    const bottom = [0.25, 3, 0.125, 1];
+    const pixels = new Uint16Array(width * height * 4);
+    for (let x = 0; x < width; x += 1) {
+      for (let channel = 0; channel < 4; channel += 1) {
+        pixels[4 * (0 * width + x) + channel] = encode(top[channel]);
+        pixels[4 * (1 * width + x) + channel] = encode(bottom[channel]);
+      }
+    }
+    const source = new DataTexture(pixels, width, height, undefined, HalfFloatType);
+    source.flipY = true;
+    const background = createSkyOnlyBackground(source) as DataTexture;
+    expect(background.type).toBe(HalfFloatType);
+    const visible = background.image.data as Uint16Array;
+    for (let channel = 0; channel < 4; channel += 1) {
+      // Row 0 keeps the preserved zenith row exactly; row 1 samples the source between rows 0
+      // and 1 at the remapped position (preserve 0.2 to limit 0.245 of the source height).
+      expect(decode(visible[4 * (0 * width) + channel])).toBe(top[channel]);
+      expect(decode(visible[4 * (1 * width) + channel]))
+        .toBeCloseTo(top[channel] + (bottom[channel] - top[channel]) * 0.245, 2);
+    }
+  });
+});
