@@ -1,5 +1,6 @@
 // The turntable. The look on the plinth turns at a steady rate while this runs; the
 // product card's Rotate action and the Reset action drive it through toggle() and setYaw().
+// Rotate is motion the visitor requested, so reduced motion does not gate it.
 // Pure state: no three.js, no DOM, so the unit tests are arithmetic.
 
 export interface TurntableOptions {

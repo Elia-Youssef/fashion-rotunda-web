@@ -1,4 +1,5 @@
 // Scripted 10-second inspection orbit around the showroom proof target.
+// Measure requests this motion as the measurement itself, so reduced motion does not gate it.
 
 export interface OrbitFrameScheduler {
   request(callback: () => void): number;

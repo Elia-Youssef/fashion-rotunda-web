@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { mountAnnouncer, mountPageAnnouncer, prefersReducedMotion } from '../../src/ui/announce';
+import {
+  mountAnnouncer, mountPageAnnouncer, onReducedMotionChange, prefersReducedMotion,
+} from '../../src/ui/announce';
 import type { Announcer } from '../../src/ui/announce';
 
 let root: HTMLElement;
@@ -18,6 +20,7 @@ afterEach(() => {
   announcer = null;
   root.remove();
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('mountAnnouncer', () => {
@@ -186,5 +189,60 @@ describe('prefersReducedMotion', () => {
       media.matchMedia = undefined;
     }
     expect(prefersReducedMotion()).toBe(false);
+  });
+});
+
+describe('onReducedMotionChange', () => {
+  it('reports live changes from the same query used by the preference reader', () => {
+    const query = Object.assign(new EventTarget(), { matches: false });
+    const matchMedia = vi.fn((queryText: string) => {
+      expect(queryText).toBe('(prefers-reduced-motion: reduce)');
+      return query;
+    });
+    vi.stubGlobal('matchMedia', matchMedia);
+    const listener = vi.fn();
+    const unsubscribe = onReducedMotionChange(listener);
+    try {
+      expect(prefersReducedMotion()).toBe(false);
+      for (const matches of [true, false]) {
+        query.matches = matches;
+        query.dispatchEvent(Object.assign(new Event('change'), { matches }));
+        expect(listener).toHaveBeenLastCalledWith(matches);
+        expect(prefersReducedMotion()).toBe(matches);
+      }
+      expect(listener).toHaveBeenCalledTimes(2);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('removes the change listener on unsubscribe', () => {
+    const query = Object.assign(new EventTarget(), { matches: false });
+    vi.stubGlobal('matchMedia', () => query);
+    const listener = vi.fn();
+    const unsubscribe = onReducedMotionChange(listener);
+    query.dispatchEvent(Object.assign(new Event('change'), { matches: true }));
+    expect(listener).toHaveBeenCalledOnce();
+    unsubscribe();
+    unsubscribe();
+    query.dispatchEvent(Object.assign(new Event('change'), { matches: false }));
+    expect(listener).toHaveBeenCalledOnce();
+  });
+
+  it('returns a no-op unsubscribe without matchMedia', () => {
+    vi.stubGlobal('matchMedia', undefined);
+    const listener = vi.fn();
+    const unsubscribe = onReducedMotionChange(listener);
+    expect(() => { unsubscribe(); unsubscribe(); }).not.toThrow();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('keeps the preference readable when the query has no change event API', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }));
+    const listener = vi.fn();
+    expect(prefersReducedMotion()).toBe(true);
+    const unsubscribe = onReducedMotionChange(listener);
+    expect(() => unsubscribe()).not.toThrow();
+    expect(listener).not.toHaveBeenCalled();
   });
 });

@@ -27,6 +27,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   while (mounted.length > 0) {
     const current = mounted.pop();
     if (current === undefined) {
@@ -251,6 +252,36 @@ describe('createOrbit', () => {
     expect(target.orbit.update(16.7)).toBe(true);
     // The drag ran theta negative; the glide carries it further the same way.
     expect(readSpherical(target.orbit).theta).toBeLessThan(released);
+  });
+
+  it('reads reduced motion at release and leaves both drag axes still without damping', () => {
+    const query = Object.assign(new EventTarget(), { matches: false });
+    vi.stubGlobal('matchMedia', () => query);
+    const clock = { ms: 1_000 };
+    const target = make(clock);
+    pointer(target, 'pointerdown', 100, 100);
+    pointer(target, 'pointermove', 140, 130);
+    expect(target.orbit.position).not.toEqual(PROOF_POSITION);
+    const released = target.orbit.position;
+    query.matches = true;
+    query.dispatchEvent(Object.assign(new Event('change'), { matches: true }));
+    pointer(target, 'pointerup', 140, 130);
+    expect(target.orbit.moving).toBe(false);
+    for (let frame = 0; frame < 20; frame += 1) {
+      expect(target.orbit.update(16.7)).toBe(false);
+      expect(target.orbit.position).toEqual(released);
+    }
+
+    // The same control resumes its usual release glide after another live preference change.
+    pointer(target, 'pointerdown', 100, 100);
+    pointer(target, 'pointermove', 120, 110);
+    const nextRelease = target.orbit.position;
+    query.matches = false;
+    query.dispatchEvent(Object.assign(new Event('change'), { matches: false }));
+    pointer(target, 'pointerup', 120, 110);
+    expect(target.orbit.moving).toBe(true);
+    expect(target.orbit.update(16.7)).toBe(true);
+    expect(target.orbit.position).not.toEqual(nextRelease);
   });
 
   it('ignores a ctrl+wheel pinch, which the browser answers by zooming the page', () => {

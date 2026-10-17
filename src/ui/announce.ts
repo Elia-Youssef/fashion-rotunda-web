@@ -13,13 +13,28 @@ export interface Announcer {
 
 /** The floor between two spoken messages, in milliseconds. */
 const WINDOW_MS = 500;
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
+
+function reducedMotionQuery(): MediaQueryList | null {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return null;
+  }
+  return window.matchMedia(REDUCED_MOTION_QUERY);
+}
 
 /** Reports whether the operating system or browser requests reduced motion. */
 export function prefersReducedMotion(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return false;
-  }
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return reducedMotionQuery()?.matches ?? false;
+}
+
+/** Follows preference changes until the caller releases its subscription. */
+export function onReducedMotionChange(listener: (reduced: boolean) => void): () => void {
+  const query = reducedMotionQuery();
+  if (query === null) return () => {};
+  if (typeof query.addEventListener !== 'function') return () => {};
+  const onChange = (event: MediaQueryListEvent): void => listener(event.matches);
+  query.addEventListener('change', onChange);
+  return () => query.removeEventListener('change', onChange);
 }
 
 export function mountAnnouncer(root: HTMLElement): Announcer {

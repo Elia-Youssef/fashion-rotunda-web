@@ -8,6 +8,7 @@
 
 import { MathUtils, Spherical, Vector3 } from 'three/webgpu';
 import type { PerspectiveCamera } from 'three/webgpu';
+import { prefersReducedMotion } from '../ui/announce';
 import { capturePointer, releasePointer } from './pointer-capture';
 
 export interface OrbitLimits {
@@ -340,9 +341,9 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
       pendingPhi = 0;
     } else if (pointers.size === 0) {
       dragging = false;
-      if (now() - lastMoveMs > STALE_RELEASE_MS) {
-        // Held still, then released: the armed delta belongs to a move that is already over, and
-        // gliding on it would move the camera after the hand had stopped asking for motion.
+      if (prefersReducedMotion() || now() - lastMoveMs > STALE_RELEASE_MS) {
+        // Read the preference at release: reduced motion or a held-still drag ends at the hand's
+        // final pose, without carrying the last move into an unrequested glide.
         pendingTheta = 0;
         pendingPhi = 0;
       }

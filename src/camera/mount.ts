@@ -7,7 +7,7 @@ import type { PerspectiveCamera } from 'three/webgpu';
 
 import type { CatalogView } from '../catalog/catalog';
 import { afterFirstFrame } from '../proof/marks';
-import { prefersReducedMotion } from '../ui/announce';
+import { onReducedMotionChange, prefersReducedMotion } from '../ui/announce';
 import { ATTRACT_HOLD_MS, ATTRACT_IDLE_MS, ATTRACT_MOVE_MS, createAttract } from './attract';
 import type { AttractHandle } from './attract';
 import { BLEND_MS, blendPoseInto, copyPose } from './blend';
@@ -485,6 +485,24 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     };
   }
 
+  function isMoving(): boolean {
+    return (
+      orbit.moving ||
+      turntable.running ||
+      (walkLoader.session?.walk.moving ?? false) ||
+      activeBlend !== null ||
+      attract.running
+    );
+  }
+
+  const unlistenMotion = onReducedMotionChange((reduced) => {
+    attract.setReducedMotion(reduced);
+    attractPoseApplied = false;
+    canvas.dataset['attract'] = '0';
+    if (!isMoving()) release();
+    loop.invalidate();
+  });
+
   return {
     orbit,
     turntable,
@@ -591,18 +609,13 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     },
 
     get moving(): boolean {
-      return (
-        orbit.moving ||
-        turntable.running ||
-        (walkLoader.session?.walk.moving ?? false) ||
-        activeBlend !== null ||
-        attract.running
-      );
+      return isMoving();
     },
 
     dispose(): void {
       if (disposed) return;
       disposed = true;
+      unlistenMotion();
       cancelPreload();
       request?.resolve();
       request = null;

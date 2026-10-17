@@ -2,7 +2,7 @@
 // Tours the catalogue presets in order after ATTRACT_IDLE_MS (60 s) of user inactivity.
 // Each preset is reached via an eased glide over ATTRACT_MOVE_MS (3 s) and held for
 // ATTRACT_HOLD_MS (4 s). Any user input stops the tour immediately and restarts the idle clock.
-// Reduced motion cuts immediately (moveMs treated as 0). Disabled by default on touch.
+// Reduced motion prevents the tour and stops it immediately. Disabled by default on touch.
 
 import { blendPoseInto, copyPose } from './blend';
 import type { Pose } from './blend';
@@ -18,7 +18,7 @@ export interface AttractOptions {
   holdMs: number;
   moveMs: number;
   enabled: boolean; // false by default on touch; ?attract=1|0 overrides
-  reducedMotion: boolean; // moveMs treated as 0
+  reducedMotion: boolean; // prevents the tour independently of its enabled setting
   now?: () => number;
 }
 
@@ -32,6 +32,7 @@ export interface AttractHandle {
   readonly running: boolean;
   readonly enabled: boolean;
   setEnabled(on: boolean): void;
+  setReducedMotion(reduced: boolean): void;
   noteInput(): void; // any input: stops a running tour, restarts the idle clock
   /**
    * Called every frame while running or waiting; returns the pose to show, or null to leave the
@@ -49,11 +50,11 @@ function easeProgress(elapsedMs: number, durationMs: number): number {
 }
 
 export function createAttract(options: AttractOptions): AttractHandle {
-  const { views, idleMs, holdMs, reducedMotion } = options;
-  const moveMs = reducedMotion ? 0 : options.moveMs;
+  const { views, idleMs, holdMs, moveMs } = options;
   const now = options.now ?? ((): number => performance.now());
 
   let isEnabled = options.enabled;
+  let isReducedMotion = options.reducedMotion;
   let isRunning = false;
   let lastInputTime = now();
 
@@ -102,12 +103,19 @@ export function createAttract(options: AttractOptions): AttractHandle {
       }
     },
 
+    setReducedMotion(reduced: boolean): void {
+      if (isReducedMotion === reduced) return;
+      isReducedMotion = reduced;
+      // A preference change ends the old tour; returning to normal motion starts a fresh idle wait.
+      stop();
+    },
+
     noteInput(): void {
       stop();
     },
 
     tick(): AttractReading | null {
-      if (!isEnabled || views.length === 0) {
+      if (!isEnabled || isReducedMotion || views.length === 0) {
         return null;
       }
 

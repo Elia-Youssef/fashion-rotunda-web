@@ -220,7 +220,7 @@ describe('attract loop state machine', () => {
     expect(attract.running).toBe(false);
   });
 
-  it('cuts instantly under reduced motion (moveMs is 0)', () => {
+  it('never starts under reduced motion, including after explicit enable', () => {
     let clock = 0;
     const attract = createAttract({
       views: VIEWS,
@@ -233,20 +233,50 @@ describe('attract loop state machine', () => {
     });
 
     clock = 1_000;
-    const first = attract.tick();
-    expect(first?.viewId).toBe('entrance');
-    // Cut immediately to entrance pose without interpolation.
-    expect(first?.pose.position[2]).toBeCloseTo(6.2, 5);
+    expect(attract.tick()).toBeNull();
+    expect(attract.running).toBe(false);
+    attract.setEnabled(false);
+    attract.setEnabled(true);
+    clock = 50_000;
+    expect(attract.tick()).toBeNull();
+    expect(attract.running).toBe(false);
+  });
 
-    // Holds for 2,000 ms.
-    clock = 2_500;
-    expect(attract.tick()?.viewId).toBe('entrance');
+  it('stops on reduced motion and waits for fresh idle time when motion is allowed again', () => {
+    let clock = 0;
+    const attract = createAttract({
+      views: VIEWS, idleMs: 1_000, holdMs: 2_000, moveMs: 3_000,
+      enabled: true, reducedMotion: false, now: () => clock,
+    });
+    clock = 1_000;
+    expect(attract.tick()).not.toBeNull();
+    expect(attract.running).toBe(true);
+    attract.setReducedMotion(true);
+    expect(attract.running).toBe(false);
+    clock = 10_000;
+    expect(attract.tick()).toBeNull();
+    attract.setReducedMotion(false);
+    clock = 10_999;
+    expect(attract.tick()).toBeNull();
+    clock = 11_000;
+    expect(attract.tick()).not.toBeNull();
+    expect(attract.running).toBe(true);
+  });
 
-    // Next view (detail) after hold completes at 3,000 ms.
-    clock = 3_000;
-    const second = attract.tick();
-    expect(second?.viewId).toBe('detail');
-    expect(second?.pose.position[1]).toBeCloseTo(1.4, 5);
+  it('keeps explicit disable and the idle clock independent of repeated preference values', () => {
+    let clock = 0;
+    const attract = createAttract({
+      views: VIEWS, idleMs: 1_000, holdMs: 2_000, moveMs: 3_000,
+      enabled: false, reducedMotion: true, now: () => clock,
+    });
+    attract.setReducedMotion(false);
+    clock = 10_000;
+    expect(attract.tick()).toBeNull();
+    expect(attract.enabled).toBe(false);
+    attract.setEnabled(true);
+    expect(attract.tick()).not.toBeNull();
+    attract.setReducedMotion(false);
+    expect(attract.running).toBe(true);
   });
 
   it('does nothing when disabled', () => {
@@ -372,7 +402,7 @@ describe('attract loop state machine', () => {
 
   it.each([
     ['normal tour', 'normal' as const],
-    ['reduced-motion tour', 'reduced' as const],
+    ['instant tour', 'reduced' as const],
   ])('replays the recorded %s pose for pose', (_name, key) => {
     const recorded = golden.attract[key];
     // The fixture must describe this test's views, or the replay would compare against a
@@ -384,9 +414,9 @@ describe('attract loop state machine', () => {
       views: VIEWS,
       idleMs: 1_000,
       holdMs: 2_000,
-      moveMs: 3_000,
+      moveMs: key === 'reduced' ? 0 : 3_000,
       enabled: true,
-      reducedMotion: key === 'reduced',
+      reducedMotion: false,
       now: () => clock,
     });
 
