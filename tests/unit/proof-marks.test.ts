@@ -102,6 +102,51 @@ describe('markFirstFrame and firstFrameMs', () => {
   });
 });
 
+describe('afterFirstFrame', () => {
+  it('runs the callback once, synchronously, when the mark already exists', async () => {
+    const marks = await loadMarks();
+    marks.markFirstFrame(() => 50);
+    const calls: string[] = [];
+    marks.afterFirstFrame(() => { calls.push('ready'); }, new AbortController().signal);
+    expect(calls).toEqual(['ready']);
+  });
+
+  it('never runs the callback for a signal aborted before registration', async () => {
+    const marks = await loadMarks();
+    marks.markFirstFrame(() => 50);
+    const controller = new AbortController();
+    controller.abort();
+    const calls: string[] = [];
+    marks.afterFirstFrame(() => { calls.push('ready'); }, controller.signal);
+    expect(calls).toEqual([]);
+  });
+
+  it('drops a pending callback when the signal aborts before the mark', async () => {
+    const marks = await loadMarks();
+    const controller = new AbortController();
+    const calls: string[] = [];
+    marks.afterFirstFrame(() => { calls.push('ready'); }, controller.signal);
+    controller.abort();
+    marks.markFirstFrame(() => 50);
+    expect(calls).toEqual([]);
+  });
+
+  it('stops the later callbacks when an earlier one aborts the shared signal', async () => {
+    const marks = await loadMarks();
+    const controller = new AbortController();
+    const calls: string[] = [];
+    marks.afterFirstFrame(() => {
+      calls.push('first');
+      controller.abort();
+    }, controller.signal);
+    marks.afterFirstFrame(() => { calls.push('second'); }, controller.signal);
+    // The mark notifies over a copy of the listener set, so the second listener still runs
+    // after the abort; only the aborted check keeps its callback from firing.
+    marks.markFirstFrame(() => 50);
+    expect(calls).toEqual(['first']);
+  });
+});
+
 describe('payloadBytes', () => {
   it('sums transferSize over resource entries and counts zero-size entries as zero', async () => {
     const marks = await loadMarks();
@@ -299,8 +344,71 @@ describe('snapshot', () => {
     expect(snap.post).toBe('off');
     expect(snap.cacheState).toBe('cold');
   });
-});
 
+  it('reports a zero load payload before the mark even with resources already listed', async () => {
+    const marks = await loadMarks();
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([
+      fakeResource('content/rotunda.glb', 5000, 20),
+    ]);
+    const snap = marks.snapshot({
+      info: { render: { drawCalls: 1, triangles: 2 } }, backend: 'webgpu', tier: 'high',
+      pixelRatio: 1, renderScale: 1, gpuName: 'Test GPU', frames: new FrameTimes(),
+      gpu: { p50: null, p95: null, available: false }, lookSwitchMs: null, post: 'off',
+    });
+    // The load payload pairs with loadMs: with no first frame yet there is no load to sum,
+    // while the running total still shows every byte seen so far.
+    expect(snap.loadMs).toBeNull();
+    expect(snap.payloadBytes).toBe(0);
+    expect(snap.payloadNowBytes).toBe(5000);
+  });
+
+  it('carries the scene files payload computed from the current buffer', async () => {
+    const marks = await loadMarks();
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([
+      fakeResource('http://localhost/content/rotunda.glb', 500, 40, 5_000_000),
+      fakeResource('http://localhost/content/plinth.glb', 300, 45, 1_000_000),
+      fakeResource('http://localhost/content/looks/opening.glb', 200, 50, 2_000_000),
+      fakeResource('http://localhost/content/looks/later.glb', 999, 90, 900),
+    ]);
+    marks.markFirstFrame(() => 50);
+    const snap = marks.snapshot({
+      info: { render: { drawCalls: 1, triangles: 2 } }, backend: 'webgpu', tier: 'high',
+      pixelRatio: 1, renderScale: 1, gpuName: 'Test GPU', frames: new FrameTimes(),
+      gpu: { p50: null, p95: null, available: false }, lookSwitchMs: null, post: 'off',
+    });
+    expect(snap.sceneFiles).toEqual({ bytes: 8_000_000, budgetBytes: 10_000_000 });
+  });
+
+  it('defaults the governor fields when the input carries none', async () => {
+    const marks = await loadMarks();
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([]);
+    marks.markFirstFrame(() => 50);
+    const snap = marks.snapshot({
+      info: { render: { drawCalls: 1, triangles: 2 } }, backend: 'webgpu', tier: 'high',
+      pixelRatio: 1, renderScale: 1, gpuName: 'Test GPU', frames: new FrameTimes(),
+      gpu: { p50: null, p95: null, available: false }, lookSwitchMs: null, post: 'off',
+    });
+    expect(snap.governor).toBe('off');
+    expect(snap.governorLog).toBe('');
+  });
+
+  it('honours an explicit cacheState over the state derived from resources', async () => {
+    const marks = await loadMarks();
+    vi.spyOn(performance, 'getEntriesByType').mockReturnValue([
+      fakeResource('content/rotunda.glb', 12345, 100),
+    ]);
+    marks.markFirstFrame(() => 50);
+    const snap = marks.snapshot({
+      info: { render: { drawCalls: 1, triangles: 2 } }, backend: 'webgpu', tier: 'high',
+      pixelRatio: 1, renderScale: 1, gpuName: 'Test GPU', frames: new FrameTimes(),
+      gpu: { p50: null, p95: null, available: false }, lookSwitchMs: null, post: 'off',
+      cacheState: 'warm',
+    });
+    // The composition root observed the load itself; its answer outranks a fresh read of the
+    // timing buffer, which can no longer see the cold transfer.
+    expect(snap.cacheState).toBe('warm');
+  });
+});
 
 describe('scene-files scope', () => {
   it.each(['full', 'half'] as const)('reads %s encoded body bytes for the opening look on cold and warm loads', async (set) => {
@@ -330,6 +438,60 @@ describe('scene-files scope', () => {
       ...fakeResource(`http://localhost/content/${file}`, 500, 20, 200), decodedBodySize: 1_000,
     }));
     expect(marks.sceneFilesPayload(entries, 50)).toEqual({ bytes: 600, budgetBytes: 10_000_000 });
+  });
+
+  it('counts only resource entries, ignoring entries of other timing types', async () => {
+    const marks = await loadMarks();
+    const entries = [
+      fakeResource('http://localhost/content/rotunda.glb', 500, 20, 5_000_000),
+      fakeResource('http://localhost/content/plinth.glb', 300, 20, 1_000_000),
+      { ...fakeResource('http://localhost/content/looks/opening.glb', 999, 20, 2_000_000),
+        entryType: 'measure' },
+    ];
+    expect(marks.sceneFilesPayload(entries, 50)).toBeNull();
+  });
+
+  it('counts a scene file that completed exactly at the mark', async () => {
+    const marks = await loadMarks();
+    const entries = [
+      fakeResource('http://localhost/content/rotunda.glb', 500, 40, 5_000_000),
+      fakeResource('http://localhost/content/plinth.glb', 300, 45, 1_000_000),
+      fakeResource('http://localhost/content/looks/opening.glb', 200, 50, 2_000_000),
+    ];
+    expect(marks.sceneFilesPayload(entries, 50)).toEqual({ bytes: 8_000_000, budgetBytes: 10_000_000 });
+  });
+
+  it('picks the earliest-started look fetch, not the first-listed', async () => {
+    const marks = await loadMarks();
+    const entries = [
+      fakeResource('http://localhost/content/rotunda.glb', 500, 20, 5_000_000),
+      fakeResource('http://localhost/content/plinth.glb', 300, 20, 1_000_000),
+      { ...fakeResource('http://localhost/content/looks/second.glb', 999, 30, 700), startTime: 30 },
+      { ...fakeResource('http://localhost/content/looks/opening.glb', 200, 25, 300), startTime: 10 },
+    ];
+    expect(marks.sceneFilesPayload(entries, 50))
+      .toEqual({ bytes: 5_000_000 + 1_000_000 + 300, budgetBytes: 10_000_000 });
+  });
+
+  it('ignores a resource whose name is not a parseable URL instead of throwing', async () => {
+    const marks = await loadMarks();
+    const entries = [
+      fakeResource('http://', 999, 10, 999),
+      fakeResource('http://localhost/content/rotunda.glb', 500, 40, 5_000_000),
+      fakeResource('http://localhost/content/plinth.glb', 300, 45, 1_000_000),
+      fakeResource('http://localhost/content/looks/opening.glb', 200, 50, 2_000_000),
+    ];
+    // Names come from the browser's timing buffer; a malformed one must not break the snapshot.
+    expect(marks.sceneFilesPayload(entries, 50)).toEqual({ bytes: 8_000_000, budgetBytes: 10_000_000 });
+  });
+
+  it('returns null when the plinth or the look response is missing', async () => {
+    const marks = await loadMarks();
+    const rotunda = fakeResource('http://localhost/content/rotunda.glb', 500, 20, 5_000_000);
+    const plinth = fakeResource('http://localhost/content/plinth.glb', 300, 20, 1_000_000);
+    const look = fakeResource('http://localhost/content/looks/opening.glb', 200, 20, 2_000_000);
+    expect(marks.sceneFilesPayload([rotunda, look], 50)).toBeNull();
+    expect(marks.sceneFilesPayload([rotunda, plinth], 50)).toBeNull();
   });
 });
 
