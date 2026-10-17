@@ -88,6 +88,32 @@ describe('listVariants', () => {
     };
     expect(listVariants(gltf)).toEqual(['base']);
   });
+
+  it('returns nothing when the extension block or its fields are malformed', () => {
+    const malformed: unknown[] = [
+      null,
+      'nope',
+      {},
+      { KHR_materials_variants: null },
+      { KHR_materials_variants: {} },
+      { KHR_materials_variants: { variants: 42 } },
+    ];
+    for (const gltfExtensions of malformed) {
+      const gltf: GLTF = Object.create(null);
+      gltf.userData = { gltfExtensions };
+      expect(listVariants(gltf)).toEqual([]);
+    }
+  });
+
+  it('skips null entries and empty names', () => {
+    const gltf: GLTF = Object.create(null);
+    gltf.userData = {
+      gltfExtensions: {
+        KHR_materials_variants: { variants: [{ name: 'base' }, null, { name: '' }] },
+      },
+    };
+    expect(listVariants(gltf)).toEqual(['base']);
+  });
 });
 
 describe('selectVariant', () => {
@@ -268,5 +294,193 @@ describe('selectVariant', () => {
     expect(acquired).toEqual([materials[1], materials[2]]);
     expect(second.material).toBe(materials[0]);
     expect(finalised).toEqual([first]);
+  });
+
+  it('leaves meshes whose mapping block is absent or malformed alone', async () => {
+    const materials = swatches();
+    const { parser, calls, finalised } = fakeParser(materials);
+    const mapped = mannequin(materials[0], [{ material: 1, variants: [2] }]);
+    const noExtensions = garment(materials[1]);
+    noExtensions.userData = { gltfExtensions: {} };
+    const noVariantBlock = garment(materials[1]);
+    noVariantBlock.userData = { gltfExtensions: { KHR_materials_variants: {} } };
+    const notArray = garment(materials[1]);
+    notArray.userData = { gltfExtensions: { KHR_materials_variants: { mappings: 42 } } };
+    const root = new Group();
+    root.add(mapped, noExtensions, noVariantBlock, notArray);
+
+    await selectVariant({ root, parser, variants: ['base', 'light', 'dark'] }, 'dark');
+
+    expect(mapped.material).toBe(materials[1]);
+    expect(noExtensions.material).toBe(materials[1]);
+    expect(noVariantBlock.material).toBe(materials[1]);
+    expect(notArray.material).toBe(materials[1]);
+    expect(calls).toEqual([['material', 1]]);
+    expect(finalised).toEqual([mapped]);
+  });
+
+  it('ignores a null mapping entry and keeps the mapping after it', async () => {
+    const materials = swatches();
+    const { parser, calls } = fakeParser(materials);
+    const mesh = mannequin(materials[0], [null, { material: 1, variants: [2] }]);
+    const root = new Group();
+    root.add(mesh);
+
+    await selectVariant({ root, parser, variants: ['base', 'light', 'dark'] }, 'dark');
+
+    expect(mesh.material).toBe(materials[1]);
+    expect(calls).toEqual([['material', 1]]);
+  });
+
+  it('ignores a mapping whose variants is not an array, however it iterates', async () => {
+    const materials = swatches();
+    const { parser, calls } = fakeParser(materials);
+    // A Set of the right index must not read as a mapping: only the extension's
+    // own shape (an array of integers) selects a material.
+    const mesh = mannequin(materials[0], [{ material: 1, variants: new Set([2]) }]);
+    const root = new Group();
+    root.add(mesh);
+
+    await selectVariant({ root, parser, variants: ['base', 'light', 'dark'] }, 'dark');
+
+    expect(mesh.material).toBe(materials[0]);
+    expect(calls).toEqual([]);
+  });
+
+  it('never touches a non-mesh object that carries mapping-like data', async () => {
+    const materials = swatches();
+    const { parser, calls, finalised } = fakeParser(materials);
+    const bystander = new Group();
+    bystander.name = 'bystander';
+    bystander.userData = {
+      gltfExtensions: { KHR_materials_variants: { mappings: [{ material: 1, variants: [2] }] } },
+    };
+    const mesh = mannequin(materials[0], [{ material: 2, variants: [2] }]);
+    const root = new Group();
+    root.add(bystander, mesh);
+
+    await selectVariant({ root, parser, variants: ['base', 'light', 'dark'] }, 'dark');
+
+    expect(mesh.material).toBe(materials[2]);
+    expect(calls).toEqual([['material', 2]]);
+    expect(finalised).toEqual([mesh]);
+    expect('material' in bystander).toBe(false);
+  });
+
+  it('leaves a mapping-less mesh that carries a material array alone', async () => {
+    const materials = swatches();
+    const { parser, calls } = fakeParser(materials);
+    const arrayMesh = new Mesh(new BufferGeometry(), [materials[0], materials[1]]);
+    arrayMesh.name = 'array-mesh';
+    const mesh = mannequin(materials[0], [{ material: 2, variants: [2] }]);
+    const root = new Group();
+    root.add(arrayMesh, mesh);
+
+    await selectVariant({ root, parser, variants: ['base', 'light', 'dark'] }, 'dark');
+
+    expect(mesh.material).toBe(materials[2]);
+    expect(arrayMesh.material).toEqual([materials[0], materials[1]]);
+    expect(calls).toEqual([['material', 2]]);
+  });
+
+  it('ignores a parked original that is not a material', async () => {
+    const materials = swatches();
+    const { parser } = fakeParser(materials);
+    const mesh = mannequin(materials[0], [{ material: 2, variants: [2] }]);
+    mesh.userData['originalMaterial'] = 42;
+    const root = new Group();
+    root.add(mesh);
+    const target = { root, parser, variants: ['base', 'light', 'dark'] };
+
+    await selectVariant(target, 'dark');
+    expect(mesh.material).toBe(materials[2]);
+
+    // No mapping covers 'base'; a parked value that is not a material must not
+    // land on the mesh.
+    await selectVariant(target, 'base');
+    expect(mesh.material).toBe(materials[2]);
+  });
+
+  it('rejects a mapping whose material does not resolve to a material', async () => {
+    const materials = swatches();
+    const parser: GLTFParser = Object.create(null);
+    parser.getDependency = (): Promise<Material> =>
+      Promise.resolve({ not: 'a material' } as unknown as Material);
+    parser.assignFinalMaterial = (): void => {};
+    const mesh = mannequin(materials[0], [{ material: 0, variants: [2] }]);
+    const root = new Group();
+    root.add(mesh);
+
+    await expect(
+      selectVariant({ root, parser, variants: ['base', 'light', 'dark'] }, 'dark'),
+    ).rejects.toThrow('did not resolve');
+  });
+
+  it('registers the finalized instance a mesh ends up carrying', async () => {
+    const materials = swatches();
+    const clone = new MeshStandardMaterial({ name: 'MI_Mannequin_Dark_Final' });
+    const parser: GLTFParser = Object.create(null);
+    parser.getDependency = (_type: string, index: number): Promise<Material> =>
+      Promise.resolve(materials[index]);
+    parser.assignFinalMaterial = (mesh: Mesh): void => {
+      mesh.material = clone;
+    };
+    const mesh = mannequin(materials[0], [{ material: 2, variants: [2] }]);
+    const root = new Group();
+    root.add(mesh);
+    const acquired: Material[] = [];
+
+    await selectVariant(
+      { root, parser, variants: ['base', 'light', 'dark'], acquire: (m) => acquired.push(m) },
+      'dark',
+    );
+
+    expect(acquired).toEqual([materials[2], clone]);
+  });
+
+  it('does not register a finalized value that is not a material', async () => {
+    const materials = swatches();
+    const parser: GLTFParser = Object.create(null);
+    parser.getDependency = (_type: string, index: number): Promise<Material> =>
+      Promise.resolve(materials[index]);
+    parser.assignFinalMaterial = (mesh: Mesh): void => {
+      mesh.material = 42 as unknown as Material;
+    };
+    const mesh = mannequin(materials[0], [{ material: 2, variants: [2] }]);
+    const root = new Group();
+    root.add(mesh);
+    const acquired: Material[] = [];
+
+    await selectVariant(
+      { root, parser, variants: ['base', 'light', 'dark'], acquire: (m) => acquired.push(m) },
+      'dark',
+    );
+
+    expect(acquired).toEqual([materials[2]]);
+  });
+
+  it('registers the finalized material and still rejects when finalization throws', async () => {
+    const materials = swatches();
+    const clone = new MeshStandardMaterial();
+    const failure = new Error('finalization failed');
+    const parser: GLTFParser = Object.create(null);
+    parser.getDependency = (_type: string, index: number): Promise<Material> =>
+      Promise.resolve(materials[index]);
+    parser.assignFinalMaterial = (mesh: Mesh): void => {
+      mesh.material = clone;
+      throw failure;
+    };
+    const mesh = mannequin(materials[0], [{ material: 2, variants: [2] }]);
+    const root = new Group();
+    root.add(mesh);
+    const acquired: Material[] = [];
+
+    await expect(
+      selectVariant(
+        { root, parser, variants: ['base', 'light', 'dark'], acquire: (m) => acquired.push(m) },
+        'dark',
+      ),
+    ).rejects.toThrow(failure);
+    expect(acquired).toEqual([materials[2], clone]);
   });
 });

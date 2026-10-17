@@ -2,8 +2,9 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { Mesh, MeshPhysicalMaterial, MeshStandardMaterial } from 'three/webgpu';
+import { Mesh, MeshBasicMaterial, MeshPhysicalMaterial, MeshStandardMaterial } from 'three/webgpu';
 import type { Material } from 'three/webgpu';
+import { materialColor } from 'three/tsl';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -70,6 +71,96 @@ function requireTuning(name: string): MaterialTuning {
   if (tuning === null) throw new Error(`expected a tuning for ${name}`);
   return tuning;
 }
+
+interface SerializedNode {
+  uuid: string;
+  type: string;
+  inputNodes?: Record<string, string | string[]>;
+  nodes?: SerializedNode[];
+  value?: number | number[];
+  components?: string;
+  method?: string;
+  op?: string;
+}
+
+// Evaluates the serialized TSL colour graph with plain arithmetic. MaterialNode
+// stands for the loader-decoded map sample handed in as `base`; no production
+// arithmetic is mocked or replaced.
+function evaluateColorGraph(material: MeshStandardMaterial, base: number[]): number[] {
+  expect(material.colorNode).toBeDefined();
+  const graph = material.colorNode!.toJSON() as unknown as SerializedNode;
+  const nodes = new Map([graph, ...(graph.nodes ?? [])].map((node) => [node.uuid, node]));
+  function visit(id: string): number[] {
+    const node = nodes.get(id)!;
+    const input = (name: string) => visit(node.inputNodes![name] as string);
+    if (node.type === 'MaterialNode') {
+      expect(node.uuid).toBe(materialColor.uuid);
+      return base;
+    }
+    if (node.type === 'ConstNode') return Array.isArray(node.value) ? node.value : [node.value!];
+    if (node.type === 'VarNode' || node.type === 'ConvertNode') return input('node');
+    if (node.type === 'SplitNode') {
+      const values = input('node');
+      return [...node.components!].map((c) => values['xyzw'.indexOf(c)]);
+    }
+    if (node.type === 'JoinNode') return (node.inputNodes!['nodes'] as string[]).flatMap(visit);
+    const a = input('aNode');
+    const b = input('bNode');
+    if (node.method === 'dot') return [a.reduce((sum, v, i) => sum + v * b[i], 0)];
+    const length = Math.max(a.length, b.length);
+    const channel = (v: number[], i: number) => (v.length === 1 ? v[0] : v[i]);
+    return Array.from({ length }, (_, i) => {
+      const x = channel(a, i);
+      const y = channel(b, i);
+      if (node.op === '*') return x * y;
+      if (node.op === '-') return x - y;
+      if (node.op === '+') return x + y;
+      if (node.method === 'max') return Math.max(x, y);
+      if (node.method === 'mix') return x + (y - x) * channel(input('cNode'), i);
+      throw new Error(`unsupported graph operation ${node.type}/${node.method}/${node.op}`);
+    });
+  }
+  return visit(graph.uuid);
+}
+
+/** One physical property alone must be enough to upgrade a standard material. */
+const physicalOnlyFields: {
+  property: string;
+  tuning: MaterialTuning;
+  read: (material: MeshPhysicalMaterial) => number;
+  expected: number;
+}[] = [
+  { property: 'transmission', tuning: { transmission: 0.4 }, read: (m) => m.transmission, expected: 0.4 },
+  { property: 'thickness', tuning: { thickness: 0.6 }, read: (m) => m.thickness, expected: 0.6 },
+  { property: 'ior', tuning: { ior: 1.4 }, read: (m) => m.ior, expected: 1.4 },
+  { property: 'clearcoat', tuning: { clearcoat: 0.5 }, read: (m) => m.clearcoat, expected: 0.5 },
+  {
+    property: 'clearcoatRoughness',
+    tuning: { clearcoatRoughness: 0.2 },
+    read: (m) => m.clearcoatRoughness,
+    expected: 0.2,
+  },
+  { property: 'anisotropy', tuning: { anisotropy: 0.7 }, read: (m) => m.anisotropy, expected: 0.7 },
+  {
+    property: 'anisotropyRotation',
+    tuning: { anisotropyRotation: 0.35 },
+    read: (m) => m.anisotropyRotation,
+    expected: 0.35,
+  },
+  { property: 'sheen', tuning: { sheen: 0.9 }, read: (m) => m.sheen, expected: 0.9 },
+  {
+    property: 'sheenRoughness',
+    tuning: { sheenRoughness: 0.4 },
+    read: (m) => m.sheenRoughness,
+    expected: 0.4,
+  },
+  {
+    property: 'sheenColor',
+    tuning: { sheenColor: [0.2, 0.4, 0.6] },
+    read: (m) => m.sheenColor.r,
+    expected: 0.2,
+  },
+];
 
 function collectShippedMaterialNames(): Map<string, Set<string>> {
   const sets = new Map<string, Set<string>>();
@@ -370,5 +461,105 @@ describe('applyTuning', () => {
     expect(acquired[0]).toBe(standard);
     expect(acquired).toHaveLength(2);
     expect(acquired[1]).toBeInstanceOf(MeshPhysicalMaterial);
+  });
+
+  it.each(physicalOnlyFields)(
+    'upgrades a standard material when $property is the only physical field',
+    ({ tuning, read, expected }) => {
+      const standard = new MeshStandardMaterial();
+      const mesh = new Mesh(undefined, standard);
+
+      const applied = applyTuning(mesh, tuning);
+
+      expect(applied).toBe(mesh.material);
+      expect(applied).toBeInstanceOf(MeshPhysicalMaterial);
+      expect(read(applied as MeshPhysicalMaterial)).toBe(expected);
+      (applied as MeshPhysicalMaterial).dispose();
+    },
+  );
+
+  it('rejects a material that is not a MeshStandardMaterial', () => {
+    const basic = new MeshBasicMaterial();
+    basic.name = 'M_Glass_Flat_SM_Dome_A';
+    const mesh = new Mesh(undefined, basic);
+
+    expect(() => applyTuning(mesh, { roughness: 0.4 })).toThrow('needs MeshStandardMaterial');
+    expect(mesh.material).toBe(basic);
+  });
+
+  it('applyTunings rejects a tuned material that sits inside a multi-material mesh', () => {
+    const first = new MeshStandardMaterial();
+    first.name = 'first';
+    const nero = new MeshStandardMaterial();
+    nero.name = 'MI_Marble_Nero_Base';
+    const mesh = new Mesh(undefined, [first, nero]);
+
+    expect(() => applyTunings(mesh)).toThrow('one material per mesh');
+  });
+
+  it('resets blending only for a positive transmission', () => {
+    const open = new MeshPhysicalMaterial({ transparent: true, opacity: 0.4, depthWrite: false });
+    applyTuning(new Mesh(undefined, open), { transmission: 1 });
+    expect(open.transmission).toBe(1);
+    expect(open.transparent).toBe(false);
+    expect(open.depthWrite).toBe(true);
+    expect(open.opacity).toBe(1.0);
+
+    const closed = new MeshPhysicalMaterial({ transparent: true, opacity: 0.4, depthWrite: false });
+    applyTuning(new Mesh(undefined, closed), { transmission: 0 });
+    expect(closed.transmission).toBe(0);
+    expect(closed.transparent).toBe(true);
+    expect(closed.depthWrite).toBe(false);
+    expect(closed.opacity).toBe(0.4);
+  });
+
+  it('applies envMapIntensity', () => {
+    const standard = new MeshStandardMaterial();
+    expect(standard.envMapIntensity).toBe(1);
+
+    const applied = applyTuning(new Mesh(undefined, standard), { envMapIntensity: 2.5 });
+
+    expect(applied).toBe(standard);
+    expect(standard.envMapIntensity).toBe(2.5);
+  });
+
+  it('resets a non-default anisotropy rotation on brass', () => {
+    const physical = new MeshPhysicalMaterial({
+      anisotropy: 1,
+      anisotropyRotation: 0.7,
+      metalness: 1,
+      roughness: 0.3,
+    });
+    physical.name = 'MI_Metal_Brass_02';
+
+    applyTuning(new Mesh(undefined, physical), requireTuning('MI_Metal_Brass_02'));
+
+    expect(physical.anisotropy).toBe(0.85);
+    expect(physical.anisotropyRotation).toBe(0);
+  });
+
+  it('marks a tuned material for recompilation', () => {
+    const standard = new MeshStandardMaterial();
+    const mesh = new Mesh(undefined, standard);
+    const before = standard.version;
+
+    applyTuning(mesh, { roughness: 0.6 });
+
+    expect(standard.roughness).toBe(0.6);
+    // needsUpdate is a write-only setter; the version counter is its observable.
+    expect(standard.version).toBe(before + 1);
+  });
+
+  it('clamps the tuned base colour at zero while passing alpha through', () => {
+    const material = new MeshStandardMaterial();
+    applyTuning(new Mesh(undefined, material), { baseContrast: 1.5 });
+
+    // 1.5 x contrast about 0.18 drives 0.02 below zero; the graph clamps RGB at
+    // zero and leaves the map alpha untouched.
+    const rgb = evaluateColorGraph(material, [0.02, 0.2, 0.8, 0.42]);
+    expect(rgb[0]).toBeCloseTo(0, 8);
+    expect(rgb[1]).toBeCloseTo(0.21, 8);
+    expect(rgb[2]).toBeCloseTo(1.11, 8);
+    expect(rgb[3]).toBe(0.42);
   });
 });
