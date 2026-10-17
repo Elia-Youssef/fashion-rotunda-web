@@ -1638,8 +1638,8 @@
           "largestNonFloorTexture": 512
         },
         "looks/wallis-dress.glb": {
-          "bytes": 947848,
-          "triangles": 119990,
+          "bytes": 967644,
+          "triangles": 119969,
           "meshes": 2,
           "nodes": 4,
           "materials": 5,
@@ -2191,9 +2191,9 @@
         }
       },
       "totals": {
-        "bytes": 10085991,
+        "bytes": 10105787,
         "gpuBytes": 10264739,
-        "triangles": 857093
+        "triangles": 857072
       }
     }
   },
