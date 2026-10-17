@@ -6,6 +6,9 @@
 import type { TierSettings } from '../tiers/table';
 import type { EnhancedLevel } from './governor';
 
+/** Scene-pass sample count when a tier enables MSAA. */
+export const MSAA_SAMPLE_COUNT = 4;
+
 export type Backend = 'webgpu' | 'webgl2';
 
 export interface PostSettings {
@@ -48,7 +51,7 @@ export function postSettingsFor(tier: TierSettings, isTouch: boolean, backend: B
     aoHalfResolution: aoEnabled,
     traa,
     msaa,
-    samples: msaa ? 4 : 0,
+    samples: msaa ? MSAA_SAMPLE_COUNT : 0,
     ssgi: isWebGPU ? tier.ssgi : 'off',
     ssr: isWebGPU ? tier.ssr : false,
     bloom: tier.bloom,

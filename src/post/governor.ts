@@ -145,6 +145,9 @@ export interface Governor {
   resetSamplingState(): void;
 }
 
+/** Complete p95 decision window for the enhanced post frame-budget policy. */
+export const P95_WINDOW_FRAMES = 60;
+
 const SSGI_LADDER: readonly EnhancedLevel[] = ['full', 'ssgi-half', 'no-ssgi', 'no-ssr', 'base'];
 const SSR_ONLY_LADDER: readonly EnhancedLevel[] = ['full', 'no-ssr', 'base'];
 

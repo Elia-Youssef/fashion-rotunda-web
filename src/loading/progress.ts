@@ -2,6 +2,9 @@
 // are testable in node. The gate owns the reading of Resource Timing; this module owns what the
 // readings mean.
 
+/** Decimal megabytes used by the loading display and scene payload budget readout. */
+export const BYTES_PER_MB = 1_000_000;
+
 export interface ManifestFile {
   bytes: number;
 }
@@ -83,6 +86,6 @@ export function progressRatio(received: number, expected: number): number {
  * toFixed(-0.05) is "-0.0", and a readout must never tell the visitor it has negative bytes.
  */
 export function formatProgress(received: number, expected: number): string {
-  const inMB = (bytes: number): string => (Math.max(0, bytes) / 1_000_000).toFixed(1);
+  const inMB = (bytes: number): string => (Math.max(0, bytes) / BYTES_PER_MB).toFixed(1);
   return `${inMB(received)} MB of ${inMB(expected)} MB`;
 }

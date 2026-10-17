@@ -1,6 +1,7 @@
 // Frame work-time statistics for the proof panel and the resolution scaler.
 
-const DEFAULT_CAPACITY = 240;
+/** Rolling CPU and GPU proof window, retaining the most recent 240 frame samples. */
+export const DEFAULT_CAPACITY = 240;
 const ascending = (a: number, b: number): number => a - b;
 
 /**

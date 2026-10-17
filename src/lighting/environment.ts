@@ -28,7 +28,8 @@ import type { WebGPURenderer } from 'three/webgpu';
 import { lazyImport } from '../ui/lazy-import';
 import { environmentResources } from './environment-resources';
 import type { EnvironmentResources } from './environment-resources';
-import { createGradientSkyTexture, environmentSkyPalette, skyDaylightValue, SKY_REFERENCE_DAYLIGHT } from './sky';
+import { createGradientSkyTexture, environmentSkyPalette, skyDaylightValue } from './sky';
+import { REFERENCE_DAYLIGHT } from './rig';
 import { createProceduralSkyBackground, createSkyOnlyBackground, orientHdrEquirectangular } from './visible-sky';
 
 // Keep the visible-sky helpers on the public environment facade for callers that mock its factories.
@@ -175,7 +176,7 @@ export async function createRoomEnvironment(renderer: WebGPURenderer): Promise<E
  */
 export async function createProceduralEnvironment(
   renderer: WebGPURenderer,
-  initialDaylight = SKY_REFERENCE_DAYLIGHT,
+  initialDaylight = REFERENCE_DAYLIGHT,
 ): Promise<Environment> {
   await renderer.init();
   let daylight = paletteDaylight(initialDaylight);
@@ -206,7 +207,7 @@ export async function createProceduralEnvironment(
 
 /** Day through Noon has one palette; compare this input rather than the intensity control's value. */
 function paletteDaylight(value: number): number {
-  return Math.min(skyDaylightValue(value), SKY_REFERENCE_DAYLIGHT);
+  return Math.min(skyDaylightValue(value), REFERENCE_DAYLIGHT);
 }
 
 /** Each rebuild owns its candidate independently until every construction step succeeds. */

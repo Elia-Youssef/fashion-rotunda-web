@@ -4,6 +4,7 @@
 
 import { MUSIC_STORAGE_KEY, resolveMusicPreference } from '../audio/preference';
 import type { KeyValueStore, MusicPreference } from '../audio/preference';
+import { SERIALIZED_DECIMALS } from '../lighting/rig';
 import type { Rig } from '../lighting/rig';
 import { lazyImport } from '../ui/lazy-import';
 import { mountShare as mountShareUI } from '../ui/share';
@@ -53,6 +54,8 @@ export interface ShareMount {
   dispose(): void;
 }
 
+/** Scale used to compare and round values at the shared wire precision. */
+const SERIALIZED_SCALE = 10 ** SERIALIZED_DECIMALS;
 const TAU = 2 * Math.PI;
 const THROTTLE_MS = 250;
 
@@ -154,7 +157,8 @@ export function mountShare(options: ShareMountOptions): ShareMount {
     const dz = pos[2] - proofPosition[2];
     const distSq = dx * dx + dy * dy + dz * dz;
     const height = options.camera.orbit.target[1];
-    const heightChanged = Math.round(height * 1000) !== Math.round(options.proofTarget[1] * 1000);
+    const heightChanged = Math.round(height * SERIALIZED_SCALE) !==
+      Math.round(options.proofTarget[1] * SERIALIZED_SCALE);
     const camera: ShareState['camera'] = distSq < 0.0001 && !heightChanged
       ? null : heightChanged ? [pos[0], pos[1], pos[2], height] : [pos[0], pos[1], pos[2]];
 
@@ -169,8 +173,9 @@ export function mountShare(options: ShareMountOptions): ShareMount {
       if (wrappedYaw < 0) {
         wrappedYaw += TAU;
       }
-      const roundedYaw = Math.round(wrappedYaw * 1000) / 1000;
-      yaw = roundedYaw === 0 || roundedYaw === Math.round(TAU * 1000) / 1000 ? null : roundedYaw;
+      const roundedYaw = Math.round(wrappedYaw * SERIALIZED_SCALE) / SERIALIZED_SCALE;
+      yaw = roundedYaw === 0 || roundedYaw === Math.round(TAU * SERIALIZED_SCALE) / SERIALIZED_SCALE
+        ? null : roundedYaw;
     }
 
     // 'on' is what the preference answers when nothing has been chosen, so it is the default the

@@ -494,9 +494,9 @@ async function main(): Promise<void> {
   let proofView: { position: [number, number, number]; target: [number, number, number] } | null =
     null;
   const frames = new FrameTimes();
-  // One window per series, the same 240 frames the FrameTimes default holds, so the CPU and GPU
+  // One window per series, the same capacity FrameTimes holds, so the CPU and GPU
   // percentiles printed side by side cover the same stretch of the run.
-  const gpuSeries = proofTools?.createGpuTimes(240) ?? null;
+  const gpuSeries = proofTools?.createGpuTimes() ?? null;
   const loop = createLoop({
     diagnostics: import.meta.env.DEV || params.get('e2e') === '1',
     render: (dtMs) => {

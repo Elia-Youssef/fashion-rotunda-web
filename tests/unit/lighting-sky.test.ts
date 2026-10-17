@@ -16,7 +16,6 @@ import { describe, expect, it } from 'vitest';
 import {
   ENVIRONMENT_SATURATION,
   SKY_HEIGHT,
-  SKY_REFERENCE_DAYLIGHT,
   SKY_WIDTH,
   VISIBLE_GROUND_LUMINANCE,
   VISIBLE_ZENITH_LUMINANCE,
@@ -33,7 +32,7 @@ import {
   withSaturation,
 } from '../../src/lighting/sky';
 import type { Rgb, SkyPalette } from '../../src/lighting/sky';
-import { DEFAULT_RIG, daylightParameters } from '../../src/lighting/rig';
+import { DEFAULT_RIG, daylightParameters, REFERENCE_DAYLIGHT } from '../../src/lighting/rig';
 
 function pixel(pixels: Float32Array, width: number, x: number, y: number): Rgb {
   const index = 4 * (y * width + x);
@@ -313,7 +312,7 @@ describe('daylight sky palette contract', () => {
   });
 
   it('shares the rig reference value and input policy across the full daylight range', () => {
-    expect(SKY_REFERENCE_DAYLIGHT).toBe(DEFAULT_RIG.daylight);
+    expect(REFERENCE_DAYLIGHT).toBe(DEFAULT_RIG.daylight);
     for (const input of [Number.NaN, -Infinity, -1, 0, 0.25, 0.5, 0.75, 1, 2, Infinity]) {
       const normalized = skyDaylightValue(input);
       expect(Number.isFinite(normalized)).toBe(true);

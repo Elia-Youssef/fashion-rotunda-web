@@ -9,6 +9,11 @@ import type { TierName } from './table';
  */
 export const TOUCH_POINTER_QUERY = '(pointer: coarse)';
 
+/** Benchmark headroom gate for High; runtime frame budgets live in table.ts. */
+const HIGH_TIER_MAX_BENCHMARK_P95_MS = 12;
+/** Below this memory survey value, step down one row of table.ts. */
+const MIN_DISCRETE_MEMORY_GB = 4;
+
 export interface TierInput {
   backend: 'webgpu' | 'webgl2';
   gpuName: string;
@@ -62,14 +67,14 @@ export function decideTier(input: TierInput): TierName {
     tier = 'mid';
   } else if (isIntegratedGpu(input.gpuName)) {
     tier = 'mid';
-  } else if (input.benchmarkP95Ms === null || input.benchmarkP95Ms <= 12) {
+  } else if (input.benchmarkP95Ms === null || input.benchmarkP95Ms <= HIGH_TIER_MAX_BENCHMARK_P95_MS) {
     // Discrete on WebGPU: trusted as high until the benchmark says otherwise (null means the
     // benchmark has not run yet).
     tier = 'high';
   } else {
     tier = 'mid';
   }
-  if (input.deviceMemoryGB !== null && input.deviceMemoryGB < 4) {
+  if (input.deviceMemoryGB !== null && input.deviceMemoryGB < MIN_DISCRETE_MEMORY_GB) {
     tier = TIER_ORDER[Math.max(0, TIER_ORDER.indexOf(tier) - 1)];
   }
   return tier;

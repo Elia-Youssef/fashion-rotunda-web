@@ -16,6 +16,7 @@
 
 import {
   CANDELA_RANGE,
+  WHITE_KELVIN,
   clamp,
   kelvinToRgb,
   unrealToThreeDirection,
@@ -51,12 +52,15 @@ export interface Rig {
 }
 
 export { CANDELA_RANGE } from './units';
+/** Reference Day value for the Daylight control and default rig. */
+export const REFERENCE_DAYLIGHT = 0.5;
 export const DAYLIGHT_RANGE: readonly [number, number] = [0, 1];
 export const DAYLIGHT_STEP = 0.01;
 export const EXPOSURE_RANGE: readonly [number, number] = [0.05, 8];
 
 const RIG_FORMAT = 'v2';
-const SERIALIZED_DECIMALS = 3;
+/** Three decimal places preserve the v2 rig and shared camera/yaw wire format. */
+export const SERIALIZED_DECIMALS = 3;
 
 function round(value: number, decimals: number): number {
   const factor = 10 ** decimals;
@@ -243,7 +247,8 @@ export interface DaylightParameters {
  * 1.0: Maximum Daylight (bright 12.0 lux, crisp 7500 K, sky 2.6, stopped-down exposure to prevent clipping)
  */
 export function daylightParameters(daylight: number): DaylightParameters {
-  const safeDaylight = typeof daylight === 'number' && !Number.isNaN(daylight) ? daylight : 0.5;
+  const safeDaylight = typeof daylight === 'number' && !Number.isNaN(daylight)
+    ? daylight : REFERENCE_DAYLIGHT;
   const d = clamp(safeDaylight, DAYLIGHT_RANGE[0], DAYLIGHT_RANGE[1]);
 
   // Sun direction matches the established web conversion of the Unreal directional light
@@ -348,7 +353,7 @@ function buildDefaultRig(): Rig {
 
   return freezeRig({
     lights,
-    daylight: 0.5, // Neutral Day
+    daylight: REFERENCE_DAYLIGHT,
     exposure: 1,
   });
 }
@@ -382,7 +387,8 @@ export function updateLight(rig: Rig, id: RigStudioLightId, patch: Partial<RigLi
  * Deterministically updates coordinated exposure from daylightParameters.
  */
 export function updateDaylight(rig: Rig, daylight: number): Rig {
-  const safeDaylight = typeof daylight === 'number' && !Number.isNaN(daylight) ? daylight : 0.5;
+  const safeDaylight = typeof daylight === 'number' && !Number.isNaN(daylight)
+    ? daylight : REFERENCE_DAYLIGHT;
   const clampedDaylight = clamp(safeDaylight, DAYLIGHT_RANGE[0], DAYLIGHT_RANGE[1]);
   const params = daylightParameters(clampedDaylight);
   return {
@@ -488,7 +494,7 @@ export function parseRig(text: string, base: Rig = DEFAULT_RIG): Rig {
         if (fields[2] !== undefined) patch.intensity = readNumber(fields[2], 0);
         // In v1, fields[3] was Kelvin color temperature
         if (fields[3] !== undefined && fields[3].length > 0) {
-          const kelvin = readNumber(fields[3], 6500);
+          const kelvin = readNumber(fields[3], WHITE_KELVIN);
           patch.color = kelvinToHex(kelvin);
         }
         rig = updateLight(rig, id, patch);

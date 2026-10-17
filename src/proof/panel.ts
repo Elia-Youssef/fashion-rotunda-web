@@ -1,6 +1,7 @@
 // The proof panel with the complete numbers definition and scripted orbit measure.
 
 import './panel.css';
+import { BYTES_PER_MB } from '../loading/progress';
 import type { ProofSnapshot } from './marks';
 import type { GovernorEvent } from '../post/governor';
 import { TIERS } from '../tiers/table';
@@ -28,8 +29,6 @@ interface OrbitMeasurement {
 }
 
 const DEFAULT_INTERVAL_MS = 500;
-// The content report and loading readout use decimal megabytes.
-const BYTES_PER_MB = 1_000_000;
 
 function formatMs(value: number | null): string {
   return value === null ? 'null' : `${value.toFixed(1)} ms`;

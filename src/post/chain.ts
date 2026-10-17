@@ -69,10 +69,10 @@ import type { PerspectiveCamera, Scene } from 'three';
 import type { Node, PassNode, Texture, UniformNode, WebGPURenderer } from 'three/webgpu';
 import type RTTNode from 'three/src/nodes/utils/RTTNode.js';
 
-import { postSettingsFor, settingsForLevel } from './settings';
+import { MSAA_SAMPLE_COUNT, postSettingsFor, settingsForLevel } from './settings';
 import type { Backend, PostSettings } from './settings';
 import type { TierSettings } from '../tiers/table';
-import { createGovernor, governorOperates } from './governor';
+import { createGovernor, governorOperates, P95_WINDOW_FRAMES } from './governor';
 import type { EnhancedLevel, Governor, GovernorDiagnostics, GovernorState } from './governor';
 import { gradeLut, LUT_SIZE } from './grade';
 
@@ -193,6 +193,19 @@ const PASS_THROUGH: PostSettings = {
 
 /** How long after the last motion notification the camera still counts as moving. */
 const MOTION_MS = 500;
+
+/** Surface thickness in metres for screen-space reflection intersections. */
+const SSR_THICKNESS_M = 0.5;
+/** Restrained HDR bloom contribution for the bloom-enabled rows in tiers/table.ts. */
+const BLOOM_STRENGTH = 0.15;
+/** Spread of the HDR bloom filter for the bloom-enabled rows in tiers/table.ts. */
+const BLOOM_RADIUS = 0.4;
+/** Only super-white HDR highlights bloom in the finishing pass described above. */
+const BLOOM_THRESHOLD = 1.15;
+/** Focal-length input to the at-rest depth-of-field node. */
+const DOF_FOCAL_LENGTH = 3.0;
+/** Maximum display-space corner dimming in the finishing pass described above. */
+const VIGNETTE_MAX_DIM = 0.25;
 
 /** How long after arming the stable rest callback re-checks the rest deadline. */
 const MOTION_REST_DELAY_MS = MOTION_MS + 10;
@@ -436,7 +449,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
   if (dev.governorEnabled) {
     governor = createGovernor({
       budgetMs: options.tier.frameBudgetMs,
-      windowFrames: 60,
+      windowFrames: P95_WINDOW_FRAMES,
       patience: 2,
       ssgiEnabled: settings.ssgi !== 'off',
       ...(options.governorState === undefined ? {} : { initialState: options.governorState }),
@@ -505,7 +518,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
 
   function scenePassFor(wanted: PostSettings): PassNode {
     if (wanted.ao || wanted.traa || wanted.msaa || wanted.ssgi !== 'off' || wanted.ssr) {
-      return pass(scene, camera, { samples: wanted.msaa ? 4 : 0 });
+      return pass(scene, camera, { samples: wanted.msaa ? MSAA_SAMPLE_COUNT : 0 });
     }
     return pass(scene, camera);
   }
@@ -604,7 +617,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
       );
       // A maximum reflection distance of 12 m spans across the rotunda plinth and floor.
       ssrNode.maxDistance.value = 12;
-      ssrNode.thickness.value = 0.5;
+      ssrNode.thickness.value = SSR_THICKNESS_M;
     }
 
     if (wanted.bloom) {
@@ -612,9 +625,9 @@ export function createPostChain(options: PostChainOptions): PostChain {
       // so only super-white elements (sun disc through dome, brass specular peaks) bloom.
       bloomNode = bloom(
         scenePass.getTextureNode(),
-        0.15,
-        0.4,
-        1.15,
+        BLOOM_STRENGTH,
+        BLOOM_RADIUS,
+        BLOOM_THRESHOLD,
       ) as BloomNodeWithTextureNode;
     }
 
@@ -664,7 +677,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
         effectTexture(beautyInput),
         viewZ,
         focusDistanceUniform,
-        3.0,
+        DOF_FOCAL_LENGTH,
         bokehScaleUniform,
       ) as DepthOfFieldNodeFull;
       // DepthOfFieldNode.d.ts omits TempNode<'vec4'>; DepthOfFieldNode.js:37 calls super('vec4').
@@ -693,7 +706,7 @@ export function createPostChain(options: PostChainOptions): PostChain {
       const coord = vec2(uvOffset.x.mul(aspectUniform), uvOffset.y);
       const maxDist = float(0.5).mul(aspectUniform.mul(aspectUniform).add(1.0).sqrt());
       const dist = coord.length().div(maxDist);
-      const factor = float(1.0).sub(float(0.25).mul(smoothstep(0.0, 1.0, dist)));
+      const factor = float(1.0).sub(float(VIGNETTE_MAX_DIM).mul(smoothstep(0.0, 1.0, dist)));
       vignettedNode = vec4(baseDisplay.rgb.mul(factor), baseDisplay.a);
     }
 

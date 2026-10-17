@@ -1,5 +1,7 @@
 // GPU frame-time ring buffer driven by renderer timestamp queries.
 
+import { DEFAULT_CAPACITY } from './frametime';
+
 export interface GpuTimes {
   /** Records the last resolved GPU time of a frame; called once per drawn frame after the resolve. */
   push(ms: number): void;
@@ -98,7 +100,7 @@ class GpuTimesBuffer implements GpuTimes {
   }
 }
 
-export function createGpuTimes(windowSize: number): GpuTimes {
+export function createGpuTimes(windowSize = DEFAULT_CAPACITY): GpuTimes {
   return new GpuTimesBuffer(windowSize);
 }
 

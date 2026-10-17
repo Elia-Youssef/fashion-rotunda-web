@@ -1,7 +1,7 @@
 // Pure state parsing and search string serialization for deep links.
 // Holds no DOM references and no three.js objects so it runs under node tests.
 
-import { DEFAULT_RIG, serializeRig } from '../lighting/rig';
+import { DEFAULT_RIG, SERIALIZED_DECIMALS, serializeRig } from '../lighting/rig';
 
 export interface ShareState {
   look: string | null;
@@ -117,8 +117,10 @@ export function parseShareState(search: string): ShareState {
       const z = Number(parts[2]);
       const height = parts.length === 4 ? Number(parts[3]) : undefined;
       if ([x, y, z].every(Number.isFinite) && (height === undefined || Number.isFinite(height))) {
-        camera = [round(x, 3), round(y, 3), round(z, 3)];
-        if (height !== undefined) camera.push(round(height, 3));
+        camera = [
+          round(x, SERIALIZED_DECIMALS), round(y, SERIALIZED_DECIMALS), round(z, SERIALIZED_DECIMALS),
+        ];
+        if (height !== undefined) camera.push(round(height, SERIALIZED_DECIMALS));
       }
     }
   }
@@ -128,7 +130,7 @@ export function parseShareState(search: string): ShareState {
   if (rawYaw !== null) {
     const parsedYaw = Number(rawYaw);
     if (Number.isFinite(parsedYaw)) {
-      const roundedYaw = round(parsedYaw, 3);
+      const roundedYaw = round(parsedYaw, SERIALIZED_DECIMALS);
       yaw = roundedYaw === 0 ? null : roundedYaw;
     }
   }
@@ -172,10 +174,10 @@ function serializeOwned(key: string, state: ShareState): string | null {
       if (state.camera === null) return null;
       return state.camera
         .filter((n): n is number => n !== undefined)
-        .map((n) => round(n, 3).toFixed(3)).join(',');
+        .map((n) => round(n, SERIALIZED_DECIMALS).toFixed(SERIALIZED_DECIMALS)).join(',');
     case 'yaw':
-      return state.yaw !== null && round(state.yaw, 3) !== 0
-        ? round(state.yaw, 3).toFixed(3)
+      return state.yaw !== null && round(state.yaw, SERIALIZED_DECIMALS) !== 0
+        ? round(state.yaw, SERIALIZED_DECIMALS).toFixed(SERIALIZED_DECIMALS)
         : null;
     case 'turn':
       return state.turning ? '1' : null;

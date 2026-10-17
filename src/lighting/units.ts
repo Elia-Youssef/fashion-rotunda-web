@@ -27,7 +27,7 @@ const UNREAL_CM_PER_M = 100;
 const PLANCKIAN_KELVIN_RANGE: readonly [number, number] = [1000, 15000];
 
 /** The temperature the output is white balanced against, so 6500 K comes out exactly (1, 1, 1). */
-const WHITE_KELVIN = 6500;
+export const WHITE_KELVIN = 6500;
 
 export function clamp(value: number, low: number, high: number): number {
   if (Number.isNaN(value)) return low;
