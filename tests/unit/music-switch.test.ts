@@ -141,6 +141,16 @@ describe('mountMusicSwitch', () => {
     expect(button().hasAttribute('title')).toBe(false);
   });
 
+  it('shows the player error reason as the tooltip, keeping the fixed label', () => {
+    const current = mount('off');
+    current.setState('error', 'Track unavailable');
+    const btn = button();
+    expect(btn.dataset.tooltip).toBe('Track unavailable');
+    expect(label()).toBe('Music unavailable');
+    current.setState('error', null);
+    expect(btn.dataset.tooltip).toBe('Music unavailable');
+  });
+
   it('never disables the button, so every state can be pressed', () => {
     const current = mount('off');
     for (const row of STATE_TABLE) {

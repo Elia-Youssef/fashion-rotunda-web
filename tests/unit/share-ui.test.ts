@@ -49,6 +49,21 @@ describe('share UI component', () => {
     handle.dispose();
   });
 
+  it('falls back to the end of the root when the product-card is not a direct child', () => {
+    const wrapper = document.createElement('div');
+    const card = document.createElement('div');
+    card.className = 'product-card';
+    wrapper.appendChild(card);
+    root.appendChild(wrapper);
+
+    const handle = mountShare(root, actions);
+    const share = root.querySelector('.share');
+    expect(share?.parentElement).toBe(root);
+    expect(root.lastElementChild).toBe(share);
+    expect(card.nextElementSibling).toBeNull();
+    handle.dispose();
+  });
+
   it('forwards button clicks to actions', () => {
     const handle = mountShare(root, actions);
     const copyBtn = root.querySelector<HTMLButtonElement>('.share__button--copy');
@@ -62,6 +77,21 @@ describe('share UI component', () => {
 
     screenshotBtn?.click();
     expect(actions.screenshot).toHaveBeenCalledTimes(1);
+    handle.dispose();
+  });
+
+  it('labels both actions and the hidden fallback input for the visitor', () => {
+    const handle = mountShare(root, actions);
+    const copy = root.querySelector<HTMLButtonElement>('.share__button--copy')!;
+    const screenshot = root.querySelector<HTMLButtonElement>('.share__button--screenshot')!;
+    expect(copy.textContent).toBe('Copy link');
+    expect(screenshot.textContent).toBe('Screenshot');
+
+    const fallback = root.querySelector<HTMLInputElement>('input.share__fallback');
+    expect(fallback).not.toBeNull();
+    expect(fallback?.className).toContain('share__fallback--hidden');
+    expect(fallback?.readOnly).toBe(true);
+    expect(fallback?.getAttribute('aria-label')).toBe('Shareable link');
     handle.dispose();
   });
 
@@ -79,6 +109,32 @@ describe('share UI component', () => {
     vi.advanceTimersByTime(1);
     expect(status?.textContent).toBe('');
 
+    handle.dispose();
+  });
+
+  it('publishes notifications through a polite live region', () => {
+    const handle = mountShare(root, actions);
+    const status = root.querySelector<HTMLElement>('.share__status')!;
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.getAttribute('aria-live')).toBe('polite');
+    handle.dispose();
+  });
+
+  it('restarts the two-second window when a second notification arrives', () => {
+    const handle = mountShare(root, actions);
+    const status = root.querySelector<HTMLElement>('.share__status')!;
+
+    handle.notify('Link copied');
+    vi.advanceTimersByTime(1000);
+    handle.notify('Still saved');
+    expect(status.textContent).toBe('Still saved');
+
+    // The first window is gone: only the second one decides when the text clears.
+    vi.advanceTimersByTime(1000);
+    expect(status.textContent).toBe('Still saved');
+
+    vi.advanceTimersByTime(1000);
+    expect(status.textContent).toBe('');
     handle.dispose();
   });
 
