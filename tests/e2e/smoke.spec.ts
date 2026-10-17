@@ -1,8 +1,6 @@
-import { requireWebGPU } from './support/backend';
+import { backendPath, projectBackend, requireWebGPU } from './support/backend';
 import { expect, test, browserReports } from './support/fixtures';
 import { canvasStats } from './support/pixels';
-
-type Backend = 'webgpu' | 'webgl2';
 
 // This suite relies on three facts of the page: canvas#scene carries data-backend once the renderer
 // has initialised, one console line starts with the prefix below for a session that asked for
@@ -64,24 +62,12 @@ test('draws once per display frame during the native tier benchmark', async ({ p
   expect(Math.max(...counts), 'submissions in a single calibration display frame').toBe(1);
 });
 
-function expectedBackend(): Backend {
-  return test.info().project.name === 'webgpu' ? 'webgpu' : 'webgl2';
-}
-
-function targetPath(backend: Backend, diagnostics: boolean): string {
-  // ?webgl=1 forces the fallback on a machine that has WebGPU, so the webgl2 project stays
-  // testable locally too. gate=off keeps the loading gate away: the pixel check below reads the
-  // canvas, and a gate over it would be counted as the room. The console-line assertions read
-  // diagnostics lines, which print only for sessions that asked for them, so those tests pass
-  // e2e=1 and the visitor-console check does not.
-  const asked = diagnostics ? '&e2e=1' : '';
-  return backend === 'webgpu' ? `/?gate=off${asked}` : `/?webgl=1&gate=off${asked}`;
-}
-
 test('renders on the expected backend', async ({ page }) => {
-  const backend = expectedBackend();
+  const backend = projectBackend();
 
-  await page.goto(targetPath(backend, true));
+  // The console-line assertion reads diagnostics lines, which print only for sessions that asked
+  // for them, so this test passes e2e=1.
+  await page.goto(backendPath('/?gate=off&e2e=1'));
   await requireWebGPU(page);
 
   const canvas = page.locator('canvas#scene');
@@ -101,9 +87,11 @@ test('renders on the expected backend', async ({ page }) => {
 // message from navigation on, and the scene-ready attribute marks the point by which the startup
 // lines have all been decided, so the filtered read below covers them.
 test('keeps the visitor console free of archviz diagnostics', async ({ page }) => {
-  const backend = expectedBackend();
+  const backend = projectBackend();
 
-  await page.goto(targetPath(backend, false));
+  // gate=off keeps the loading gate away; the visitor-console check passes no e2e=1, so the
+  // session it observes never asked for diagnostics.
+  await page.goto(backendPath('/?gate=off'));
   await requireWebGPU(page);
 
   const canvas = page.locator('canvas#scene');
@@ -122,8 +110,11 @@ test('keeps the visitor console free of archviz diagnostics', async ({ page }) =
 });
 
 test('draws something', async ({ page }) => {
-  const backend = expectedBackend();
-  await page.goto(targetPath(backend, false));
+  const backend = projectBackend();
+
+  // gate=off keeps the loading gate away: the pixel check below reads the canvas, and a gate
+  // over it would be counted as the room.
+  await page.goto(backendPath('/?gate=off'));
   await requireWebGPU(page);
 
   const canvas = page.locator('canvas#scene');

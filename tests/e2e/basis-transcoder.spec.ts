@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { backendPath, requireWebGPU } from './support/backend';
+import { openShowroom } from './support/showroom';
 import { expect, test } from './support/fixtures';
 
 // The Basis transcoder pair is served content: the page points KTX2Loader at /content/basis/
@@ -9,8 +9,6 @@ import { expect, test } from './support/fixtures';
 // dist/assets. The first test reads the build output the preview server serves (the webServer
 // config runs the production build before these tests); the second traces the requests the page
 // actually makes once a look has been decoded.
-
-const SCENE_READY_TIMEOUT = 60_000;
 
 test('builds no basis transcoder copy into dist/assets', async () => {
   const emitted = readdirSync(join(process.cwd(), 'dist', 'assets'));
@@ -26,14 +24,11 @@ test('builds no basis transcoder copy into dist/assets', async () => {
   }
 });
 
-test('fetches the transcoder from content, never from the bundle', async ({ page }) => {
-  await page.goto(backendPath('/?gate=off&e2e=1&music=off&attract=0'));
-  await requireWebGPU(page);
-
-  // data-scene turns ready in the frame that draws the look; the room's KTX2 textures have been
-  // transcoded by then, so the transcoder fetch is in the resource timing buffer.
-  const canvas = page.locator('canvas#scene');
-  await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
+test('fetches the transcoder from content, never from the bundle', async ({ page, request }) => {
+  // The opening waits past data-scene ready, the frame that draws the look, by which point the
+  // room's KTX2 textures are transcoded, and its chrome waits after ready request no
+  // basis_transcoder file, so the resource timing buffer holds exactly the page's own fetches.
+  await openShowroom(page, request, '/?gate=off&e2e=1&music=off&attract=0');
 
   const transcoderRequests = await page.evaluate(() =>
     performance

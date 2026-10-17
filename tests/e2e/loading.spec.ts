@@ -7,8 +7,9 @@ import { browserReports, expect, test, expectConsoleError } from './support/fixt
 
 import { holdFirstRequest } from './support/held-request';
 import { backendPath, projectBackend } from './support/backend';
+import { readCatalog } from './support/showroom';
 import { STARTUP_FAILURE_MESSAGE } from '../../src/ui/startup-failure';
-import { contentUrl, parseCatalog } from '../../src/catalog/catalog';
+import { contentUrl } from '../../src/catalog/catalog';
 
 /** Follow the installed parser's material dependencies without downloading or decoding images. */
 async function countBasisSources(bytes: ArrayBuffer): Promise<number> {
@@ -246,9 +247,7 @@ test('shows the lobby error state and retry control when the Basis transcoder re
 }) => {
   // Read the same full content set this desktop load uses. A raw texture-table length would also
   // count the look's deferred swatches, which never load when the initial parse rejects.
-  const catalogResponse = await page.request.get('/content/catalog.json');
-  expect(catalogResponse.ok()).toBe(true);
-  const catalog = parseCatalog(await catalogResponse.json());
+  const catalog = await readCatalog(page.request);
   const files = [catalog.rotunda.file, catalog.plinth.file, catalog.looks[0].file];
   const counts = await Promise.all(files.map(async (file) => {
     const response = await page.request.get(contentUrl('/content', file));
