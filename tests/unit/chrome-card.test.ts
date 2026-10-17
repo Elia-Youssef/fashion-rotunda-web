@@ -49,13 +49,15 @@ interface MountOverrides {
   look?: CatalogLook | null;
   variant?: string | null;
   handlers?: ProductCardActions;
+  thumbnailUrl?: (look: CatalogLook) => string;
 }
 
 function mount(overrides: MountOverrides = {}): ProductCardHandle {
   card = mountProductCard(root, {
     look: 'look' in overrides ? overrides.look : LOOK,
     variant: overrides.variant ?? 'base',
-    thumbnailUrl: (look: CatalogLook): string => `/content/${look.thumbnail ?? ''}`,
+    thumbnailUrl: overrides.thumbnailUrl ??
+      ((look: CatalogLook): string => `/content/${look.thumbnail ?? ''}`),
     actions: overrides.handlers ?? actions(),
   });
   return card;
@@ -488,5 +490,217 @@ describe('swatch accessibility contract', () => {
     expect(document.activeElement).toBe(focused);
     handle.setLook(null, null);
     expect(document.activeElement).toBe(focused);
+  });
+});
+
+describe('the card structure a visitor observes', () => {
+  it('stacks the head thumbnail-first and heading below it, name above description', () => {
+    mount();
+    const head = root.querySelector('.product-card__head');
+    // The stylesheet lays these out as a column with no order overrides, so DOM order is
+    // visual order: the image block leads, then the text block.
+    expect([...(head?.children ?? [])].map((element) => element.className)).toEqual([
+      'product-card__thumb',
+      'product-card__thumb-empty',
+      'product-card__heading',
+    ]);
+    const heading = root.querySelector('.product-card__heading');
+    expect([...(heading?.children ?? [])].map((element) => element.className)).toEqual([
+      'product-card__name',
+      'product-card__description',
+      'product-card__source',
+    ]);
+  });
+
+  it('names the actions group and keeps every action a plain button', () => {
+    mount();
+    const row = root.querySelector('.product-card__actions');
+    expect(row?.getAttribute('aria-label')).toBe('Look actions');
+    for (const element of row?.querySelectorAll('button') ?? []) {
+      expect(element.type).toBe('button');
+    }
+  });
+
+  it('keys each action by its own data-action, the selector keyboard support finds it by', () => {
+    mount();
+    expect(button('Rotate').dataset.action).toBe('rotate');
+    expect(button('Reset').dataset.action).toBe('reset');
+    expect(button('Material').dataset.action).toBe('material');
+  });
+
+  it('announces every swatch as a radio inside the radiogroup', () => {
+    mount();
+    const swatches = root.querySelectorAll('.product-card__swatch');
+    expect(swatches.length).toBeGreaterThan(0);
+    for (const element of swatches) {
+      expect(element.getAttribute('role')).toBe('radio');
+    }
+  });
+
+  it('starts Rotate unpressed', () => {
+    mount();
+    expect(button('Rotate').getAttribute('aria-pressed')).toBe('false');
+  });
+});
+
+describe('variant names the catalogue does not know', () => {
+  it('keeps the variant id as the swatch name and phrases its tooltip from the same id', () => {
+    mount({ look: makeLook('ivory-look', 'Ivory Look', ['base', 'ivory']), variant: 'base' });
+    expect(variantDisplayName('ivory')).toBe('ivory');
+    expect(swatchNames()).toEqual(['Default', 'ivory']);
+    expect(swatch('ivory').dataset.tooltip).toBe('Mannequin in ivory tone');
+  });
+});
+
+describe('the swatch row as a radio group', () => {
+  it('moves the check with a swatch click, leaving one tab stop', () => {
+    mount({ variant: 'base' });
+    swatch('dark').click();
+    expect(swatch('dark').getAttribute('aria-checked')).toBe('true');
+    expect(swatch('dark').tabIndex).toBe(0);
+    expect(swatch('base').getAttribute('aria-checked')).toBe('false');
+    expect(swatch('base').tabIndex).toBe(-1);
+    expect(swatch('light').getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('keeps one checked member and the tab stop for a name this look does not carry', () => {
+    const handle = mount({ variant: 'base' });
+    handle.setVariant('missing');
+    expect(swatch('base').getAttribute('aria-checked')).toBe('true');
+    expect(swatch('base').tabIndex).toBe(0);
+    expect(swatch('light').getAttribute('aria-checked')).toBe('false');
+    expect(swatch('light').tabIndex).toBe(-1);
+    expect(swatch('dark').getAttribute('aria-checked')).toBe('false');
+  });
+});
+
+describe('keyboard navigation in the swatch row', () => {
+  function press(key: string): KeyboardEvent {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+    root.querySelector('.product-card__swatches')?.dispatchEvent(event);
+    return event;
+  }
+
+  it('moves with all four arrow keys and wraps at the first member', () => {
+    const handlers = actions();
+    mount({ handlers, variant: 'base' });
+    swatch('base').focus();
+
+    press('ArrowDown');
+    expect(handlers.material).toHaveBeenLastCalledWith('light');
+    expect(document.activeElement).toBe(swatch('light'));
+
+    press('ArrowUp');
+    expect(handlers.material).toHaveBeenLastCalledWith('base');
+    expect(document.activeElement).toBe(swatch('base'));
+
+    press('ArrowRight');
+    expect(handlers.material).toHaveBeenLastCalledWith('light');
+    expect(document.activeElement).toBe(swatch('light'));
+
+    press('ArrowLeft');
+    expect(handlers.material).toHaveBeenLastCalledWith('base');
+    expect(document.activeElement).toBe(swatch('base'));
+
+    press('ArrowLeft');
+    expect(handlers.material).toHaveBeenLastCalledWith('dark');
+    expect(document.activeElement).toBe(swatch('dark'));
+    expect(swatch('dark').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('consumes the navigation keys so the page does not act on them', () => {
+    mount({ variant: 'base' });
+    swatch('base').focus();
+    for (const key of ['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp', 'Home', 'End']) {
+      expect(press(key).defaultPrevented).toBe(true);
+    }
+  });
+
+  it('applies nothing when no swatch holds focus', () => {
+    const handlers = actions();
+    mount({ handlers, variant: 'base' });
+    button('Material').focus();
+    const event = press('ArrowRight');
+    expect(handlers.material).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(button('Material'));
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it('leaves unrelated keys to the page', () => {
+    const handlers = actions();
+    mount({ handlers, variant: 'base' });
+    swatch('base').focus();
+    const event = press('a');
+    expect(event.defaultPrevented).toBe(false);
+    expect(handlers.material).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(swatch('base'));
+    expect(swatch('base').getAttribute('aria-checked')).toBe('true');
+  });
+});
+
+describe('the empty plinth', () => {
+  it('hides the thumbnail box and shows the placeholder for a null look', () => {
+    mount({ look: null, variant: null });
+    expect(root.querySelector<HTMLElement>('.product-card__thumb')?.hidden).toBe(true);
+    expect(root.querySelector<HTMLElement>('.product-card__thumb-empty')?.hidden).toBe(false);
+  });
+});
+
+describe('the thumbnail placeholder window', () => {
+  it('holds the placeholder until the scene mark, then shows the image', async () => {
+    // The first-frame mark is module state already consumed by the tests above, so this case
+    // loads a fresh module pair and clears the performance timeline to observe the window.
+    vi.resetModules();
+    performance.clearMarks();
+    const localRoot = document.createElement('aside');
+    document.body.appendChild(localRoot);
+    try {
+      const { mountProductCard: mountFresh } = await import('../../src/ui/product-card');
+      const { markFirstFrame: markFresh } = await import('../../src/proof/marks');
+      const handle = mountFresh(localRoot, {
+        look: LOOK,
+        variant: 'base',
+        thumbnailUrl: (look: CatalogLook): string => `/content/${look.thumbnail ?? ''}`,
+        actions: actions(),
+      });
+      const thumb = localRoot.querySelector<HTMLImageElement>('.product-card__thumb');
+      const empty = localRoot.querySelector<HTMLElement>('.product-card__thumb-empty');
+      expect(thumb?.hidden).toBe(true);
+      expect(empty?.hidden).toBe(false);
+      expect(thumb?.hasAttribute('src')).toBe(false);
+      markFresh();
+      expect(thumb?.hidden).toBe(false);
+      expect(empty?.hidden).toBe(true);
+      handle.dispose();
+    } finally {
+      performance.clearMarks();
+      localRoot.remove();
+    }
+  });
+
+  it('keeps the placeholder and assigns no source for a look without a thumbnail', () => {
+    // The chrome resolves a missing thumbnail to an empty string, so the card owns the
+    // decision that an empty URL means no image, not a broken one.
+    mount({ thumbnailUrl: (): string => '' });
+    const thumb = root.querySelector<HTMLImageElement>('.product-card__thumb');
+    const empty = root.querySelector<HTMLElement>('.product-card__thumb-empty');
+    expect(thumb?.hasAttribute('src')).toBe(false);
+    expect(thumb?.hidden).toBe(true);
+    expect(empty?.hidden).toBe(false);
+    expect(thumb?.alt).toBe('');
+  });
+});
+
+describe('ProductCardHandle after dispose', () => {
+  it('renders nothing and asks for no thumbnail URL after dispose', () => {
+    const thumbnailUrl = vi.fn((look: CatalogLook): string => `/content/${look.thumbnail ?? ''}`);
+    const handle = mount({ thumbnailUrl });
+    thumbnailUrl.mockClear();
+    handle.dispose();
+    card = null;
+    handle.setLook(OTHER, 'base');
+    expect(thumbnailUrl).not.toHaveBeenCalled();
+    expect(root.childElementCount).toBe(0);
+    expect(root.querySelectorAll('.product-card__swatch')).toHaveLength(0);
   });
 });
