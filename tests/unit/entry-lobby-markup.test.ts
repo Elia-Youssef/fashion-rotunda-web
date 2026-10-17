@@ -37,6 +37,15 @@ describe('entry lobby markup pin', () => {
   });
 });
 
+describe('entry lobby markup build contract', () => {
+  it('builds the lobby element in the document the caller passes', () => {
+    const callerDoc = document.implementation.createHTMLDocument('caller');
+    const element = buildLobbyMarkup(callerDoc);
+    expect(element.ownerDocument).toBe(callerDoc);
+    expect(element.querySelector('.entry-lobby__poster-img')?.ownerDocument).toBe(callerDoc);
+  });
+});
+
 describe('entry lobby poster selection', () => {
   function posterMarkup(kind: 'built' | 'shipped'): Element {
     const root = kind === 'built' ? buildLobbyMarkup(document) :
