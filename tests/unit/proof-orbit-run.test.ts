@@ -8,6 +8,16 @@ function recordPose(position: [number, number, number]): [number, number, number
   return [position[0], position[1], position[2]];
 }
 
+/** The abort contract: the promise rejects with a DOMException named AbortError. */
+async function expectAbort(promise: Promise<void>): Promise<void> {
+  const failure = await promise.then(
+    () => null,
+    (error: unknown) => error,
+  );
+  expect(failure).toBeInstanceOf(DOMException);
+  expect((failure as DOMException).name).toBe('AbortError');
+}
+
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -253,5 +263,90 @@ describe('runProofOrbit', () => {
 
     expect(frameCalls).toBe(recorded.frameCalls);
     expect(calls).toEqual(recorded.setPoseCalls);
+  });
+
+  it('schedules no further work when setPose aborts during the opening frame', async () => {
+    const controller = new AbortController();
+    const request = vi.fn(() => 1);
+    const cancel = vi.fn();
+    const setPose = vi.fn(() => {
+      controller.abort();
+    });
+    const onFrame = vi.fn();
+    const finished = runProofOrbit({
+      setPose,
+      onFrame,
+      proofPosition: PROOF_POSITION,
+      proofTarget: PROOF_TARGET,
+      durationMs: 100,
+      now: () => 0,
+      signal: controller.signal,
+      scheduler: { request, cancel },
+    });
+    await expectAbort(finished);
+    expect(setPose).toHaveBeenCalledTimes(1);
+    expect(onFrame).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it('stays inert when now aborts before the opening frame', async () => {
+    const controller = new AbortController();
+    const request = vi.fn(() => 1);
+    const setPose = vi.fn();
+    const onFrame = vi.fn();
+    const finished = runProofOrbit({
+      setPose,
+      onFrame,
+      proofPosition: PROOF_POSITION,
+      proofTarget: PROOF_TARGET,
+      durationMs: 100,
+      now: () => {
+        controller.abort();
+        return 0;
+      },
+      signal: controller.signal,
+      scheduler: { request, cancel: () => {} },
+    });
+    await expectAbort(finished);
+    expect(setPose).not.toHaveBeenCalled();
+    expect(onFrame).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it('does not ask the loop for the frame whose setPose aborted', async () => {
+    const controller = new AbortController();
+    const callbacks: (() => void)[] = [];
+    let calls = 0;
+    const setPose = vi.fn(() => {
+      calls += 1;
+      if (calls === 2) controller.abort();
+    });
+    const onFrame = vi.fn();
+    let clock = 0;
+    const finished = runProofOrbit({
+      setPose,
+      onFrame,
+      proofPosition: PROOF_POSITION,
+      proofTarget: PROOF_TARGET,
+      durationMs: 10_000,
+      now: () => clock,
+      signal: controller.signal,
+      scheduler: {
+        request: (callback) => {
+          callbacks.push(callback);
+          return callbacks.length;
+        },
+        cancel: () => {},
+      },
+    });
+    expect(setPose).toHaveBeenCalledTimes(1);
+    expect(onFrame).toHaveBeenCalledTimes(1);
+    clock = 5_000;
+    callbacks.shift()?.();
+    await expectAbort(finished);
+    expect(setPose).toHaveBeenCalledTimes(2);
+    expect(onFrame).toHaveBeenCalledTimes(1);
+    expect(callbacks).toHaveLength(0);
   });
 });
