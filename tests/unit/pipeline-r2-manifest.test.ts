@@ -62,6 +62,14 @@ describe('walkContentFiles', () => {
     const weird: DirEntryLike = { name: 'dangling', isDirectory: () => false, isFile: () => false };
     expect(() => walkContentFiles('unused', () => [weird])).toThrow(/not a regular file or directory/);
   });
+
+  it('sorts the whole path list, not only the entries within one directory', () => {
+    // '.' sorts before '/', so the file 'looks.json' precedes the contents of the 'looks'
+    // directory in the sorted contract, while a walk that orders only siblings lists the
+    // directory first.
+    const root = makeFixture({ 'looks/a.glb': 'mesh', 'looks.json': '{}' });
+    expect(walkContentFiles(root)).toEqual(['looks.json', 'looks/a.glb']);
+  });
 });
 
 describe('objectKeyFor and contentTypeFor', () => {
@@ -110,6 +118,13 @@ describe('exclusionReasonFor', () => {
 
   it('returns null for runtime content', () => {
     expect(exclusionReasonFor('rotunda.glb', rules)).toBeNull();
+  });
+
+  it('falls back to the module exclusion table when no rules are passed', () => {
+    // The shipped table is empty: nothing under the content root is excluded by default, so
+    // runtime content stays in the upload set when a caller names no rules.
+    expect(exclusionReasonFor('rotunda.glb')).toBeNull();
+    expect(exclusionReasonFor('basis/basis_transcoder.js')).toBeNull();
   });
 });
 
