@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { BoxGeometry, BufferGeometry, Group, Mesh, PerspectiveCamera } from 'three';
+import { BoxGeometry, BufferGeometry, Float32BufferAttribute, Group, Mesh, PerspectiveCamera } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -241,5 +241,102 @@ describe('createWalkSession', () => {
     expect(disposeGeometry).toHaveBeenCalledOnce();
     expect(current.walk.enabled).toBe(false);
     expect(ready).not.toHaveBeenCalled();
+  });
+
+  it('carries the live pose into the replacement collision controller', async () => {
+    const current = make();
+    current.walk.setPose([1.25, 0, 3.5], 1.2, 0.1);
+    const ready = vi.fn();
+    current.onReady(ready);
+    const loading = current.loadCollision(new ArrayBuffer(0), new AbortController().signal);
+    parsed(new BoxGeometry(20, 4, 0.4).translate(0, 2, 4));
+    await loading;
+    expect(current.walk.foot).toEqual([1.25, 0, 3.5]);
+    expect(current.walk.yaw).toBe(1.2);
+    expect(current.walk.pitch).toBe(0.1);
+    expect(ready).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a precanceled load without starting a parse', async () => {
+    const current = make();
+    const lifetime = new AbortController();
+    lifetime.abort();
+    await expect(current.loadCollision(new ArrayBuffer(0), lifetime.signal))
+      .rejects.toThrow('Walk load canceled');
+    expect(finishParse).toBeUndefined();
+    expect(current.ready).toBe(false);
+  });
+
+  it('rejects and releases parsed meshes when the signal aborts mid-parse', async () => {
+    const current = make();
+    const previous = current.walk;
+    const ready = vi.fn();
+    current.onReady(ready);
+    const lifetime = new AbortController();
+    const loading = current.loadCollision(new ArrayBuffer(0), lifetime.signal);
+    lifetime.abort();
+    const canceled = expect(loading).rejects.toThrow('Walk load canceled');
+    const wall = new BoxGeometry(20, 4, 0.4).translate(0, 2, 4);
+    const disposeWall = vi.spyOn(wall, 'dispose');
+    parsed(wall);
+    await canceled;
+    expect(current.ready).toBe(false);
+    expect(ready).not.toHaveBeenCalled();
+    expect(current.walk).toBe(previous);
+    expect(disposeWall).toHaveBeenCalledOnce();
+  });
+
+  it('rejects an indexed collision whose index counts fewer than three corners', async () => {
+    const current = make();
+    const ready = vi.fn();
+    current.onReady(ready);
+    const loading = current.loadCollision(new ArrayBuffer(0), new AbortController().signal);
+    const stub = new BufferGeometry();
+    stub.setAttribute('position', new Float32BufferAttribute(
+      [0, 0, 0, 4, 0, 0, 0, 0, 4, 1, 1, 1], 3,
+    ));
+    stub.setIndex([0, 1]);
+    parsed(stub);
+    await expect(loading).rejects.toThrow('no triangles');
+    expect(current.ready).toBe(false);
+    expect(ready).not.toHaveBeenCalled();
+  });
+
+  it('accepts a single-triangle indexed collision mesh', async () => {
+    const current = make();
+    const ready = vi.fn();
+    current.onReady(ready);
+    const loading = current.loadCollision(new ArrayBuffer(0), new AbortController().signal);
+    const triangle = new BufferGeometry();
+    triangle.setAttribute('position', new Float32BufferAttribute(
+      [0, 0, 0, 4, 0, 0, 0, 0, 4], 3,
+    ));
+    triangle.setIndex([0, 1, 2]);
+    parsed(triangle);
+    await loading;
+    expect(current.ready).toBe(true);
+    expect(ready).toHaveBeenCalledOnce();
+  });
+
+  it('rejects when the collision parser throws synchronously', async () => {
+    const current = make();
+    vi.mocked(GLTFLoader.prototype.parse).mockImplementationOnce(() => {
+      throw new Error('parse threw');
+    });
+    await expect(current.loadCollision(new ArrayBuffer(0), new AbortController().signal))
+      .rejects.toThrow('parse threw');
+    expect(current.ready).toBe(false);
+  });
+
+  it('places the touch layer over the canvas rect and follows window resize', () => {
+    const rect = vi.spyOn(canvas, 'getBoundingClientRect');
+    rect.mockReturnValue({ left: 11, top: 22, width: 333, height: 444 } as DOMRect);
+    make({ isTouch: true });
+    const layer = document.querySelector<HTMLElement>('.archviz-joystick-layer')!;
+    const read = () => [layer.style.left, layer.style.top, layer.style.width, layer.style.height];
+    expect(read()).toEqual(['11px', '22px', '333px', '444px']);
+    rect.mockReturnValue({ left: 5, top: 6, width: 77, height: 88 } as DOMRect);
+    window.dispatchEvent(new Event('resize'));
+    expect(read()).toEqual(['5px', '6px', '77px', '88px']);
   });
 });
