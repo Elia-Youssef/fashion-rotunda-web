@@ -48,6 +48,7 @@ import { ktx2Format } from './lib/naming.mjs';
 import { validateOutputContract } from './lib/output-contract.mjs';
 import { planFactorResets, planRepairs } from './lib/repairs.mjs';
 import { applyLookFit, validateFitOutput } from './lib/garment-fit.mjs';
+import { applyHalfLookFit } from './lib/garment-phone-fit.mjs';
 import { selectLook, updateSelectedCatalog, updateSelectedManifest } from './lib/selected-output.mjs';
 import { shouldPreserveSpecular } from './lib/specular.mjs';
 import { canonicalizeSourceTextures, getOrCreateSourceTexture } from './lib/texture-authority.mjs';
@@ -400,9 +401,14 @@ function readFactors(material) {
   };
 }
 
-/** Decimates a look's garment primitives, and only those, when the look is over the phone budget. */
+/** Applies opted-in phone budget splits before the default garment-only simplification. */
 function decimateGarments(document, item, set) {
   if (!item.look) return;
+  const phoneFit = applyHalfLookFit(document, item.look.id, set, HALF_LOOK_TRIANGLES, MeshoptSimplifier, SIMPLIFY_ERROR);
+  if (phoneFit.applied) {
+    console.log(`phone fit ${set}/${item.file}: ${JSON.stringify(phoneFit)}`);
+    return;
+  }
   const garments = garmentPrimitives(document);
   if (garments.length === 0) return;
   const total = countTriangles(document);
