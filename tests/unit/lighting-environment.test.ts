@@ -7,7 +7,6 @@ import NodeManager from 'three/src/renderers/common/nodes/NodeManager.js';
 // @ts-expect-error The internal render-object predicate has no published declaration.
 import RenderObject from 'three/src/renderers/common/RenderObject.js';
 
-
 const state = vi.hoisted(() => ({
   fail: '',
   capturePixels: false,
