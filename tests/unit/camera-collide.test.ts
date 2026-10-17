@@ -1,8 +1,14 @@
 // Unit tests for capsule collision against MeshBVH.
 // Verifies box wall push-out, cylinder plinth push-out, floor clamping, and input immutability.
 
-import { BoxGeometry, CylinderGeometry, PlaneGeometry, Vector3 } from 'three';
-import type { BufferGeometry } from 'three';
+import {
+  BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
+  CylinderGeometry,
+  PlaneGeometry,
+  Vector3,
+} from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { MeshBVH } from 'three-mesh-bvh';
 import { describe, expect, it } from 'vitest';
@@ -91,6 +97,117 @@ describe('resolveCapsule', () => {
     expect(resolved.x).toBeCloseTo(5, 5);
     expect(resolved.y).toBeCloseTo(0, 5);
     expect(resolved.z).toBeCloseTo(5, 5);
+  });
+});
+
+// Surface contracts the recorded baseline does not reach: a surface the capsule body
+// crosses (the closest points coincide, so the push direction must come from the
+// triangle normal), a steep ramp (the push is flattened to its horizontal part), a
+// triangle feature straight below the segment (the flattened difference is zero, so the
+// push falls back to the normal's horizontal part) and a capsule shorter than its
+// diameter (the segment top clamps to the bottom sphere center). Expected values were
+// recorded from the committed resolver on 2026-10-16.
+describe('resolveCapsule surfaces', () => {
+  it('pushes a capsule down and away from a surface its body crosses', () => {
+    // A segmented down-facing plane at y = 2.2 acts as a low ceiling. The default
+    // capsule at foot y = 1.5 crosses it (segment y 1.8 to 2.85), so the closest
+    // distance is about zero and the push direction must come from the triangle
+    // normal: down and out of the surface band, never up through the surface and
+    // never a no-push from a zeroed point difference. The plane is segmented so the
+    // BVH has interior nodes: the traversal below the root consults the capsule's
+    // query box, which must cover the whole segment, endpoints included, to reach
+    // a ceiling this far above the segment's bottom point.
+    const ceiling = new PlaneGeometry(4, 4, 8, 8);
+    ceiling.rotateX(Math.PI / 2);
+    ceiling.translate(0, 2.2, 0);
+    const bvh = new MeshBVH(ceiling);
+
+    const foot = new Vector3(0, 1.5, 0);
+    const resolved = resolveCapsule(bvh, foot, DEFAULT_CAPSULE);
+
+    expect(resolved.x).toBeCloseTo(0, 5);
+    expect(resolved.z).toBeCloseTo(0, 5);
+    expect(resolved.y).toBeLessThan(1.3);
+    expect(resolved.y).toBeCloseTo(0.55, 3);
+  });
+
+  it('pushes out of a steep ramp horizontally, without lifting the foot', () => {
+    // Ramp through [0, 0.5, 0] with normal (0, 0.5, 0.866): |normal.y| < 0.7, so the
+    // push is flattened to its horizontal part. The foot height never changes; the
+    // capsule slides away from the ramp face instead of riding up it.
+    const ramp = new PlaneGeometry(4, 4);
+    ramp.rotateX(-Math.PI / 6);
+    ramp.translate(0, 0.5, 0);
+    const bvh = new MeshBVH(ramp);
+
+    const foot = new Vector3(0, 0.75, 0);
+    const resolved = resolveCapsule(bvh, foot, DEFAULT_CAPSULE);
+
+    expect(resolved.x).toBeCloseTo(0, 5);
+    expect(resolved.y).toBeCloseTo(0.75, 10);
+    expect(resolved.z).toBeGreaterThan(0.01);
+    expect(resolved.z).toBeLessThan(0.05);
+  });
+
+  it('falls back to the horizontal triangle normal when the push flattens to zero', () => {
+    // Steep triangle (normal (-0.9701, 0, 0.2425)) whose apex sits directly below the
+    // segment's bottom point. The capsule-to-triangle direction is vertical, so after
+    // the flatten it is the zero vector and the push must fall back to the normal's
+    // horizontal part: the foot moves sideways away from the apex, height unchanged.
+    // A resolver that normalizes the zero vector instead pushes nothing at all.
+    const spike = new BufferGeometry();
+    spike.setAttribute('position', new BufferAttribute(new Float32Array([
+      0, 0, -1,
+      0.5, 0, 1,
+      0, 1, 0,
+    ]), 3));
+    const bvh = new MeshBVH(spike);
+
+    const foot = new Vector3(0, 0.8, 0);
+    const resolved = resolveCapsule(bvh, foot, DEFAULT_CAPSULE);
+
+    expect(resolved.y).toBeCloseTo(0.8, 10);
+    expect(resolved.x).toBeLessThan(-0.1);
+    const horizontal = Math.hypot(resolved.x, resolved.z);
+    expect(horizontal).toBeGreaterThan(0.15);
+    expect(horizontal).toBeLessThan(0.35);
+  });
+
+  it('clamps a squat capsule segment to the bottom sphere center', () => {
+    // Radius 1.0 with height 0.2: height is below the diameter, so the segment top
+    // clamps to the bottom sphere center, one radius above the foot. The low block
+    // sits just outside that sphere's reach (nearest point 1.082 away) and must not
+    // push; an unclamped top offset of height - radius would drop the segment through
+    // the block's band and push the capsule away.
+    const block = new BoxGeometry(4, 0.4, 0.4);
+    block.translate(0, 0.2, 2.3);
+    const bvh = new MeshBVH(block);
+    const squat: Capsule = { radius: 1.0, height: 0.2 };
+
+    const foot = new Vector3(0, 0, 1.2);
+    const resolved = resolveCapsule(bvh, foot, squat);
+
+    expect(resolved.x).toBeCloseTo(0, 5);
+    expect(resolved.y).toBeCloseTo(0, 5);
+    expect(resolved.z).toBeCloseTo(1.2, 5);
+  });
+
+  it('treats a negative radius as radius zero', () => {
+    // The radius clamp exists so a bad capsule cannot resolve anything: for any
+    // negative radius no penetration test can fire and the returned foot must equal
+    // the radius-zero result exactly. A dropped clamp routes foot.y through
+    // (foot.y + radius) - radius, which does not round-trip exactly when the radius
+    // is large relative to foot.y.
+    const wallGeom = new BoxGeometry(10, 4, 0.4);
+    wallGeom.translate(0, 2, 0);
+    const bvh = new MeshBVH(wallGeom);
+    const foot = new Vector3(0, 0.1, 0.3);
+
+    const negative = resolveCapsule(bvh, foot, { radius: -1000, height: 1.65 });
+    const zero = resolveCapsule(bvh, foot, { radius: 0, height: 1.65 });
+
+    expect(negative.toArray()).toEqual(zero.toArray());
+    expect(zero.toArray()).toEqual([0, 0.1, 0.3]);
   });
 });
 
