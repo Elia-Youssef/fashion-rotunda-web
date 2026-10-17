@@ -58,6 +58,18 @@ describe('texture plan', () => {
     }
   });
 
+  it('labels every entry with its role, mannequin winning over floor', () => {
+    const document = new Document();
+    const plain = texture(document, 'plain');
+    const marble = texture(document, 'marble');
+    const shared = texture(document, 'shared');
+    document.createMaterial('stone').setBaseColorTexture(plain);
+    floor(document, document.createMaterial('renamed-floor').setBaseColorTexture(marble));
+    floor(document, document.createMaterial('MI_Example_mAnNeQuIn_Light').setBaseColorTexture(shared));
+    expect(planTextures(document, 'full', LOOK_FILE).map(({ role }) => role))
+      .toEqual(['other', 'floor', 'mannequin']);
+  });
+
   it('applies normal caps by static file or garment context including extension normals', () => {
     const document = new Document();
     const normal = texture(document);

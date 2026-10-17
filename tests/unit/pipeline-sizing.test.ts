@@ -77,6 +77,11 @@ describe('targetSize', () => {
   it('raises a source under four pixels to the block minimum, the one case that grows', () => {
     expect(targetSize([3, 3], 2048)).toEqual([4, 4]);
   });
+
+  it('does not upscale a source that already fits the cap, down to the last block', () => {
+    expect(targetSize([2048, 1024], 2048)).toEqual([2048, 1024]);
+    expect(targetSize([2046, 1022], 2048)).toEqual([2044, 1020]);
+  });
 });
 
 describe('needsResize', () => {
@@ -84,6 +89,11 @@ describe('needsResize', () => {
     expect(needsResize([2048, 2048], [2048, 2048])).toBe(false);
     expect(needsResize([2048, 2048], [1024, 1024])).toBe(true);
     expect(needsResize([2048, 1024], [2048, 512])).toBe(true);
+  });
+
+  it('is true when only one side of the target changed', () => {
+    expect(needsResize([1002, 512], [1000, 512])).toBe(true);
+    expect(needsResize([512, 1002], [512, 1000])).toBe(true);
   });
 });
 
