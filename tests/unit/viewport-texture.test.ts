@@ -4,7 +4,7 @@
 
 import { RenderTarget, ViewportTextureNode } from 'three/webgpu';
 import { screenUV } from 'three/tsl';
-import type { NodeFrame, Texture } from 'three/webgpu';
+import type { NodeFrame, Texture, Vector2 } from 'three/webgpu';
 import { describe, expect, it, vi } from 'vitest';
 
 import { separateViewportTextureSizes } from '../../src/renderer/viewport-texture';
@@ -13,6 +13,17 @@ function frameFor(target: RenderTarget): NodeFrame {
   const renderer = {
     getRenderTarget: () => target,
     getCanvasTarget: () => null,
+    copyFramebufferToTexture: vi.fn(),
+  };
+  return { renderer } as unknown as NodeFrame;
+}
+
+/** A frame with neither a render target nor a canvas target bound, drawing at a fixed size. */
+function nullFrame(width: number, height: number): NodeFrame {
+  const renderer = {
+    getRenderTarget: () => null,
+    getCanvasTarget: () => null,
+    getDrawingBufferSize: (size: Vector2) => size.set(width, height),
     copyFramebufferToTexture: vi.fn(),
   };
   return { renderer } as unknown as NodeFrame;
@@ -168,5 +179,34 @@ describe('viewport copy retirement', () => {
 
     expect(disposed()).toBe(1);
     expect(base.getTextureForReference(target)).not.toBe(copy);
+  });
+});
+
+// A copy separated for a reference that has not drawn yet inherits the size the shared image last
+// drew, under its own TextureSource. That inherited size is what the retirement guard compares
+// against, so a disposal while the sizes disagree must leave the copy cached for its next draw.
+describe('a copy separated before its first draw', () => {
+  it('carries the shared image size and stays cached while its target disagrees', () => {
+    separateViewportTextureSizes();
+    const node = new ViewportTextureNode();
+    // One draw with neither a render target nor a canvas target bound: the default framebuffer's
+    // shared image takes 640x480, and every later clone starts from it.
+    node.updateBefore(nullFrame(640, 480));
+    const defaultTexture = node.getTextureForReference(null);
+
+    const target = new RenderTarget(480, 640);
+    const copy = node.getTextureForReference(target);
+
+    expect(copy.source).not.toBe(defaultTexture.source);
+    expect(copy.image).toMatchObject({ width: 640, height: 480 });
+
+    let disposed = 0;
+    copy.addEventListener('dispose', () => {
+      disposed += 1;
+    });
+    // The copy has not drawn at the 480x640 target, so the disposal keeps it cached.
+    target.dispose();
+    expect(disposed).toBe(0);
+    expect(node.getTextureForReference(target)).toBe(copy);
   });
 });
