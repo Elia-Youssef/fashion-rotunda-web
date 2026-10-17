@@ -35,7 +35,7 @@ describe('mountModeSwitch', () => {
   function make(
     initialMode: CameraMode = 'orbit',
     walkReady = true,
-    hasPointerLock = true,
+    hasPointerLock?: boolean,
   ) {
     let mode = initialMode;
     const listeners = new Set<(m: CameraMode) => void>();
@@ -65,7 +65,13 @@ describe('mountModeSwitch', () => {
       }),
     };
 
-    const handle = mountModeSwitch(root, mount, { hasPointerLock, canvas, announcer });
+    // exactOptionalPropertyTypes: omit the key (rather than pass undefined) so the
+    // module's own default decides pointer-lock ownership when the option is absent.
+    const handle = mountModeSwitch(
+      root,
+      mount,
+      hasPointerLock === undefined ? { canvas, announcer } : { hasPointerLock, canvas, announcer },
+    );
     const triggerState = (pending: CameraMode | null, state: WalkLoadState) => {
       pendingMode = pending;
       walkLoadState = state;
@@ -397,6 +403,120 @@ describe('mountModeSwitch', () => {
     expect(walk.getAttribute('aria-pressed')).toBe('true');
 
     handle.dispose();
+  });
+
+  it('defaults to pointer-lock ownership when the option is omitted', () => {
+    const { mount, handle } = make('walk', true, undefined);
+    const hint = document.body.querySelector<HTMLElement>('.archviz-walk-hint')!;
+
+    expect(hint.hidden).toBe(false);
+    canvas.focus();
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyO', bubbles: true, cancelable: true }));
+
+    expect(mount.setMode).toHaveBeenCalledWith('orbit');
+    handle.dispose();
+  });
+
+  it('keeps a failed mode click from surfacing as an unhandled rejection', async () => {
+    // A vi.fn setMode marks its rejected return value handled, which would mask the
+    // very leak this test watches for, so this mount uses plain functions.
+    const mount: ModeSwitchMount = {
+      get mode(): CameraMode { return 'orbit'; },
+      setMode: async () => { throw new Error('switch failed'); },
+      onModeChange: () => () => {},
+      get pendingMode() { return null; },
+      get walkLoadState(): WalkLoadState { return 'ready'; },
+      onWalkStateChange: () => () => {},
+    };
+    const handle = mountModeSwitch(root, mount, { canvas, announcer });
+    const walk = root.querySelector<HTMLButtonElement>('[data-mode="walk"]')!;
+    const orbit = root.querySelector<HTMLButtonElement>('[data-mode="orbit"]')!;
+    const rejections: unknown[] = [];
+    const record = (reason: unknown) => { rejections.push(reason); };
+    process.on('unhandledRejection', record);
+    try {
+      walk.click();
+      orbit.click();
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
+      expect(rejections).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', record);
+      handle.dispose();
+    }
+  });
+
+  it('does not request Walk again while Walk already owns the camera', () => {
+    const { mount, handle } = make('walk', true);
+    const walk = root.querySelector<HTMLButtonElement>('[data-mode="walk"]')!;
+
+    walk.click();
+
+    expect(mount.setMode).not.toHaveBeenCalled();
+    handle.dispose();
+  });
+
+  it('fires O once per press burst and rearms it once the switch settles', async () => {
+    const { mount, handle } = make('walk');
+    vi.mocked(mount.setMode).mockImplementation(async () => {});
+    canvas.focus();
+    const press = () => window.dispatchEvent(new KeyboardEvent('keydown', {
+      code: 'KeyO', bubbles: true, cancelable: true,
+    }));
+
+    press();
+    press();
+    expect(mount.setMode).toHaveBeenCalledTimes(1);
+
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
+    press();
+    expect(mount.setMode).toHaveBeenCalledTimes(2);
+    handle.dispose();
+  });
+
+  it('lists Orbit before Walk and mounts the hint on the page body', () => {
+    const { handle } = make('walk');
+    const nav = root.querySelector('nav')!;
+    const hint = document.body.querySelector<HTMLElement>('.archviz-walk-hint')!;
+
+    expect(Array.from(nav.children).map((child) => child.getAttribute('data-mode')))
+      .toEqual(['orbit', 'walk']);
+    expect(hint.parentElement).toBe(document.body);
+
+    handle.dispose();
+  });
+
+  it('stops click input at disposal', () => {
+    // Orbit mode: both buttons pass their click guards, so a surviving listener
+    // after disposal reaches setMode (in Walk mode the mode guard would mask it).
+    const { mount, handle } = make('orbit');
+    const orbit = root.querySelector<HTMLButtonElement>('[data-mode="orbit"]')!;
+    const walk = root.querySelector<HTMLButtonElement>('[data-mode="walk"]')!;
+
+    handle.dispose();
+    orbit.click();
+    walk.click();
+
+    expect(mount.setMode).not.toHaveBeenCalled();
+  });
+
+  it('stops the O shortcut at disposal', () => {
+    const { mount, handle } = make('walk');
+    canvas.focus();
+
+    handle.dispose();
+    window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyO', bubbles: true, cancelable: true }));
+
+    expect(mount.setMode).not.toHaveBeenCalled();
+  });
+
+  it('ignores external mode changes after disposal', async () => {
+    const { mount, handle } = make('orbit');
+    const walk = root.querySelector<HTMLButtonElement>('[data-mode="walk"]')!;
+
+    handle.dispose();
+    await mount.setMode('walk');
+
+    expect(walk.getAttribute('aria-pressed')).toBe('false');
   });
 
   describe('shortcut accessibility contract', () => {
