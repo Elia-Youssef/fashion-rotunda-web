@@ -57,6 +57,20 @@ function withoutSource(key: string): FixtureManifest {
   return copy;
 }
 
+/** The manifest with tracks[0] carrying the given field values over the base ones. */
+function withTrack(fields: Record<string, unknown>): FixtureManifest {
+  const copy = base();
+  copy.tracks[0] = { ...copy.tracks[0], ...fields };
+  return copy;
+}
+
+/** The manifest with tracks[0].sources[0] carrying the given field values over the base ones. */
+function withSource(fields: Record<string, unknown>): FixtureManifest {
+  const copy = base();
+  copy.tracks[0].sources[0] = { ...copy.tracks[0].sources[0], ...fields };
+  return copy;
+}
+
 describe('parseMusicManifest', () => {
   it('parses a full manifest into the same values', () => {
     const manifest = parseMusicManifest(base());
@@ -90,7 +104,38 @@ describe('parseMusicManifest', () => {
     expect(() => parseMusicManifest(copy)).toThrow(/version/);
     // Spread rather than assigned: tracks is a list in the fixture's type, and the wrong type is
     // the point of the test.
-    expect(() => parseMusicManifest({ ...base(), tracks: 'none' })).toThrow(/tracks/);
+    expect(() => parseMusicManifest({ ...base(), tracks: 'none' })).toThrow(
+      /tracks is not an array/,
+    );
+    expect(() => parseMusicManifest({ ...base(), default: 5 })).toThrow(/default is not a string/);
+  });
+
+  it('rejects a present but wrongly typed sources list', () => {
+    expect(() => parseMusicManifest(withTrack({ sources: 'nope' }))).toThrow(
+      /tracks\[0\]\.sources is not an array/,
+    );
+  });
+
+  it('rejects wrongly typed track fields, not just missing ones', () => {
+    expect(() => parseMusicManifest(withTrack({ id: 42 }))).toThrow(/tracks\[0\]\.id is not a string/);
+    expect(() => parseMusicManifest(withTrack({ title: 7 }))).toThrow(
+      /tracks\[0\]\.title is not a string/,
+    );
+    expect(() => parseMusicManifest(withTrack({ duration: '105.65' }))).toThrow(
+      /tracks\[0\]\.duration is not a number/,
+    );
+  });
+
+  it('rejects wrongly typed source fields, not just missing ones', () => {
+    expect(() => parseMusicManifest(withSource({ url: 1 }))).toThrow(
+      /tracks\[0\]\.sources\[0\]\.url is not a string/,
+    );
+    expect(() => parseMusicManifest(withSource({ type: 2 }))).toThrow(
+      /tracks\[0\]\.sources\[0\]\.type is not a string/,
+    );
+    expect(() => parseMusicManifest(withSource({ bytes: '1241641' }))).toThrow(
+      /tracks\[0\]\.sources\[0\]\.bytes is not a number/,
+    );
   });
 
   it.each(['id', 'title', 'duration', 'sources'])('names the missing track field %s', (key) => {
@@ -114,5 +159,16 @@ describe('parseMusicManifest', () => {
     expect(() =>
       parseMusicManifest({ ...base(), tracks: [{ ...base().tracks[0], sources: ['nope'] }] }),
     ).toThrow(/tracks\[0\]\.sources\[0\] is not an object/);
+  });
+
+  it('says "is not an object" for a null entry and a null source', () => {
+    // typeof null is "object", so the null slips past a plain typeof check and must still be
+    // caught with the same message a non-object value gets.
+    expect(() => parseMusicManifest({ ...base(), tracks: [null] })).toThrow(
+      /tracks\[0\] is not an object/,
+    );
+    expect(() => parseMusicManifest(withTrack({ sources: [null] }))).toThrow(
+      /tracks\[0\]\.sources\[0\] is not an object/,
+    );
   });
 });
