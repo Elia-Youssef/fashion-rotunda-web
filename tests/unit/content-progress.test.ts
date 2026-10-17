@@ -397,6 +397,38 @@ it('keeps tracking when the observer cannot observe resource entries', async () 
   }
 });
 
+it('disconnects its resource observer and clears its interval when stopped', async () => {
+  vi.useFakeTimers();
+  const observers: Observer[] = [];
+  class Observer {
+    observe = vi.fn();
+    disconnect = vi.fn();
+
+    constructor() {
+      observers.push(this);
+    }
+  }
+  vi.stubGlobal('PerformanceObserver', Observer);
+  vi.stubGlobal('fetch', () => new Promise<Response>(() => {}));
+  const { trackFirstFrameProgress } = await import('../../src/ui/entry-lobby/progress');
+  expect(vi.getTimerCount()).toBe(0);
+  const stop = trackFirstFrameProgress('/content', () => {});
+  try {
+    expect(observers).toHaveLength(1);
+    const observer = observers[0]!;
+    expect(observer.observe).toHaveBeenCalledWith({ type: 'resource', buffered: true });
+    expect(observer.disconnect).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(1);
+
+    stop();
+
+    expect(observer.disconnect).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    stop();
+  }
+});
+
 // The lobby renders on demand; a readout interval left running after the load would keep the
 // page awake for nothing.
 it('leaves no ticker running after it is stopped', async () => {
