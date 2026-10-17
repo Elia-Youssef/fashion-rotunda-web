@@ -7,6 +7,10 @@ import { ESLint } from 'eslint';
 import { expect, it } from 'vitest';
 
 const ROOT = fileURLToPath(new URL('../../', import.meta.url));
+// Three isolated runs took 4.307, 8.471 and 5.248 s on the desktop (2026-10-17, 50 percent
+// CPU cap, other Node and Chrome processes present). The 60 s limit leaves headroom above
+// the 37 s seen under load on 2026-10-16 while still bounding the full-source lint pass.
+const LINT_COVERAGE_TIMEOUT_MS = 60_000;
 
 it('lints every tracked JavaScript and TypeScript source file', async () => {
   const { scripts } = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
@@ -22,4 +26,4 @@ it('lints every tracked JavaScript and TypeScript source file', async () => {
   const covered = new Set(results.map((result) => relative(ROOT, result.filePath).replaceAll('\\', '/')));
   expect(expected.filter((path) => !covered.has(path)), 'Tracked source files missed by npm run lint')
     .toEqual([]);
-}, 30_000);
+}, LINT_COVERAGE_TIMEOUT_MS);

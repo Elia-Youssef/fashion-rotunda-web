@@ -21,6 +21,12 @@ const labels = [
   'payload to first frame',
   'heaviest further look',
 ];
+// Three isolated runs per boundary case took 0.465 to 1.144 s on the desktop (2026-10-17,
+// 50 percent CPU cap, other Node and Chrome processes present). The 20 s limit also leaves
+// over twice the 6 to 9 s seen under load on 2026-10-16 for each nine-report case.
+const REPORT_BOUNDARY_TIMEOUT_MS = 20_000;
+// A child gets half the case budget (10 s), so a stuck report fails before the case limit.
+const REPORT_CHILD_TIMEOUT_MS = REPORT_BOUNDARY_TIMEOUT_MS / 2;
 const targets = {
   full: ['200000', '340000', '450000', '150', '400.00 MB', '4096', '2048', '10.00 MB', '6.00 MB'],
   half: ['200000', '120000', '300000', '80', '150.00 MB', '2048', '1024', '6.00 MB', '3.50 MB'],
@@ -53,7 +59,7 @@ function run(input?: ReturnType<typeof manifest>, args: string[] = []) {
   const script = `import { runReport } from ${JSON.stringify(reportUrl)};` +
     `runReport(${JSON.stringify(directory)}, ${JSON.stringify(args)});`;
   const result = spawnSync(process.execPath, ['--input-type=module', '--eval', script], {
-    encoding: 'utf8', timeout: 10_000,
+    encoding: 'utf8', timeout: REPORT_CHILD_TIMEOUT_MS,
   });
   if (result.error) throw result.error;
   expect(result.signal).toBeNull();
@@ -116,7 +122,7 @@ describe('report output', () => {
       expect(stdout).toContain(misses === 0 ? 'report: every budget row inside its target'
         : `report: ${misses} budget row(s) over target`);
     }
-  });
+  }, REPORT_BOUNDARY_TIMEOUT_MS);
 
   it('prints decimal megabytes rounded to two places, including zero and a rounded-up boundary', () => {
     const entries = files();
