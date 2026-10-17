@@ -45,6 +45,10 @@ describe('colour slots agree with the encoder', () => {
     for (const slot of COLOR_SLOTS) expect(isColorSlot(slot)).toBe(true);
   });
 
+  it('carries exactly the two core colour slots as data', () => {
+    expect(COLOR_SLOTS).toEqual(['baseColorTexture', 'emissiveTexture']);
+  });
+
   it('calls the data slots data', () => {
     expect(isColorSlot('normalTexture')).toBe(false);
     expect(isColorSlot('occlusionTexture')).toBe(false);

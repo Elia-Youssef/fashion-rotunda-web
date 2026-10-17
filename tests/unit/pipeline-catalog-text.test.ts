@@ -65,6 +65,28 @@ describe('catalogue text', () => {
       .toThrow('must be ASCII');
   });
 
+  it('rejects a non-string description with the catalogue error rather than a crash', () => {
+    expect(() => validateLookText(looks, { ...LOOK_TEXT, [firstId]: { ...LOOK_TEXT[firstId], description: 42 as never } }))
+      .toThrow('must have a non-empty description');
+  });
+
+  it('rejects a source URL that is not a plain string', () => {
+    const sourceUrl = { toString: () => 'https://example.com/' } as never;
+    expect(() => validateLookText(looks, { ...LOOK_TEXT, [firstId]: { ...LOOK_TEXT[firstId], sourceUrl } }))
+      .toThrow('must be an HTTPS URL');
+  });
+
+  it('rejects an https URL written without the // authority form', () => {
+    expect(() => validateLookText(looks, { ...LOOK_TEXT, [firstId]: { ...LOOK_TEXT[firstId], sourceUrl: 'https:/example.com/' } }))
+      .toThrow('must be an HTTPS URL');
+  });
+
+  it('accepts DEL (code point 0x7f) as ASCII, the boundary of the table rule', () => {
+    const description = 'boundary \u007f accepted';
+    expect(() => validateLookText(looks, { ...LOOK_TEXT, [firstId]: { ...LOOK_TEXT[firstId], description } }))
+      .not.toThrow();
+  });
+
   it('ships the complete text table in both catalogues', () => {
     for (const catalog of [full, half]) {
       expect(catalog.looks.map((look) => look.id).sort()).toEqual(Object.keys(LOOK_TEXT).sort());

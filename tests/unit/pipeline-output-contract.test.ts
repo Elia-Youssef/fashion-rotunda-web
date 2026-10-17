@@ -67,6 +67,24 @@ describe('emitted output contracts', () => {
       .toThrow('T_Mondrian_Dress_ORM) must embed a non-empty image/ktx2 texture');
   });
 
+  it('fails closed when a referenced slot carries no image bytes at all', () => {
+    const document = contractedDocument('looks/mondrian-dress.glb');
+    document.getRoot().listTextures().find((texture) => texture.getName() === 'T_Mondrian_Dress_BC')!
+      .setImage(null);
+
+    expect(() => validateOutputContract(document, { set: 'full', file: 'looks/mondrian-dress.glb' }))
+      .toThrow('must embed a non-empty image/ktx2 texture');
+  });
+
+  it('fails closed when a referenced slot embeds an empty image', () => {
+    const document = contractedDocument('looks/mondrian-dress.glb');
+    document.getRoot().listTextures().find((texture) => texture.getName() === 'T_Mondrian_Dress_BC')!
+      .setImage(new Uint8Array(0));
+
+    expect(() => validateOutputContract(document, { set: 'full', file: 'looks/mondrian-dress.glb' }))
+      .toThrow('must embed a non-empty image/ktx2 texture');
+  });
+
   it('fails closed when exporter factors would mute a repaired texture', () => {
     const document = contractedDocument('looks/mondrian-dress.glb');
     document.getRoot().listMaterials()[0]!.setRoughnessFactor(0);
@@ -117,6 +135,43 @@ describe('emitted output contracts', () => {
 
     expect(() => validateOutputContract(document, { set: 'half', file: 'plinth.glb' }))
       .toThrow('MI_Pedestal_Main.specularFactor must be 0.6');
+  });
+
+  it('fails closed when a material silently loses its authored specular extension', () => {
+    const document = contractedDocument('rotunda.glb');
+    document.getRoot().listMaterials().find((material) => material.getName() === 'MI_Metal_Brass_02')!
+      .setExtension('KHR_materials_specular', null);
+
+    expect(() => validateOutputContract(document, { set: 'full', file: 'rotunda.glb' }))
+      .toThrow('KHR_materials_specular materials must be exactly');
+  });
+
+  it('fails closed on a small specular drift, not only a gross change', () => {
+    const document = contractedDocument('rotunda.glb');
+    document.getRoot().listMaterials().find((material) => material.getName() === 'MI_Metal_Brass_02')!
+      .getExtension<Specular>('KHR_materials_specular')!
+      .setSpecularFactor(0.26);
+
+    expect(() => validateOutputContract(document, { set: 'full', file: 'rotunda.glb' }))
+      .toThrow('MI_Metal_Brass_02.specularFactor must be 0.25');
+  });
+
+  it('fails closed when a serialized base colour factor has fewer than four components', () => {
+    const document = contractedDocument('looks/zoot-suit.glb');
+    document.getRoot().listMaterials().find((material) => material.getName() === 'MI_ZootSuit')!
+      .setBaseColorFactor([1, 1, 1] as never);
+
+    expect(() => validateOutputContract(document, { set: 'full', file: 'looks/zoot-suit.glb' }))
+      .toThrow('MI_ZootSuit.baseColorFactor must be [1, 1, 1, 1]');
+  });
+
+  it('fails closed when a second contracted material loses a repaired slot', () => {
+    const document = contractedDocument('looks/zoot-suit.glb');
+    document.getRoot().listMaterials().find((material) => material.getName() === 'MI_ZootSuit_Hat')!
+      .setOcclusionTexture(null);
+
+    expect(() => validateOutputContract(document, { set: 'full', file: 'looks/zoot-suit.glb' }))
+      .toThrow('MI_ZootSuit_Hat.occlusion must reference "T_ZootSuit_Hat_ORM"');
   });
 
   it('does not impose garment requirements on unrelated output files', () => {

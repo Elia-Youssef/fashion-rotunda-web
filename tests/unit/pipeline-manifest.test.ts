@@ -38,6 +38,18 @@ describe('shippedJson', () => {
     expect(text).toContain('\\u2013');
     expect(JSON.parse(text)).toEqual(value);
   });
+
+  it('leaves the highest printable character, tilde, unescaped', () => {
+    const value = { note: 'open 13:00~17:00, Mon~Fri' };
+    expect(shippedJson(value)).toBe(`${JSON.stringify(value, null, 2)}\n`);
+  });
+
+  it('pads every escape to four hex digits, so a two-digit code point still parses', () => {
+    const value = { word: 'caf\u00e9' };
+    const text = shippedJson(value);
+    expect(text).toContain('\\u00e9');
+    expect(JSON.parse(text)).toEqual(value);
+  });
 });
 
 describe('textureEntry', () => {
@@ -100,6 +112,53 @@ describe('fileEntry', () => {
     expect(bare.gpuBytes).toBe(0);
     expect(bare.largestTexture).toBe(0);
     expect(bare.largestNonFloorTexture).toBe(0);
+  });
+
+  it('treats an omitted textures list as empty rather than crashing', () => {
+    const bare = fileEntry({
+      bytes: 100,
+      triangles: 10,
+      meshes: 1,
+      nodes: 1,
+      materials: 1,
+      drawCalls: 1,
+      textures: undefined as never,
+    });
+    expect(bare.textures).toEqual([]);
+    expect(bare.gpuBytes).toBe(0);
+    expect(bare.largestTexture).toBe(0);
+    expect(bare.largestNonFloorTexture).toBe(0);
+  });
+
+  it('measures the largest texture on either axis, floor and non-floor separately', () => {
+    const tall = textureEntry({
+      name: 'Wall_B',
+      width: 1024,
+      height: 4096,
+      format: 'ktx2-uastc',
+      colorSpace: 'linear',
+      bytes: 10,
+    });
+    const wideFloor = textureEntry({
+      name: 'Floor_A',
+      width: 2048,
+      height: 512,
+      format: 'ktx2-etc1s',
+      colorSpace: 'srgb',
+      bytes: 10,
+      floor: true,
+    });
+    const entry = fileEntry({
+      bytes: 20,
+      triangles: 2,
+      meshes: 2,
+      nodes: 2,
+      materials: 2,
+      drawCalls: 2,
+      textures: [tall, wideFloor],
+    });
+    expect(entry.largestTexture).toBe(4096);
+    expect(entry.largestNonFloorTexture).toBe(4096);
   });
 });
 
