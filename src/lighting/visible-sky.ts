@@ -1,4 +1,4 @@
-// Derives the visible HDR sky and preserves the source panorama orientation for lighting.
+// Builds the generated dome sky and derives the visible HDR sky without changing its lighting source.
 
 import { DataTexture, DataUtils, EquirectangularReflectionMapping, FloatType, HalfFloatType } from 'three';
 import type { Texture } from 'three';

@@ -306,6 +306,21 @@ function expectReleasedOnce(): void {
 
 for (const spec of specs) {
   describe(`${spec.name} environment ownership`, () => {
+    it('releases retained maps once across repeated disposal even when one release throws', async () => {
+      const environment = await spec.build(renderer as unknown as WebGPURenderer);
+      const scene = new Scene();
+      environment.apply(scene, 0.4);
+      state.throwing.add('target');
+      environment.dispose();
+      environment.dispose();
+      expect(scene.environment).toBeNull();
+      expect(scene.background).toBeNull();
+      expectReleasedOnce();
+      expect(console.warn).toHaveBeenCalledExactlyOnceWith(
+        '[archviz] environment resource release failed', [state.cleanupError],
+      );
+    });
+
     it('detaches only its own maps from every scene before releasing textures', async () => {
       const environment = await spec.build(renderer as unknown as WebGPURenderer);
       const scenes = Array.from({ length: 4 }, () => new Scene());

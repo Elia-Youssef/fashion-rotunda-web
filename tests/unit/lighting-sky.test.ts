@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ENVIRONMENT_SATURATION,
   SKY_HEIGHT,
+  SKY_REFERENCE_DAYLIGHT,
   SKY_WIDTH,
   VISIBLE_GROUND_LUMINANCE,
   VISIBLE_ZENITH_LUMINANCE,
@@ -25,13 +26,14 @@ import {
   linearAtLuminance,
   luminance,
   skyRadiance,
+  skyDaylightValue,
   skySourceFromParam,
   skySourceFromSearch,
   visibleSkyPalette,
   withSaturation,
 } from '../../src/lighting/sky';
 import type { Rgb, SkyPalette } from '../../src/lighting/sky';
-import { daylightParameters } from '../../src/lighting/rig';
+import { DEFAULT_RIG, daylightParameters } from '../../src/lighting/rig';
 
 function pixel(pixels: Float32Array, width: number, x: number, y: number): Rgb {
   const index = 4 * (y * width + x);
@@ -304,9 +306,21 @@ describe('daylight sky palette contract', () => {
     try {
       const bytes = Buffer.from((texture.image.data as Uint16Array).buffer);
       expect(createHash('sha256').update(bytes).digest('hex')).toBe(digest);
+      expect(palette()).toEqual(palette(DEFAULT_RIG.daylight));
       expect(palette(1)).toEqual(palette(0.5));
       expect(palette(Number.NaN)).toEqual(palette(0.5));
     } finally { texture.dispose(); }
+  });
+
+  it('shares the rig reference value and input policy across the full daylight range', () => {
+    expect(SKY_REFERENCE_DAYLIGHT).toBe(DEFAULT_RIG.daylight);
+    for (const input of [Number.NaN, -Infinity, -1, 0, 0.25, 0.5, 0.75, 1, 2, Infinity]) {
+      const normalized = skyDaylightValue(input);
+      expect(Number.isFinite(normalized)).toBe(true);
+      expect(normalized).toBeGreaterThanOrEqual(0);
+      expect(normalized).toBeLessThanOrEqual(1);
+      expect(daylightParameters(normalized)).toEqual(daylightParameters(input));
+    }
   });
 
   it.each(cases)('%s warms monotonically and stays paler within bounded Dawn targets', (_name, palette) => {
