@@ -3,6 +3,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { mountBadge } from '../../src/ui/badge';
+import type { BadgeState } from '../../src/ui/badge';
 import { installTooltips } from '../../src/ui/tooltip';
 import type { Backend } from '../../src/renderer/create';
 
@@ -75,6 +76,46 @@ describe('mountBadge', () => {
     expect(root.querySelector('.badge')).toBe(badge);
     expect(root.querySelector('.badge__backend')).toBe(backendLabel);
     expect(root.querySelector('.badge__tier')).toBe(tierLabel);
+  });
+
+  // The badge is an inline-flex row with no order overrides (styles.css), so the
+  // document order is the order a visitor reads the two labels in: backend first,
+  // tier second.
+  it('reads backend before tier in document order', () => {
+    const root = document.createElement('div');
+    mountBadge(root, { backend: 'webgpu', tier: 'high', gpuName: 'Example GPU' });
+
+    const badge = root.querySelector<HTMLElement>('.badge')!;
+    expect([...badge.children].map((child) => child.className)).toEqual([
+      'badge__backend',
+      'badge__tier',
+    ]);
+  });
+
+  it('copies the mount state: updates never write through to the caller object', () => {
+    const root = document.createElement('div');
+    const passed: BadgeState = { backend: 'webgpu', tier: null, gpuName: 'Example GPU' };
+    const handle = mountBadge(root, passed);
+
+    handle.update({ tier: 'mid' });
+    handle.update({ backend: 'webgl2', gpuName: 'Other GPU' });
+
+    // The updates did land on the badge itself, and the caller keeps the object as it
+    // handed it over.
+    expect(root.querySelector('.badge__tier')?.textContent).toBe('mid');
+    expect(root.querySelector('.badge__backend')?.textContent).toBe('WEBGL2');
+    expect(passed).toEqual({ backend: 'webgpu', tier: null, gpuName: 'Example GPU' });
+  });
+
+  it('disposes by removing the badge from its root', () => {
+    const root = document.createElement('div');
+    const handle = mountBadge(root, { backend: 'webgpu', tier: 'high', gpuName: 'Example GPU' });
+    expect(root.children).toHaveLength(1);
+
+    handle.dispose();
+
+    expect(root.children).toHaveLength(0);
+    expect(root.querySelector('.badge')).toBeNull();
   });
 
   // The GPU name is only in the tooltip, so a keyboard visitor needs the badge on the tab order:
