@@ -42,6 +42,27 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe('environment selection and fallback', () => {
+  it('updates the procedural palette before applying the scene and retains it after an update failure', async () => {
+    const scene = new Scene();
+    const selected = { ...environment(new Texture()), updateDaylight: vi.fn() };
+    factories.procedural.mockResolvedValue(selected);
+    const lighting = await composeLighting({
+      scene, renderer: { shadowMap: {} } as WebGPURenderer, panelRoot: null,
+      shadowMapSize: 512, sunShadow: false, onChange: vi.fn(), initial: 'v2;day,0.25',
+    });
+    expect(selected.updateDaylight).toHaveBeenCalledExactlyOnceWith(0.25);
+    expect(selected.updateDaylight.mock.invocationCallOrder[0]).toBeLessThan(selected.apply.mock.invocationCallOrder[0]);
+    const error = new Error('update failed');
+    selected.updateDaylight.mockImplementationOnce(() => { throw error; });
+    lighting.apply({ ...DEFAULT_RIG, daylight: 0 });
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith(
+      '[archviz] sky palette update failed; keeping the previous environment', error);
+    expect(scene.environment).toBe(selected.texture);
+    expect(scene.environmentIntensity).toBe(daylightParameters(0).skyIntensity * REFERENCE_SCALES.procedural);
+    expect(selected.dispose).not.toHaveBeenCalled();
+    lighting.dispose();
+  });
+
   it.each(['procedural', 'hdr'] as const)('keeps the %s sky, background and intensity on success', async (name) => {
     const scene = new Scene();
     const renderer = { shadowMap: { enabled: false }, toneMappingExposure: 0 };

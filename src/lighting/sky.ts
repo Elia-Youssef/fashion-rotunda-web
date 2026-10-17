@@ -38,6 +38,24 @@ const SKY_ZENITH_HEX = 0x4a7fc4;
 const SKY_HORIZON_HEX = 0xc6d8ec;
 /** Below the horizon: a neutral mid grey, never black, and no green or yellow. sRGB hex. */
 const SKY_GROUND_HEX = 0x808080;
+/** Day is the palette reference; Noon retains it while the existing intensity curve brightens it. */
+export const SKY_REFERENCE_DAYLIGHT = 0.5;
+/** Pale blue retains a blue dome at Dawn without the saturated midday cast. sRGB hex. */
+export const DAWN_ZENITH_HEX = 0xa3b4c8;
+/** A restrained warm haze, rather than an orange sunset, keeps pale materials readable. sRGB hex. */
+export const DAWN_HORIZON_HEX = 0xeee2d8;
+
+/** Match the rig's invalid-input and range policy before comparing or evaluating palettes. */
+export function skyDaylightValue(daylight: number): number {
+  return Number.isNaN(daylight) ? SKY_REFERENCE_DAYLIGHT : Math.min(1, Math.max(0, daylight));
+}
+
+function daylightBand(hex: number, dawnHex: number, level: number, daylight: number): Rgb {
+  const reference = linearAtLuminance(hex, level);
+  const warmth = Math.max(0, (SKY_REFERENCE_DAYLIGHT - skyDaylightValue(daylight)) / SKY_REFERENCE_DAYLIGHT);
+  // Return the original arithmetic unchanged at Day and Noon, including half-float rounding.
+  return warmth === 0 ? reference : mix(reference, linearAtLuminance(dawnHex, level), warmth);
+}
 
 /**
  * The visible sky's linear luminance per band, in the radiance units of the School Field HDR it
@@ -134,31 +152,31 @@ export interface SkyPalette {
 }
 
 /** The visible sky: the three colours at full saturation and the visible luminances. */
-export function visibleSkyPalette(): SkyPalette {
+export function visibleSkyPalette(daylight = SKY_REFERENCE_DAYLIGHT): SkyPalette {
   return {
-    zenith: linearAtLuminance(SKY_ZENITH_HEX, VISIBLE_ZENITH_LUMINANCE),
-    horizon: linearAtLuminance(SKY_HORIZON_HEX, VISIBLE_HORIZON_LUMINANCE),
+    zenith: daylightBand(SKY_ZENITH_HEX, DAWN_ZENITH_HEX, VISIBLE_ZENITH_LUMINANCE, daylight),
+    horizon: daylightBand(SKY_HORIZON_HEX, DAWN_HORIZON_HEX, VISIBLE_HORIZON_LUMINANCE, daylight),
     ground: linearAtLuminance(SKY_GROUND_HEX, VISIBLE_GROUND_LUMINANCE),
     skyFalloff: VISIBLE_SKY_FALLOFF,
   };
 }
 
 /** The lighting sky: the same hues desaturated by ENVIRONMENT_SATURATION, at the calibrated shape. */
-export function baseEnvironmentSkyPalette(): SkyPalette {
-  const color = (hex: number, level: number): Rgb =>
-    withSaturation(linearAtLuminance(hex, level), ENVIRONMENT_SATURATION);
+export function baseEnvironmentSkyPalette(daylight = SKY_REFERENCE_DAYLIGHT): SkyPalette {
+  const color = (hex: number, dawnHex: number, level: number): Rgb =>
+    withSaturation(daylightBand(hex, dawnHex, level, daylight), ENVIRONMENT_SATURATION);
   return {
-    zenith: color(SKY_ZENITH_HEX, ENVIRONMENT_ZENITH_LUMINANCE),
-    horizon: color(SKY_HORIZON_HEX, ENVIRONMENT_HORIZON_LUMINANCE),
-    ground: color(SKY_GROUND_HEX, ENVIRONMENT_GROUND_LUMINANCE),
+    zenith: color(SKY_ZENITH_HEX, DAWN_ZENITH_HEX, ENVIRONMENT_ZENITH_LUMINANCE),
+    horizon: color(SKY_HORIZON_HEX, DAWN_HORIZON_HEX, ENVIRONMENT_HORIZON_LUMINANCE),
+    ground: withSaturation(linearAtLuminance(SKY_GROUND_HEX, ENVIRONMENT_GROUND_LUMINANCE), ENVIRONMENT_SATURATION),
     skyFalloff: ENVIRONMENT_SKY_FALLOFF,
   };
 }
 
 /** The shipped lighting copy adds the owner's soft wall bounce to the calibrated base gradient. */
-export function environmentSkyPalette(): SkyPalette {
+export function environmentSkyPalette(daylight = SKY_REFERENCE_DAYLIGHT): SkyPalette {
   return {
-    ...baseEnvironmentSkyPalette(),
+    ...baseEnvironmentSkyPalette(daylight),
     bounce: {
       // The rig reports the sunlight travel direction, the antipode of the direction TO the sun.
       // Derive it once during environment construction; Daylight does not move the rig's sun.

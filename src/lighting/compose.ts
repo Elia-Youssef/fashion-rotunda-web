@@ -126,6 +126,11 @@ export async function composeLighting(options: LightingOptions): Promise<Lightin
     rig = next;
     three.apply(next);
     const daylightParams = daylightParameters(next.daylight);
+    try {
+      environment.updateDaylight?.(next.daylight);
+    } catch (error) {
+      console.warn('[archviz] sky palette update failed; keeping the previous environment', error);
+    }
     environment.apply(
       options.scene,
       daylightParams.skyIntensity * environmentScale,

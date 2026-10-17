@@ -72,8 +72,10 @@ vi.mock('three', async (importOriginal) => {
       const texture = target.texture;
       Object.defineProperty(target, 'texture', {
         get() {
-          step('target-config');
-          if (state.converted) step('handoff');
+          if (target === state.output) {
+            step('target-config');
+            if (state.converted) step('handoff');
+          }
           return texture;
         },
       });
@@ -183,7 +185,7 @@ import {
   fromRenderTarget,
 } from '../../src/lighting/environment';
 import type { Environment } from '../../src/lighting/environment';
-import { environmentSkyPalette, visibleSkyPalette } from '../../src/lighting/sky';
+import { createGradientSkyTexture, environmentSkyPalette, visibleSkyPalette } from '../../src/lighting/sky';
 import { createSkyOnlyBackground } from '../../src/lighting/visible-sky';
 
 interface FactorySpec {
@@ -543,4 +545,78 @@ describe('visible HDR background derivation', () => {
         .toBeCloseTo(top[channel] + (bottom[channel] - top[channel]) * 0.245, 2);
     }
   });
+});
+
+describe('procedural daylight updates', () => {
+  it('releases every replaced texture and target once across many slider changes', async () => {
+    const environment = await createProceduralEnvironment(renderer as unknown as WebGPURenderer);
+    const scene = new Scene();
+    let previous = environment.texture;
+    for (let step = 0; step < 101; step += 1) {
+      const daylight = step / 100;
+      environment.updateDaylight!(daylight);
+      expect(environment.texture).not.toBe(previous);
+      environment.apply(scene, 0.4, 0.25);
+      expect(scene.environment).toBe(environment.texture);
+      expect(scene.background).toBe(state.resources.at(-3)!.resource);
+      expect(createGradientSkyTexture).toHaveBeenLastCalledWith(visibleSkyPalette(daylight), 'procedural sky visible');
+      expect(createGradientSkyTexture).toHaveBeenNthCalledWith(
+        2 * (step + 1) + 1, environmentSkyPalette(daylight), 'procedural sky lighting');
+      const live = state.resources.filter(({ resource }) => vi.mocked(resource.dispose).mock.calls.length === 0);
+      expect(live.map(({ name }) => name)).toEqual(['background', 'target']);
+      for (const { resource } of state.resources) {
+        expect(vi.mocked(resource.dispose).mock.calls.length).toBeLessThanOrEqual(1);
+      }
+      previous = environment.texture;
+    }
+    environment.dispose();
+    environment.dispose();
+    const acquisitions = state.resources.length;
+    environment.updateDaylight!(0.25);
+    expect(state.resources).toHaveLength(acquisitions);
+    expectReleasedOnce();
+  });
+
+  it('reuses texture objects and performs no construction for unchanged daylight', async () => {
+    const environment = await createProceduralEnvironment(renderer as unknown as WebGPURenderer);
+    const texture = environment.texture;
+    const acquired = state.resources.length;
+    for (let frame = 0; frame < 100; frame += 1) {
+      environment.updateDaylight!(0.5);
+      environment.apply(new Scene(), 0.4, 0.25);
+    }
+    environment.updateDaylight!(Number.NaN);
+    expect(state.resources).toHaveLength(acquired);
+    expect(environment.texture).toBe(texture);
+    environment.dispose();
+    expectReleasedOnce();
+  });
+
+  it.each(specs[1].failures.filter(([phase]) => phase !== 'init'))(
+    'keeps the previous environment live after a failed %s update and permits retry', async (phase) => {
+      const environment = await createProceduralEnvironment(renderer as unknown as WebGPURenderer);
+      const scene = new Scene();
+      environment.apply(scene, 0.4, 0.25);
+      const texture = scene.environment;
+      const background = scene.background;
+      const previous = state.resources.slice();
+      const acquired = previous.length;
+      state.converted = false;
+      state.fail = phase;
+      expect(() => environment.updateDaylight!(0)).toThrow(state.error);
+      expect(environment.texture).toBe(texture);
+      environment.apply(scene, 0.4, 0.25);
+      expect(scene.environment).toBe(texture);
+      expect(scene.background).toBe(background);
+      for (const { name, resource } of previous) {
+        expect(resource.dispose).toHaveBeenCalledTimes(name === 'background' || name === 'target' ? 0 : 1);
+      }
+      for (const { resource } of state.resources.slice(acquired)) expect(resource.dispose).toHaveBeenCalledTimes(1);
+      state.fail = '';
+      environment.updateDaylight!(0);
+      expect(environment.texture).not.toBe(texture);
+      environment.dispose();
+      expectReleasedOnce();
+    },
+  );
 });

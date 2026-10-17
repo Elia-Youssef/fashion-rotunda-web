@@ -28,14 +28,16 @@ import type { WebGPURenderer } from 'three/webgpu';
 import { lazyImport } from '../ui/lazy-import';
 import { environmentResources } from './environment-resources';
 import type { EnvironmentResources } from './environment-resources';
-import { createGradientSkyTexture, environmentSkyPalette, visibleSkyPalette } from './sky';
-import { createSkyOnlyBackground, orientHdrEquirectangular } from './visible-sky';
+import { createGradientSkyTexture, environmentSkyPalette, skyDaylightValue, SKY_REFERENCE_DAYLIGHT } from './sky';
+import { createProceduralSkyBackground, createSkyOnlyBackground, orientHdrEquirectangular } from './visible-sky';
 
 // Keep the visible-sky helpers on the public environment facade for callers that mock its factories.
 export { createSkyOnlyBackground, orientHdrEquirectangular } from './visible-sky';
 
 export interface Environment {
   texture: Texture;
+  /** Procedural skies only: rebuild on a changed value, retaining the last output if conversion fails. */
+  updateDaylight?(daylight: number): void;
   /** Assigns the map and its strength. Intensity comes from daylightParameters(...).skyIntensity. */
   apply(scene: Scene, intensity: number, backgroundIntensity?: number): void;
   dispose(): void;
@@ -103,6 +105,10 @@ export function fromRenderTarget(
   source: Texture | null = null,
 ): Environment {
   const scenes = new Set<Scene>();
+  const retained = environmentResources();
+  retained.own(target);
+  if (background !== null) retained.own(background);
+  if (source !== null) retained.own(source);
   return {
     texture: target.texture,
     apply(scene: Scene, intensity: number, backgroundIntensity = 0.25): void {
@@ -129,9 +135,7 @@ export function fromRenderTarget(
       }
       scenes.clear();
       // The target owns the lighting PMREM; the visible background and original HDR are separate.
-      target.dispose();
-      background?.dispose();
-      if (source !== background) source?.dispose();
+      retained.cleanup();
     },
   };
 }
@@ -171,10 +175,38 @@ export async function createRoomEnvironment(renderer: WebGPURenderer): Promise<E
  */
 export async function createProceduralEnvironment(renderer: WebGPURenderer): Promise<Environment> {
   await renderer.init();
+  let daylight = SKY_REFERENCE_DAYLIGHT;
+  let current = buildProceduralEnvironment(renderer, daylight);
+  let disposed = false;
+  return {
+    get texture(): Texture { return current.texture; },
+    updateDaylight(value: number): void {
+      const next = skyDaylightValue(value);
+      if (disposed || next === daylight) return;
+      // Build before handoff: failed conversion releases only its own resources.
+      const replacement = buildProceduralEnvironment(renderer, next);
+      const previous = current;
+      current = replacement;
+      daylight = next;
+      previous.dispose();
+    },
+    apply(scene: Scene, intensity: number, backgroundIntensity?: number): void {
+      if (!disposed) current.apply(scene, intensity, backgroundIntensity);
+    },
+    dispose(): void {
+      if (disposed) return;
+      disposed = true;
+      current.dispose();
+    },
+  };
+}
+
+/** Each rebuild owns its candidate independently until every construction step succeeds. */
+function buildProceduralEnvironment(renderer: WebGPURenderer, daylight: number): Environment {
   const resources = environmentResources();
   try {
-    const source = resources.own(createGradientSkyTexture(environmentSkyPalette(), 'procedural sky lighting'));
-    const background = resources.own(createGradientSkyTexture(visibleSkyPalette(), 'procedural sky visible'));
+    const source = resources.own(createGradientSkyTexture(environmentSkyPalette(daylight), 'procedural sky lighting'));
+    const background = resources.own(createProceduralSkyBackground(daylight));
     const generator = resources.own(new PMREMGenerator(renderer));
     const target = createPmremTarget(resources, source.image.width / EQUIRECTANGULAR_FACE_DIVISOR, false);
     convertPmrem(renderer, () => { generator.fromEquirectangular(source, target); });

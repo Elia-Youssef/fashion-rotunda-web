@@ -4,6 +4,12 @@ import { DataTexture, DataUtils, EquirectangularReflectionMapping, FloatType, Ha
 import type { Texture } from 'three';
 
 import { environmentResources } from './environment-resources';
+import { createGradientSkyTexture, visibleSkyPalette } from './sky';
+
+/** The generated dome background uses the visible palette, separate from the lighting copy. */
+export function createProceduralSkyBackground(daylight: number): Texture {
+  return createGradientSkyTexture(visibleSkyPalette(daylight), 'procedural sky visible');
+}
 
 /**
  * `school-field-cloudy` is a complete outdoor panorama: its field begins below the cloud band.

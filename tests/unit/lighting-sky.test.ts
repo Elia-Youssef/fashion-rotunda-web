@@ -3,6 +3,7 @@
 // back to the HDR.
 
 import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
 import {
   DataUtils,
   EquirectangularReflectionMapping,
@@ -288,5 +289,49 @@ describe('sky source', () => {
     expect(skySourceFromParam(null)).toBe('procedural');
     expect(skySourceFromParam('room')).toBe('procedural');
     expect(skySourceFromParam('hdr')).toBe('hdr');
+  });
+});
+
+describe('daylight sky palette contract', () => {
+  const cases = [
+    ['visible', visibleSkyPalette, '9b30a460a8eddac24a9d0cec815199d4480784ed625f78683c9f9969202ad07a'],
+    ['environment', environmentSkyPalette, '5c22892497aed78426940972524a2559135030592be30c39f4b8787be95d5eb3'],
+  ] as const;
+
+  // Digests pin the complete half-float texture produced before the daylight palette change.
+  it.each(cases)('%s default pixels remain byte-identical', (name, palette, digest) => {
+    const texture = createGradientSkyTexture(palette(0.5), name);
+    try {
+      const bytes = Buffer.from((texture.image.data as Uint16Array).buffer);
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(digest);
+      expect(palette(1)).toEqual(palette(0.5));
+      expect(palette(Number.NaN)).toEqual(palette(0.5));
+    } finally { texture.dispose(); }
+  });
+
+  it.each(cases)('%s warms monotonically and stays paler within bounded Dawn targets', (_name, palette) => {
+    const reference = palette(0.5);
+    const dawn = palette(0);
+    for (const band of ['zenith', 'horizon'] as const) {
+      let previousWarmth = reference[band][0] - reference[band][2];
+      const referenceDistance = reference[band].reduce((sum, value) => sum + Math.abs(value - luminance(reference[band])), 0);
+      for (let step = 1; step <= 50; step += 1) {
+        const current = palette(0.5 - step / 100);
+        const rgb = current[band];
+        const warmth = rgb[0] - rgb[2];
+        const distance = rgb.reduce((sum, value) => sum + Math.abs(value - luminance(rgb)), 0);
+        expect(warmth).toBeGreaterThan(previousWarmth);
+        expect(distance).toBeLessThan(referenceDistance);
+        expect(luminance(rgb)).toBeCloseTo(luminance(reference[band]), 10);
+        expect(current.ground).toEqual(reference.ground);
+        for (let channel = 0; channel < 3; channel += 1) {
+          expect(rgb[channel]).toBeGreaterThanOrEqual(Math.min(reference[band][channel], dawn[band][channel]) - 1e-12);
+          expect(rgb[channel]).toBeLessThanOrEqual(Math.max(reference[band][channel], dawn[band][channel]) + 1e-12);
+        }
+        previousWarmth = warmth;
+      }
+    }
+    expect(palette(-1)).toEqual(dawn);
+    expect(palette(2)).toEqual(reference);
   });
 });
