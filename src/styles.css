@@ -237,8 +237,9 @@
   --shadow-text: 0 var(--space-1) var(--space-2) rgb(0 0 0 / 0.55);
 }
 
-/* Reduced motion in one place: the duration tokens collapse and every transition or animation
-   built from them stops moving, without a per-component rule anywhere. */
+/* Reduced motion collapses the duration tokens to zero for transitions and animations using them.
+   Component rules also live in src/ui/: catalog-strip.css, entry-lobby.css, onboarding.css,
+   product-card.css and scene-reveal.css. */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --dur-fast: 0ms;

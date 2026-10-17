@@ -277,7 +277,8 @@ export function mountShell(doc: Document): ShellHandle {
     cardSheetOpen = open;
     apply();
     if (open && wasClosed) {
-      // The close button is the sheet's first, always-visible control. Focusing a product action
+      // Close follows the product and share controls in the card sheet's DOM and Tab order.
+      // It is positioned at the top of the sheet. Focusing a product action
       // can scroll a short card underneath its absolute close affordance, which strands Escape's
       // pointer equivalent outside the safe rectangle. Keeping the cursor at Close preserves a
       // modal starting point without moving the card's internal scroll position.
