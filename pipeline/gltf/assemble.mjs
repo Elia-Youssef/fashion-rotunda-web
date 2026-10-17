@@ -22,6 +22,7 @@ import { mergeDocuments, prune, unpartition } from '@gltf-transform/functions';
 
 import { sourceDir, workDir } from '../config.mjs';
 import { applyLookText, validateLookText } from './lib/catalog-text.mjs';
+import { GARMENT_PLACEMENTS } from './lib/garment-placement.mjs';
 
 /** Where stage one writes when the caller says nothing. Stage two reads from here. */
 export const assembledDir = resolve(workDir, 'assembled');
@@ -91,9 +92,14 @@ async function assembleLook(io, look, out, exportRoot) {
   document.createScene('look');
   const garmentNames = [];
   for (const [index, garment] of look.garments.entries()) {
-    const part = await io.read(resolveExportFile(exportRoot, garment.file));
+    const sourceFile = resolveExportFile(exportRoot, garment.file);
+    const part = await io.read(sourceFile);
     const label = index === 0 ? 'garment' : `garment-${index}`;
     const { group } = graft(document, part, label);
+    const placement = GARMENT_PLACEMENTS[look.slug]?.[basename(sourceFile)];
+    if (placement) {
+      group.setScale(placement.scale).setTranslation(placement.translation);
+    }
     nameNodes(group, `${label}-mesh`);
     garmentNames.push(label);
   }
