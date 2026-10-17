@@ -1,6 +1,6 @@
 import { expect, test } from './support/fixtures';
 import { openShowroom } from './support/showroom';
-import type { Page } from '@playwright/test';
+import { SAFE_AREA, installSafeArea } from './support/safe-area';
 
 const SCENE_READY_TIMEOUT = 60_000;
 // Onboarding mounts with the a11y module after the ready attribute is published, so the card
@@ -14,8 +14,6 @@ interface Box {
   height: number;
 }
 
-const SAFE_AREA = { top: 19, right: 23, bottom: 29, left: 17 };
-
 function boxesIntersect(a: Box, b: Box): boolean {
   return (
     a.x < b.x + b.width &&
@@ -23,16 +21,6 @@ function boxesIntersect(a: Box, b: Box): boolean {
     a.y < b.y + b.height &&
     b.y < a.y + a.height
   );
-}
-
-async function installSafeArea(page: Page): Promise<void> {
-  await page.evaluate((insets) => {
-    const root = document.documentElement;
-    root.style.setProperty('--safe-area-top', `${insets.top}px`);
-    root.style.setProperty('--safe-area-right', `${insets.right}px`);
-    root.style.setProperty('--safe-area-bottom', `${insets.bottom}px`);
-    root.style.setProperty('--safe-area-left', `${insets.left}px`);
-  }, SAFE_AREA);
 }
 
 for (const viewport of [

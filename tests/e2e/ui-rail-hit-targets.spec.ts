@@ -1,26 +1,7 @@
 import { expect, test } from './support/fixtures';
-import type { Page } from '@playwright/test';
+import { installSafeArea } from './support/safe-area';
 import { openShowroom } from './support/showroom';
 import { RAIL_PATH } from './support/catalogue-rail';
-
-interface SafeArea {
-  top: number;
-  right: number;
-  bottom: number;
-  left: number;
-}
-
-async function installSafeArea(page: Page): Promise<SafeArea> {
-  const safeArea: SafeArea = { top: 19, right: 23, bottom: 29, left: 17 };
-  await page.evaluate((insets) => {
-    const root = document.documentElement;
-    root.style.setProperty('--safe-area-top', `${insets.top}px`);
-    root.style.setProperty('--safe-area-right', `${insets.right}px`);
-    root.style.setProperty('--safe-area-bottom', `${insets.bottom}px`);
-    root.style.setProperty('--safe-area-left', `${insets.left}px`);
-  }, safeArea);
-  return safeArea;
-}
 
 test.describe('Catalogue Rail Parity', () => {
   test('synthetic safe areas and actionable point hit testing at phone portrait and short landscape', async ({

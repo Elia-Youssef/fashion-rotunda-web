@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import { waitForTooltipInstallation } from './support/a11y-mount';
 import { backendPath, projectBackend } from './support/backend';
 import { openShowroom } from './support/showroom';
+import { SAFE_AREA, installSafeArea } from './support/safe-area';
 
 // Onboarding, tooltips and accessibility pass.
 // Tests the first-visit onboarding card, Skip dismissal, the DOM tab walk order,
@@ -27,7 +28,6 @@ const LOOK_ANNOUNCE_TIMEOUT_MS = 10_000;
 // the black veil's stable-frame hold ahead of the fade. That hold is the slow part under software
 // rendering, so the wait shares the 60 s scene budget SCENE_READY_TIMEOUT carries.
 const REVEAL_TIMEOUT_MS = 60_000;
-const SAFE_AREA = { top: 19, right: 23, bottom: 29, left: 17 } as const;
 
 // The longest run in the documented order is the thumbnail strip, seven looks plus the controls
 // around it. Twelve presses cover it; an unbounded loop would hang instead of failing.
@@ -43,16 +43,6 @@ function boxesIntersect(
     a.y < b.y + b.height &&
     b.y < a.y + a.height
   );
-}
-
-async function installSafeArea(page: Page): Promise<void> {
-  await page.evaluate((insets) => {
-    const root = document.documentElement;
-    root.style.setProperty('--safe-area-top', `${insets.top}px`);
-    root.style.setProperty('--safe-area-right', `${insets.right}px`);
-    root.style.setProperty('--safe-area-bottom', `${insets.bottom}px`);
-    root.style.setProperty('--safe-area-left', `${insets.left}px`);
-  }, SAFE_AREA);
 }
 
 async function focusMatches(page: Page, selector: string): Promise<boolean> {

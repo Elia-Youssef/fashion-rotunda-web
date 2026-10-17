@@ -3,12 +3,12 @@ import { waitForSceneInitialization } from './support/ready';
 import { assertCanvasPreserved, nextProofReading } from './support/preservation';
 import { openShowroom } from './support/showroom';
 import type { Locator } from '@playwright/test';
+import { installSafeArea } from './support/safe-area';
 import {
   SCENE_READY_TIMEOUT,
   STUDIO_LIGHTS,
   VIEWPORTS,
   DESKTOP_BAR_VIEWPORTS,
-  installSafeArea,
   assertHitAndSafe,
   readDesktopBar,
 } from './support/lightdrawer-helpers';

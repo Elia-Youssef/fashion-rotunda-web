@@ -1,26 +1,7 @@
 import { expect, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
 import { openShowroom } from './support/showroom';
-
-interface SafeArea {
-  top: number;
-  right: number;
-  bottom: number;
-  left: number;
-}
-
-/** A non-zero synthetic cut-out proves the token abstraction rather than Chromium's zero env(). */
-async function installSafeArea(page: Page): Promise<SafeArea> {
-  const safeArea: SafeArea = { top: 19, right: 23, bottom: 29, left: 17 };
-  await page.evaluate((insets) => {
-    const root = document.documentElement;
-    root.style.setProperty('--safe-area-top', `${insets.top}px`);
-    root.style.setProperty('--safe-area-right', `${insets.right}px`);
-    root.style.setProperty('--safe-area-bottom', `${insets.bottom}px`);
-    root.style.setProperty('--safe-area-left', `${insets.left}px`);
-  }, safeArea);
-  return safeArea;
-}
+import { installSafeArea, type SafeArea } from './support/safe-area';
 
 async function assertInsideSafeRectangle(
   page: Page,

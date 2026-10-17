@@ -1,7 +1,7 @@
 import { expect, test } from './support/fixtures';
 import { openShowroom } from './support/showroom';
 import { CARD_PATH } from './support/product-card';
-import { SAFE_AREA, installSafeArea } from './support/lightdrawer-helpers';
+import { SAFE_AREA, installSafeArea } from './support/safe-area';
 
 // Product-card geometry across 820x1180, 390x844 and 844x390: card and rail coexistence,
 // elementFromPoint hit testing, touch targets >= 44x44px, synthetic safe insets, sheet dismissal

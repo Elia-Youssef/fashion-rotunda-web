@@ -1,5 +1,6 @@
 import { expect } from './fixtures';
 import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
+import { SAFE_AREA } from './safe-area';
 
 
 export const SCENE_READY_TIMEOUT = 60_000;
@@ -11,8 +12,6 @@ export const SCENE_READY_TIMEOUT = 60_000;
 // software-rendered webgl2 workers can stall a page for seconds at a time; 30 s spans many of
 // both intervals and stays inside the 120 s per-test budget the rig spec sets.
 export const RIG_SERIALIZATION_TIMEOUT = 30_000;
-
-export const SAFE_AREA = { top: 19, right: 23, bottom: 29, left: 17 } as const;
 
 export const STUDIO_LIGHTS = ['key', 'fill', 'back'] as const;
 
@@ -50,16 +49,6 @@ export interface DesktopBar {
   /** null when the selector matched nothing, which the tests treat as a failure. */
   overlaps: Record<string, boolean | null>;
   controls: BarControl[];
-}
-
-export async function installSafeArea(page: Page): Promise<void> {
-  await page.evaluate((insets) => {
-    const root = document.documentElement;
-    root.style.setProperty('--safe-area-top', `${insets.top}px`);
-    root.style.setProperty('--safe-area-right', `${insets.right}px`);
-    root.style.setProperty('--safe-area-bottom', `${insets.bottom}px`);
-    root.style.setProperty('--safe-area-left', `${insets.left}px`);
-  }, SAFE_AREA);
 }
 
 export async function assertHitAndSafe(

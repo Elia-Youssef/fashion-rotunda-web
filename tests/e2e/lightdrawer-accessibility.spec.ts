@@ -5,12 +5,12 @@ import {
   SCENE_READY_TIMEOUT,
   STUDIO_LIGHTS,
   VIEWPORTS,
-  installSafeArea,
   assertHitAndSafe,
   setNativeInput,
   newTouchPage,
 } from './support/lightdrawer-helpers';
 import { openShowroom } from './support/showroom';
+import { installSafeArea } from './support/safe-area';
 
 // The drawer and rig checks are backend independent, so both projects run them: each page is
 // pinned to its project's backend through the canvas data-backend attribute, and the opening
