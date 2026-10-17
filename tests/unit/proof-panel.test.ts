@@ -33,6 +33,11 @@ function sampleSnapshot(): ProofSnapshot {
   };
 }
 
+function rowText(root: HTMLElement, term: string): string | null {
+  const dt = [...root.querySelectorAll('dt')].find((node) => node.textContent === term);
+  return dt?.nextElementSibling?.textContent ?? null;
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
 });
@@ -598,6 +603,197 @@ describe('mountProofPanel', () => {
     expect(read).toHaveBeenCalledTimes(2);
 
     root.remove();
+  });
+
+  it('prints the orbit frame budget of the snapshot tier, Mid for an unknown tier', async () => {
+    const root = document.createElement('div');
+    let tier = 'high';
+    const read = (): ProofSnapshot => ({ ...sampleSnapshot(), tier, frameP95Ms: 10 });
+    const handle = mountProofPanel(root, { read, measure: async () => {}, intervalMs: 10_000 });
+    const button = root.querySelector<HTMLButtonElement>('button')!;
+    const measureAgain = async (): Promise<void> => {
+      button.click();
+      await Promise.resolve();
+    };
+    await measureAgain();
+    expect(rowText(root, 'orbit')).toContain('budget: 16.7 ms (inside)');
+    tier = 'base';
+    await measureAgain();
+    expect(rowText(root, 'orbit')).toContain('budget: 24.0 ms (inside)');
+    tier = 'mid';
+    await measureAgain();
+    expect(rowText(root, 'orbit')).toContain('budget: 20.0 ms (inside)');
+    // A tier string outside the table must not invent a budget: Mid is the panel's answer.
+    tier = 'ultra';
+    await measureAgain();
+    expect(rowText(root, 'orbit')).toContain('budget: 20.0 ms (inside)');
+    handle.dispose();
+  });
+
+  it('prints the orbit GPU percentiles when read and the backend answer when not exposed', async () => {
+    const root = document.createElement('div');
+    let snap: ProofSnapshot = sampleSnapshot();
+    const handle = mountProofPanel(root, { read: () => snap, measure: async () => {}, intervalMs: 10_000 });
+    const button = root.querySelector<HTMLButtonElement>('button')!;
+    button.click();
+    await Promise.resolve();
+    expect(rowText(root, 'orbit')).toContain('GPU p50: 6.1 ms, p95: 11.4 ms');
+    snap = { ...snap, gpu: { p50: null, p95: null, available: false } };
+    button.click();
+    await Promise.resolve();
+    expect(rowText(root, 'orbit')).toContain('GPU: not exposed by this backend');
+    handle.dispose();
+  });
+
+  it.each([
+    ['off', 'no changes yet'],
+    ['"noise"', 'no changes yet'],
+    ['[{"direction":"sideways","from":"full","to":"base","reason":"ok"}]', 'unreadable governor log'],
+    ['[{"direction":"down","from":5,"to":"base","reason":"ok"}]', 'unreadable governor log'],
+    ['[{"direction":"down","from":"full","to":7,"reason":"ok"}]', 'unreadable governor log'],
+    ['[{"direction":"down","from":"full","to":"base","reason":9}]', 'unreadable governor log'],
+  ] as const)('renders the governor log %s as %s', (raw, expected) => {
+    const root = document.createElement('div');
+    const handle = mountProofPanel(root, {
+      read: () => ({ ...sampleSnapshot(), governorLog: raw }),
+      measure: async () => {},
+    });
+    expect(rowText(root, 'governor log')).toBe(expected);
+    handle.dispose();
+  });
+
+  it('joins every governor log entry into one row in order', () => {
+    const root = document.createElement('div');
+    const handle = mountProofPanel(root, { read: sampleSnapshot, measure: async () => {} });
+    expect(rowText(root, 'governor log')).toBe(
+      'down full \u2192 ssgi-half; p95 19.4 ms > 16.7 ms | ' +
+      'up no-ssgi \u2192 ssgi-half; p95 12.7 ms <= 13.36 ms after 10.0 s',
+    );
+    handle.dispose();
+  });
+
+  it('shows the governor off and a quiet log when the snapshot omits both fields', () => {
+    const root = document.createElement('div');
+    const bare = (): ProofSnapshot => {
+      const snapshot = sampleSnapshot();
+      delete snapshot.governor;
+      delete snapshot.governorLog;
+      return snapshot;
+    };
+    let snap: ProofSnapshot = bare();
+    const handle = mountProofPanel(root, { read: () => snap, measure: async () => {}, intervalMs: 10_000 });
+    expect(rowText(root, 'governor')).toBe('off');
+    expect(rowText(root, 'governor log')).toBe('no changes yet');
+    snap = { ...bare(), governorLog: '' };
+    handle.refresh();
+    expect(rowText(root, 'governor')).toBe('off');
+    expect(rowText(root, 'governor log')).toBe('no changes yet');
+    // Back to an absent log after a present one: absent is quiet again, never an error.
+    snap = bare();
+    handle.refresh();
+    expect(rowText(root, 'governor log')).toBe('no changes yet');
+    handle.dispose();
+  });
+
+  it('ignores further Measure clicks while a run is pending', async () => {
+    const root = document.createElement('div');
+    let resolveMeasure!: () => void;
+    const measure = vi.fn(() => new Promise<void>((resolve) => { resolveMeasure = resolve; }));
+    const handle = mountProofPanel(root, { read: vi.fn(sampleSnapshot), measure, intervalMs: 10_000 });
+    const button = root.querySelector<HTMLButtonElement>('button')!;
+    button.click();
+    // A click event that reaches the listener directly skips the platform's disabled-button
+    // filter, so the panel's own pending guard is the only defense left.
+    button.dispatchEvent(new MouseEvent('click'));
+    button.dispatchEvent(new MouseEvent('click'));
+    expect(measure).toHaveBeenCalledTimes(1);
+    resolveMeasure();
+    await vi.waitFor(() => expect(button.disabled).toBe(false));
+    button.click();
+    await Promise.resolve();
+    expect(measure).toHaveBeenCalledTimes(2);
+    handle.dispose();
+  });
+
+  it('grades the orbit p95 at and over the tier budget', async () => {
+    const root = document.createElement('div');
+    let snap: ProofSnapshot = { ...sampleSnapshot(), frameP95Ms: 16.7 };
+    const handle = mountProofPanel(root, { read: () => snap, measure: async () => {}, intervalMs: 10_000 });
+    const button = root.querySelector<HTMLButtonElement>('button')!;
+    button.click();
+    await Promise.resolve();
+    // Exactly at the High budget counts as inside.
+    expect(rowText(root, 'orbit')).toContain('budget: 16.7 ms (inside)');
+    snap = { ...snap, frameP95Ms: 30 };
+    button.click();
+    await Promise.resolve();
+    expect(rowText(root, 'orbit')).toContain('budget: 16.7 ms (over)');
+    handle.dispose();
+  });
+
+  it('reformats the orbit row whenever any measured field changes', async () => {
+    const root = document.createElement('div');
+    let snap: ProofSnapshot = sampleSnapshot();
+    const handle = mountProofPanel(root, { read: () => snap, measure: async () => {}, intervalMs: 10_000 });
+    const button = root.querySelector<HTMLButtonElement>('button')!;
+    const measureAgain = async (): Promise<string> => {
+      button.click();
+      await Promise.resolve();
+      return rowText(root, 'orbit') ?? '';
+    };
+    expect(await measureAgain()).toContain('CPU p50: 8.2 ms, p95: 14.5 ms');
+    snap = { ...snap, frameP95Ms: 15.5 };
+    expect(await measureAgain()).toContain('CPU p50: 8.2 ms, p95: 15.5 ms');
+    snap = { ...snap, gpu: { p50: 7.7, p95: 11.4, available: true } };
+    expect(await measureAgain()).toContain('GPU p50: 7.7 ms, p95: 11.4 ms');
+    snap = { ...snap, gpu: { p50: 7.7, p95: 13.3, available: true } };
+    expect(await measureAgain()).toContain('GPU p50: 7.7 ms, p95: 13.3 ms');
+    snap = { ...snap, gpu: { p50: 7.7, p95: 13.3, available: false } };
+    expect(await measureAgain()).toContain('GPU: not exposed by this backend');
+    snap = { ...snap, tier: 'base' };
+    expect(await measureAgain()).toContain('budget: 24.0 ms (inside)');
+    handle.dispose();
+  });
+
+  it('reports a rejection that is not an Error as a failed measurement', async () => {
+    const root = document.createElement('div');
+    const rejection: unknown = { message: 'orbit cancelled' };
+    const measure = vi.fn(() => Promise.reject(rejection));
+    const handle = mountProofPanel(root, { read: vi.fn(sampleSnapshot), measure, intervalMs: 10_000 });
+    const button = root.querySelector<HTMLButtonElement>('button')!;
+    button.click();
+    await vi.waitFor(() => expect(button.disabled).toBe(false));
+    expect(root.querySelector('.proof-panel__status')?.textContent).toBe('measure failed');
+    handle.dispose();
+  });
+
+  it('refreshes on the default interval when none is supplied', () => {
+    const root = document.createElement('div');
+    const read = vi.fn(sampleSnapshot);
+    const handle = mountProofPanel(root, { read, measure: async () => {} });
+    expect(read).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(499);
+    expect(read).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(read).toHaveBeenCalledTimes(2);
+    handle.dispose();
+  });
+
+  it('renders the Measure control as a plain type=button button', () => {
+    const root = document.createElement('div');
+    const handle = mountProofPanel(root, { read: vi.fn(sampleSnapshot), measure: async () => {} });
+    expect(root.querySelector<HTMLButtonElement>('button')!.type).toBe('button');
+    handle.dispose();
+  });
+
+  it('counts a scene payload exactly at its budget as inside', () => {
+    const root = document.createElement('div');
+    const handle = mountProofPanel(root, {
+      read: () => ({ ...sampleSnapshot(), sceneFiles: { bytes: 8_000_000, budgetBytes: 8_000_000 } }),
+      measure: async () => {},
+    });
+    expect(rowText(root, 'scene files')).toBe('8.00 MB / 8.00 MB (inside)');
+    handle.dispose();
   });
 });
 
