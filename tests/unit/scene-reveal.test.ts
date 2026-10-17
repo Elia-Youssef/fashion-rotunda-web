@@ -10,6 +10,8 @@ import {
   REVEAL_MS,
 } from '../../src/ui/scene-reveal';
 import type { ReadinessPredicates } from '../../src/ui/scene-reveal';
+import { STARTUP_FAILURE_MESSAGE } from '../../src/ui/startup-failure';
+import { DEVICE_LOST_MESSAGE } from '../../src/renderer/notices';
 import { assertDisruptionReset, assertFreshStableFrames } from '../e2e/support/reveal-disruption';
 
 
@@ -245,6 +247,7 @@ describe('SceneRevealCoordinator', () => {
   });
 
   it('fails closed and stops reveal if any readiness predicate is false at start', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const failingPredicates = createAllPassingPredicates();
     failingPredicates.lookAndVariantMounted = () => false;
 
@@ -263,11 +266,92 @@ describe('SceneRevealCoordinator', () => {
 
     expect(coordinator.state).toBe('error');
     expect(coordinator.veil.dataset.state).toBe('error');
-    expect(onError).toHaveBeenCalledWith(expect.stringContaining('readiness predicates'));
-    expect(mockLobby.setError).toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(STARTUP_FAILURE_MESSAGE);
+    expect(mockLobby.setError).toHaveBeenCalledWith(STARTUP_FAILURE_MESSAGE, undefined);
+    expect(log).toHaveBeenCalledOnce();
+    expect(log).toHaveBeenCalledWith(
+      '[archviz] scene reveal failed',
+      'Initial readiness predicates not fulfilled: lookAndVariantMounted',
+      expect.any(Error),
+    );
     expect(mockLobby.setRevealing).not.toHaveBeenCalled();
     expect(mockLobby.setRevealed).not.toHaveBeenCalled();
   });
+
+  it.each(['readiness lost', 'frame error', 'thrown string'])(
+    'keeps %s diagnostics in the console and shows startup recovery copy', async (failure) => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const predicates = createAllPassingPredicates();
+      const error = failure === 'thrown string' ? 'internal frame rejection' : new Error('internal frame failure');
+      const onFrameRequest = vi.fn(async () => {
+        if (failure === 'readiness lost') {
+          predicates.postChainAssembled = () => false;
+        } else {
+          throw error;
+        }
+      });
+      const coordinator = new SceneRevealCoordinator({
+        canvas, search: '', lobby: mockLobby, predicates, wakeRenderer: vi.fn(), onFrameRequest,
+      });
+      const run = coordinator.execute();
+      await vi.runAllTimersAsync();
+      await run;
+      expect(coordinator.state).toBe('error');
+      expect(mockLobby.setError).toHaveBeenCalledWith(STARTUP_FAILURE_MESSAGE, undefined);
+      expect(log).toHaveBeenCalledOnce();
+      expect(log).toHaveBeenCalledWith(
+        '[archviz] scene reveal failed',
+        failure === 'readiness lost'
+          ? 'Readiness lost during black-hold handshake: postChainAssembled'
+          : error instanceof Error ? error.message : error,
+        failure === 'readiness lost' ? expect.any(Error) : error,
+      );
+      expect(mockLobby.setRevealed).not.toHaveBeenCalled();
+      coordinator.dispose();
+    },
+  );
+
+  it.each(['failed', 'disposed', 'revealed'] as const)(
+    'ignores follow-on exceptions after the transition is %s', async (outcome) => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const onError = vi.fn();
+      const error = new Error('late frame failure');
+      const options = { announce: false };
+      const coordinator = new SceneRevealCoordinator({
+        canvas, search: '', lobby: mockLobby, predicates: createAllPassingPredicates(),
+        wakeRenderer: vi.fn(), onError,
+        onFrameRequest: async () => {
+          if (outcome === 'failed') {
+            coordinator.fail(DEVICE_LOST_MESSAGE, options);
+          } else if (outcome === 'disposed') {
+            coordinator.dispose();
+          } else {
+            return;
+          }
+          throw error;
+        },
+        onRevealed: () => { throw error; },
+      });
+      const run = coordinator.execute();
+      await vi.runAllTimersAsync();
+      await run;
+      expect(log).not.toHaveBeenCalled();
+      if (outcome === 'failed') {
+        expect(mockLobby.setError).toHaveBeenCalledExactlyOnceWith(DEVICE_LOST_MESSAGE, options);
+        expect(onError).toHaveBeenCalledExactlyOnceWith(DEVICE_LOST_MESSAGE);
+        expect(coordinator.state).toBe('error');
+      } else {
+        expect(mockLobby.setError).not.toHaveBeenCalled();
+        expect(onError).not.toHaveBeenCalled();
+        if (outcome === 'revealed') {
+          expect(coordinator.state).toBe('revealed');
+        } else {
+          expect(coordinator.veil.isConnected).toBe(false);
+        }
+      }
+      coordinator.dispose();
+    },
+  );
 
   it('halts reveal and transitions to error if shaders are not compiled', async () => {
     const predicates = createAllPassingPredicates();
@@ -310,7 +394,11 @@ describe('SceneRevealCoordinator', () => {
     expect(onError).toHaveBeenCalledWith('renderer lost during reveal');
   });
 
-  it('passes the announcement choice to the lobby when another surface announces the failure', () => {
+  it.each([
+    { message: DEVICE_LOST_MESSAGE, options: { announce: false } },
+    { message: 'Renderer initialization failed. Please retry.', options: { announce: true } },
+  ])('preserves caller copy and announcement choice for $message', ({ message, options }) => {
+    const onError = vi.fn();
     const coordinator = new SceneRevealCoordinator({
       canvas,
       search: '',
@@ -318,11 +406,14 @@ describe('SceneRevealCoordinator', () => {
       predicates: createAllPassingPredicates(),
       wakeRenderer: vi.fn(),
       onFrameRequest: vi.fn().mockResolvedValue(undefined),
+      onError,
     });
 
-    coordinator.fail('The graphics device was lost.', { announce: false });
+    coordinator.fail(message, options);
 
-    expect(mockLobby.setError).toHaveBeenCalledWith('The graphics device was lost.', { announce: false });
+    expect(mockLobby.setError).toHaveBeenCalledWith(message, options);
+    expect(onError).toHaveBeenCalledWith(message);
+    coordinator.dispose();
   });
 
   it('reduced motion takes the instant path without decorative delays', async () => {

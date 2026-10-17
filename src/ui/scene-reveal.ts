@@ -5,6 +5,7 @@
 import './scene-reveal.css';
 
 import type { EntryLobby } from './entry-lobby';
+import { STARTUP_FAILURE_MESSAGE } from './startup-failure';
 
 export type RevealState =
   | 'idle'
@@ -176,11 +177,11 @@ export class SceneRevealCoordinator {
   }
 
   /**
-   * Fails closed from renderer errors or device loss without hiding the retry/reload recovery UI.
+   * Shows caller-supplied visitor copy without hiding the retry/reload recovery UI.
    * `options` reaches the lobby's error pane unchanged (see EntryLobby.setError).
    */
   public fail(error: Error | string, options?: { announce?: boolean }): void {
-    if (this.disposed || this.failed || this.currentState === 'revealed') {
+    if (this.ignoresFailure()) {
       return;
     }
     this.failed = true;
@@ -192,6 +193,10 @@ export class SceneRevealCoordinator {
     const message = error instanceof Error ? error.message : String(error);
     this.options.lobby?.setError(message, options);
     this.options.onError?.(message);
+  }
+
+  private ignoresFailure(): boolean {
+    return this.disposed || this.failed || this.currentState === 'revealed';
   }
 
   private recordGeometry(): void {
@@ -570,7 +575,13 @@ export class SceneRevealCoordinator {
         return;
       }
     } catch (error) {
-      this.fail(error instanceof Error ? error : String(error));
+      // A terminal transition can leave in-flight work that throws after its outcome is settled.
+      if (this.ignoresFailure()) {
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[archviz] scene reveal failed', message, error);
+      this.fail(STARTUP_FAILURE_MESSAGE);
     }
   }
 
