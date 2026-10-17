@@ -429,6 +429,24 @@ describe('share mount', () => {
     await Promise.resolve();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it('writes nothing to history while the observed state stays put', async () => {
+    const replace = vi.spyOn(window.history, 'replaceState');
+    const stage = makeStage('');
+    mount(stage);
+    await tick(1100);
+    expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('publishes in the same callback when the window elapsed exactly at the boundary', async () => {
+    const stage = makeStage('');
+    mount(stage);
+    clock.ms = 250;
+    stage.canvas.dataset.look = 'look-09';
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(window.location.search).toBe('?look=look-09');
+  });
 });
 
 describe('the published state', () => {
@@ -456,6 +474,87 @@ describe('the published state', () => {
     stage.canvas.dataset.yaw = '6.2831';
     await tick(300);
     expect(window.location.search).toBe('');
+  });
+
+  it('lets the showroom handle outrank the canvas dataset for look and variant', async () => {
+    const stage = makeStage('');
+    mount(stage);
+    stage.live.currentLook = 'look-05';
+    stage.live.currentVariant = 'dark';
+    stage.canvas.dataset.look = 'look-09';
+    stage.canvas.dataset.variant = 'pale';
+    await tick(300);
+    expect(window.location.search).toBe('?look=look-05&variant=dark');
+  });
+
+  it('publishes a rig tuned away from the level default', async () => {
+    const stage = makeStage('');
+    stage.live.rig = 'v2;key,1,15,ffffff;fill,0,7,ffffff;back,0,7,ffffff;day,0.9';
+    mount(stage);
+    await tick(300);
+    expect(window.location.search).toBe(
+      '?rig=v2;key,1,15,ffffff;fill,0,7,ffffff;back,0,7,ffffff;day,0.9',
+    );
+  });
+
+  it('publishes the camera pose once it leaves the proof view', async () => {
+    const stage = makeStage('');
+    mount(stage);
+    stage.live.position = [1.5, 2, 3];
+    await tick(300);
+    expect(window.location.search).toBe('?cam=1.500,2.000,3.000');
+  });
+
+  it('keeps the link bare for a camera nudge inside the proof tolerance', async () => {
+    const stage = makeStage('');
+    mount(stage);
+    stage.live.position = [0.003, 1.7, 4.2];
+    await tick(300);
+    expect(window.location.search).toBe('');
+  });
+
+  it('drops cam from the link once the camera returns to the proof pose', async () => {
+    window.history.replaceState(null, '', '/?cam=1.500,2.000,3.000');
+    const stage = makeStage('?cam=1.500,2.000,3.000');
+    mount(stage);
+    stage.live.position = [...PROOF_POSITION];
+    await tick(300);
+    expect(window.location.search).toBe('');
+  });
+
+  it('keeps a bare URL when the chain booted with post off and no link asked for it', async () => {
+    const stage = makeStage('');
+    stage.live.post = 'off';
+    mount(stage);
+    await tick(600);
+    expect(window.location.search).toBe('');
+  });
+});
+
+describe('observer promptness', () => {
+  it('publishes canvas attribute changes without waiting for the poll', async () => {
+    const stage = makeStage('');
+    mount(stage);
+    clock.ms = 1000;
+    stage.live.yaw = 1.5;
+    stage.canvas.dataset.yaw = '1.5';
+    stage.canvas.dataset.variant = 'dark';
+    stage.live.post = 'off';
+    stage.canvas.dataset.post = 'off';
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(window.location.search).toBe('?variant=dark&yaw=1.500&post=off');
+  });
+
+  it('publishes a music switch change without waiting for the poll', async () => {
+    const stage = makeStage('');
+    window.localStorage.setItem(MUSIC_STORAGE_KEY, 'off');
+    mount(stage);
+    clock.ms = 1000;
+    stage.musicSwitch.dataset.music = 'off';
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(window.location.search).toBe('?music=off');
   });
 });
 
@@ -506,6 +605,15 @@ describe('the music preference sources', () => {
     await tick(300);
     expect(window.location.search).toBe('');
   });
+
+  it('a stored value that is neither on nor off leaves the boot answer in charge', async () => {
+    const stage = makeStage('');
+    stage.live.playerState = 'off';
+    window.localStorage.setItem(MUSIC_STORAGE_KEY, 'neither');
+    mount(stage);
+    await tick(300);
+    expect(window.location.search).toBe('?music=off');
+  });
 });
 
 describe('copy link', () => {
@@ -551,6 +659,27 @@ describe('copy link', () => {
     expect(fallback.classList.contains('share__fallback--hidden')).toBe(false);
     expect(fallback.value).toContain(window.location.origin);
     expect(status.textContent).toBe('Press Ctrl+C to copy');
+  });
+
+  it('publishes before reading the href and holds the window after a copy', async () => {
+    const writeText = vi.fn<(href: string) => Promise<void>>(async () => undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    const stage = makeStage('');
+    mount(stage);
+    stage.canvas.dataset.look = 'look-a';
+    await tick(100);
+    stage.root.querySelector<HTMLButtonElement>('.share__button--copy')!.click();
+    await vi.advanceTimersByTimeAsync(0);
+    // The copied href carries the state the visitor sees, published by the press itself.
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText.mock.calls[0][0]).toContain('look=look-a');
+
+    stage.canvas.dataset.look = 'look-b';
+    await tick(150);
+    // The copy wrote at t=100, so look-b waits for its own full 250 ms window.
+    expect(window.location.search).toBe('?look=look-a');
+    await tick(100);
+    expect(window.location.search).toBe('?look=look-b');
   });
 });
 
@@ -613,5 +742,51 @@ describe('screenshot', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(status.textContent).toBe('Screenshot failed');
     expect(error).toHaveBeenCalledWith('[archviz] screenshot capture failed', expect.any(Error));
+  });
+
+  it('names the still after the look on display', async () => {
+    const stage = makeStage('');
+    stage.live.currentLook = 'look-07';
+    vi.spyOn(stage.canvas, 'toBlob').mockImplementation((callback) => {
+      callback(new Blob(['still'], { type: 'image/png' }));
+    });
+    // No Web Share on this navigator, so delivery takes the download path.
+    vi.stubGlobal('navigator', {});
+    const downloads: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloads.push(this.download);
+    });
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:still');
+    mount(stage);
+    stage.root.querySelector<HTMLButtonElement>('.share__button--screenshot')!.click();
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(downloads).toHaveLength(1);
+    expect(downloads[0]).toMatch(/^fashion-rotunda-look-07-/);
+    await tick(1000);
+  });
+
+  it('zero-pads every timestamp field of the still file name', async () => {
+    vi.setSystemTime(new Date(2026, 0, 2, 3, 4, 5));
+    const stage = makeStage('');
+    vi.spyOn(stage.canvas, 'toBlob').mockImplementation((callback) => {
+      callback(new Blob(['still'], { type: 'image/png' }));
+    });
+    vi.stubGlobal('navigator', {});
+    const downloads: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      downloads.push(this.download);
+    });
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:still');
+    mount(stage);
+    stage.root.querySelector<HTMLButtonElement>('.share__button--screenshot')!.click();
+    await vi.dynamicImportSettled();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(downloads[0]).toBe('fashion-rotunda-look-20260102-030405.png');
+    await tick(1000);
   });
 });
