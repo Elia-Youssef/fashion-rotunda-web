@@ -53,8 +53,13 @@ describe('resolveMusicPreference', () => {
   });
 
   it('never reads the store when the URL already decided', () => {
-    const store = throwingStore();
+    const getItem = vi.fn(() => null);
+    const store: KeyValueStore = { getItem, setItem: () => undefined };
+
     expect(resolveMusicPreference('?music=off', store)).toBe('off');
+    // Precedence is observable on the store the caller passed: the winning source means the
+    // losing one is never consulted, not merely overruled after a read.
+    expect(getItem).not.toHaveBeenCalled();
   });
 
   it('reads nothing when there is no store', () => {

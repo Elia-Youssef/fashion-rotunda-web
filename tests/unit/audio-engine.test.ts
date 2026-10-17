@@ -4,10 +4,10 @@ import { createAudioEngine } from '../../src/audio/engine';
 
 // The engine runs against a stubbed AudioContext constructor, the stand-in for the constructor a
 // browser exposes to the page. The fake keeps the state machine the engine relies on: a context
-// is born suspended, resume moves it and fires onstatechange, close lands on closed. A unit test
-// has no real gesture to offer, so the gesture discipline stays with the callers, where the mount
-// and player tests already pin it; these tests pin what the engine itself promises once unlock()
-// runs inside one.
+// is born suspended, resume moves it once its promise settles and fires onstatechange, close lands
+// on closed or rejects when closeError is set. A unit test has no real gesture to offer, so the
+// gesture discipline stays with the callers, where the mount and player tests already pin it;
+// these tests pin what the engine itself promises once unlock() runs inside one.
 
 class FakeGain {
   connectedTo: unknown[] = [];
@@ -28,6 +28,7 @@ class FakeAudioContext {
   readonly gains: FakeGain[] = [];
   resumesTo: AudioContextState;
   resumeError: Error | null = null;
+  closeError: Error | null = null;
   resumeCount = 0;
   closeCount = 0;
   closed = false;
@@ -48,11 +49,17 @@ class FakeAudioContext {
     if (this.resumeError !== null) {
       throw this.resumeError;
     }
+    // A browser settles resume() asynchronously: the state moves only once the promise does, so a
+    // caller that fires it without awaiting reads the stale state.
+    await Promise.resolve();
     this.moveTo(this.resumesTo);
   }
 
   async close(): Promise<void> {
     this.closeCount += 1;
+    if (this.closeError !== null) {
+      throw this.closeError;
+    }
     this.closed = true;
     this.moveTo('closed');
   }
@@ -168,6 +175,21 @@ describe('createAudioEngine.unlock', () => {
     expect(FakeAudioContext.created).toHaveLength(1);
     expect(engine.buses?.context.state).toBe('interrupted');
   });
+
+  it('returns the buses once a later resume from suspended has settled', async () => {
+    const engine = createAudioEngine();
+    await engine.unlock();
+    const context = lastContext();
+    // The tab was backgrounded or a phone call interrupted playback: the context sits suspended
+    // until the next gesture converts it back, and only a settled resume proves it did.
+    context.moveTo('suspended');
+
+    const second = await engine.unlock();
+
+    expect(second).toBe(engine.buses);
+    expect(context.resumeCount).toBe(2);
+    expect(context.state).toBe('running');
+  });
 });
 
 describe('createAudioEngine.onStateChange', () => {
@@ -234,5 +256,59 @@ describe('createAudioEngine.dispose', () => {
     engine.dispose();
     engine.dispose();
     expect(context.closeCount).toBe(1);
+  });
+
+  it('ends every subscription, so a context built after dispose reports to no stale listener', async () => {
+    const engine = createAudioEngine();
+    const seen: Array<AudioContextState | 'absent'> = [];
+    engine.onStateChange((state) => seen.push(state));
+    await engine.unlock();
+    engine.dispose();
+    // A disposed engine can still be unlocked again: buses reads null, so a fresh context is
+    // built, and the subscription from before the dispose must not hear a word of it.
+    await engine.unlock();
+
+    expect(FakeAudioContext.created).toHaveLength(2);
+    expect(seen).toEqual(['absent', 'suspended', 'running']);
+  });
+
+  it('stops relaying the context state once disposed', async () => {
+    const engine = createAudioEngine();
+    await engine.unlock();
+    const context = lastContext();
+    engine.dispose();
+
+    const seen: Array<AudioContextState | 'absent'> = [];
+    engine.onStateChange((state) => seen.push(state));
+    // close() settles after dispose() returns in a real browser; a late transition of the closed
+    // context must not reach listeners through the engine.
+    context.moveTo('interrupted');
+
+    expect(seen).toEqual(['absent']);
+  });
+
+  it('leaves no unhandled rejection when the context refuses close', async () => {
+    const engine = createAudioEngine();
+    await engine.unlock();
+    const context = lastContext();
+    // close() on an already closed context rejects, and dispose runs at page teardown, where an
+    // unhandled rejection would surface in the visitor's console.
+    context.closeError = new Error('close refused');
+
+    const unhandled: unknown[] = [];
+    const record = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', record);
+    try {
+      engine.dispose();
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    } finally {
+      process.off('unhandledRejection', record);
+    }
+
+    expect(unhandled).toEqual([]);
   });
 });
