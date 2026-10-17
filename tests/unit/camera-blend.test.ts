@@ -181,3 +181,27 @@ describe('blendPoseInto', () => {
     }
   });
 });
+
+describe('blendPoseInto boundary paths', () => {
+  // The frame paths (the camera mount, the attract tour) hold one destination object and
+  // rely on every call, the boundary shortcuts included, writing into and returning that
+  // same object rather than allocating a fresh pose per frame.
+  it('returns the destination it was given on the boundary paths too', () => {
+    const destination: Pose = { position: [0, 0, 0], target: [0, 0, 0] };
+    expect(blendPoseInto(POSE_A, POSE_B, 0, destination)).toBe(destination);
+    expect(blendPoseInto(POSE_A, POSE_B, -0.5, destination)).toBe(destination);
+    expect(blendPoseInto(POSE_A, POSE_B, 1, destination)).toBe(destination);
+    expect(blendPoseInto(POSE_A, POSE_B, 2.5, destination)).toBe(destination);
+  });
+
+  it('writes the endpoint exactly at t = 1, not a sum that rounds away from it', () => {
+    // 1e16 and 1 sit far enough apart that from + (to - from) rounds to 0, so a blended
+    // reconstruction of the endpoint loses it entirely. The promise that t = 1 writes the
+    // endpoint exactly is only kept by copying, never by re-adding the delta.
+    const far: Pose = { position: [1e16, 0, -1e16], target: [1e16, 1, 0] };
+    const near: Pose = { position: [1, 2, 3], target: [1, 2, 3] };
+    const out = blendPoseInto(far, near, 1, { position: [0, 0, 0], target: [0, 0, 0] });
+    expect(out.position).toEqual(near.position);
+    expect(out.target).toEqual(near.target);
+  });
+});
