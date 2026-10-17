@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { contentUrl } from '../../src/catalog/catalog';
-import { createContentResolver } from '../../src/content/resolver';
+import { contentOrigin, createContentResolver } from '../../src/content/resolver';
 import { contentSecurityPolicy, CONTENT_SECURITY_POLICY } from '../../src/content-security-policy';
 import configure, { contentBuildSettings, createShowroomConfig } from '../../vite.config';
 import { walkContentFiles } from '../../pipeline/r2/lib/objects.mjs';
@@ -227,5 +227,67 @@ describe('content transport contract', () => {
     const { loadContentSet } = await import('../../src/catalog/bootstrap');
     await expect(loadContentSet(true)).rejects.toThrow('manifest missing half/catalog.json');
     expect(request).not.toHaveBeenCalled();
+  });
+});
+
+describe('content resolver address validation', () => {
+  it('rejects origins outside HTTP(S) and accepts a plain http origin', () => {
+    for (const bad of ['ftp://static.example.invalid', 'ws://static.example.invalid']) {
+      expect(() => contentOrigin(bad)).toThrow('must be an HTTP(S) origin');
+    }
+    expect(contentOrigin('http://localhost:8080')).toBe('http://localhost:8080');
+  });
+
+  it('reports every non-manifest shape through the configured-origin error', () => {
+    const message = 'content: a manifest matching the configured origin is required';
+    // undefined, null, an array and a bare string in place of the manifest, then a non-list
+    // files field: each fails before any entry is read.
+    for (const bad of [undefined, null, [], 'https://static.example.invalid', { origin, files: 'not-a-list' }]) {
+      expect(() => createContentResolver(origin, bad)).toThrow(message);
+    }
+  });
+
+  it('rejects each malformed manifest entry as an invalid entry', () => {
+    const manifest = remoteManifest();
+    const first = manifest.files[0];
+    const replacements: unknown[] = [
+      null,
+      { ...first, path: 42 },
+      { ...first, url: 42 },
+      { ...first, key: 42 },
+      { ...first, sha256: { toString: () => first.sha256 } },
+      { ...first, sha256: 'not-hex' },
+      { ...first, bytes: 1.5 },
+      { ...first, bytes: '7' },
+    ];
+    for (const replacement of replacements) {
+      const files = [replacement, ...manifest.files.slice(1)];
+      expect(() => createContentResolver(origin, { ...manifest, files })).toThrow('content: invalid manifest entry');
+    }
+  });
+
+  it('rejects empty, dot-segment and backslash logical paths', () => {
+    for (const path of ['', './catalog.json', 'thumbs/./wallis-dress.jpg', 'looks\\bad.glb']) {
+      expect(() => createContentResolver().resolve(path)).toThrow('content: invalid logical path');
+    }
+  });
+
+  it('lower-cases the address extension when matching the manifest key', () => {
+    const sha256 = 'b'.repeat(64);
+    const key = `content/${sha256}.jpg`;
+    const manifest = {
+      origin,
+      files: [
+        ...remoteManifest().files,
+        { path: 'thumbs/Wallis.JPG', sha256, bytes: 1, key, url: `${origin}/${key}` },
+      ],
+    };
+    expect(createContentResolver(origin, manifest).resolve('thumbs/Wallis.JPG')).toBe(`${origin}/${key}`);
+  });
+
+  it('joins any base verbatim in local mode and rejects foreign bases remotely', () => {
+    expect(createContentResolver().join('assets', '/demo.glb')).toBe('assets/demo.glb');
+    expect(() => createContentResolver(origin, remoteManifest()).join('/assets', 'demo.glb'))
+      .toThrow('content: unsupported logical base /assets');
   });
 });
