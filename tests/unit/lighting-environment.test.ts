@@ -180,11 +180,11 @@ import {
   createHdrEnvironment,
   createProceduralEnvironment,
   createRoomEnvironment,
-  createSkyOnlyBackground,
   fromRenderTarget,
 } from '../../src/lighting/environment';
 import type { Environment } from '../../src/lighting/environment';
 import { environmentSkyPalette, visibleSkyPalette } from '../../src/lighting/sky';
+import { createSkyOnlyBackground } from '../../src/lighting/visible-sky';
 
 interface FactorySpec {
   name: string;
