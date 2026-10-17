@@ -88,6 +88,28 @@ describe('receivedBytes', () => {
     expect(receivedBytes([entry('/content-other/x.glb', 10)], '/content')).toBe(0);
   });
 
+  it('judges an absolute URL by its path, so a query or a fragment cannot claim the base', () => {
+    // A redirect target or an anchor can quote the content base without being one; only
+    // the URL path decides what the readout counts.
+    expect(
+      underContentBase('http://localhost:5173/?next=/content/rotunda.glb', '/content'),
+    ).toBe(false);
+    expect(underContentBase('http://localhost:5173/#/content/rotunda.glb', '/content')).toBe(
+      false,
+    );
+    expect(
+      underContentBase('http://localhost:5173/content/rotunda.glb?version=2', '/content'),
+    ).toBe(true);
+  });
+
+  it('counts a real download whose URL carries a cache-busting query', () => {
+    const entries = [
+      entry('http://localhost:5173/content/rotunda.glb?v=2', 2048),
+      entry('http://localhost:5173/?next=/content/plinth.glb', 4096),
+    ];
+    expect(receivedBytes(entries, '/content')).toBe(2048);
+  });
+
   it('accepts relative names, as the unit tests and the half set URLs write them', () => {
     expect(underContentBase('/content/rotunda.glb', '/content')).toBe(true);
     expect(underContentBase('/content/half/rotunda.glb', '/content')).toBe(true);
