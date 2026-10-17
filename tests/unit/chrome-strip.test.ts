@@ -194,6 +194,15 @@ describe('CatalogStripHandle.dispose', () => {
     button.click();
     expect(onSelect).not.toHaveBeenCalled();
   });
+
+  it('clears the nav label with the list', () => {
+    // An empty nav that keeps aria-label "Looks" stays a labelled region for screen readers.
+    const handle = mount();
+    expect(root.getAttribute('aria-label')).toBe('Looks');
+    handle.dispose();
+    strip = null;
+    expect(root.getAttribute('aria-label')).toBeNull();
+  });
 });
 
 // The desktop rail divides its height by --rail-look-count to size every thumbnail, so the token

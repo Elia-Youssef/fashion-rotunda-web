@@ -129,3 +129,51 @@ describe('horizontal thumbnail focus', () => {
     expect(scroll).not.toHaveBeenCalled();
   });
 });
+
+// A browser without scroll-margin support reports no value for the property, and a value that
+// does not parse makes parseFloat return NaN. Either margin must count as 0: with NaN the
+// comparisons collapse to "not before, not after" and a clipped thumbnail never scrolls in.
+// jsdom always resolves scrollMarginLeft to a number, so the computed style is stubbed here.
+function marginFixture(marginLeft: string, marginRight: string, rect: DOMRect) {
+  vi.stubGlobal('matchMedia', vi.fn((): { matches: boolean } => ({ matches: false })));
+  const root = document.createElement('nav');
+  document.body.appendChild(root);
+  const scroll = vi.fn();
+  Object.defineProperty(root, 'scrollTo', { value: scroll });
+  Object.defineProperties(root, {
+    clientLeft: { value: 2 },
+    clientWidth: { value: 100 },
+  });
+  root.scrollLeft = 40;
+  vi.spyOn(root, 'getBoundingClientRect').mockReturnValue(new DOMRect(98, 30, 104, 60));
+  vi.stubGlobal(
+    'getComputedStyle',
+    vi.fn(() => ({ scrollMarginLeft: marginLeft, scrollMarginRight: marginRight })),
+  );
+  strip = mountCatalogStrip(root, {
+    looks,
+    thumbnailUrl: () => '',
+    current: null,
+    onSelect: vi.fn(),
+  });
+  const button = root.querySelector<HTMLButtonElement>('button');
+  if (!button) throw new Error('no button mounted');
+  vi.spyOn(button, 'getBoundingClientRect').mockReturnValue(rect);
+  return { button, scroll };
+}
+
+describe('unparseable scroll margins', () => {
+  it('counts an unparseable start margin as zero and reveals a start-clipped thumbnail', () => {
+    // Container 100..200; the thumbnail sits at 81..129, so only its start edge is clipped.
+    const { button, scroll } = marginFixture('', '7px', new DOMRect(81, 40, 48, 48));
+    button.focus();
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({ left: 21, behavior: 'instant' });
+  });
+
+  it('counts an unparseable end margin as zero and reveals an end-clipped thumbnail', () => {
+    // Container 100..200; the thumbnail sits at 171..219, so only its end edge is clipped.
+    const { button, scroll } = marginFixture('3px', '', new DOMRect(171, 40, 48, 48));
+    button.focus();
+    expect(scroll).toHaveBeenCalledExactlyOnceWith({ left: 59, behavior: 'instant' });
+  });
+});
