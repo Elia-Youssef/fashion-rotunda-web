@@ -38,7 +38,6 @@ export interface ManifestError {
 }
 
 export interface Manifest {
-  generated: string;
   sets: Record<string, { files: Record<string, ManifestFile>; totals: ManifestTotals }>;
   errors: ManifestError[];
 }
@@ -64,7 +63,6 @@ export declare function fileEntry(input: {
 }): ManifestFile;
 export declare function totalsOf(files: Record<string, ManifestFile>): ManifestTotals;
 export declare function buildManifest(
-  generated: string,
   sets: Record<string, Record<string, ManifestFile>>,
   errors?: ManifestError[],
 ): Manifest;

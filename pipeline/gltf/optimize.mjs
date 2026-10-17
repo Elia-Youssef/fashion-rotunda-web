@@ -194,7 +194,7 @@ async function main() {
   writeFileSync(resolve(out, 'half', 'catalog.json'), shippedJson(shipped));
   copyBasisTranscoder(out);
 
-  manifest = buildManifest(new Date().toISOString().replace(/\.\d+Z$/, 'Z'), sets, errors);
+  manifest = buildManifest(sets, errors);
   }
   writeFileSync(resolve(out, 'manifest.json'), shippedJson(manifest));
 

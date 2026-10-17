@@ -46,7 +46,7 @@ function files() {
 }
 
 function manifest(set: SetName, entries = files(), errors: string[] = []) {
-  return { generated: '2026-10-09T00:00:00Z', sets: { [set]: { files: entries } }, errors };
+  return { sets: { [set]: { files: entries } }, errors };
 }
 
 function run(input?: ReturnType<typeof manifest>, args: string[] = []) {
@@ -86,7 +86,7 @@ describe('report output', () => {
   it.each(['full', 'half'] as const)('prints every %s row with its actual, target and passing verdict', (set) => {
     const { stdout } = run(manifest(set));
     const actual = ['300', '500', '800', '7', '4.00 MB', '512', '256', '3.00 MB', '2.00 MB'];
-    expect(stdout).toContain('report: manifest generated 2026-10-09T00:00:00Z, first look looks/first.glb');
+    expect(stdout).toContain('report: first look looks/first.glb');
     expect(stdout).toContain(`budget: ${set} set`);
     expect(printedRows(stdout)).toEqual(labels.map((label, index) => [label, actual[index], targets[set][index], 'ok']));
     expect(stdout).toContain('report: every budget row inside its target');

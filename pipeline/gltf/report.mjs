@@ -30,7 +30,7 @@ export function runReport(directory = contentDir, args = process.argv.slice(2)) 
   const wanted = args.filter((arg) => !arg.startsWith('--'));
   const sets = wanted.length > 0 ? wanted : SET_NAMES;
 
-  console.log(`report: manifest generated ${manifest.generated}, first look ${firstLook ?? 'none'}`);
+  console.log(`report: first look ${firstLook ?? 'none'}`);
   let misses = 0;
   for (const set of sets) {
     const files = manifest.sets?.[set]?.files;

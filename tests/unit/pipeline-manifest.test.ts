@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   buildManifest,
   fileEntry,
@@ -191,7 +191,7 @@ describe('totalsOf and buildManifest', () => {
   });
 
   it('always carries both sets, even when one was not built', () => {
-    const manifest = buildManifest('2026-09-19T20:30:00Z', { full: { 'rotunda.glb': rotunda } });
+    const manifest = buildManifest({ full: { 'rotunda.glb': rotunda } });
     expect(SET_NAMES).toEqual(['full', 'half']);
     expect(Object.keys(manifest.sets)).toEqual(['full', 'half']);
     expect(manifest.sets.half!.files).toEqual({});
@@ -199,7 +199,7 @@ describe('totalsOf and buildManifest', () => {
   });
 
   it('sorts the files map, because key order is part of byte-identical output', () => {
-    const manifest = buildManifest('2026-09-19T20:30:00Z', {
+    const manifest = buildManifest({
       full: { 'rotunda.glb': rotunda, 'looks/zoot-suit.glb': look, 'plinth.glb': look },
     });
     expect(Object.keys(manifest.sets.full!.files)).toEqual([
@@ -209,16 +209,26 @@ describe('totalsOf and buildManifest', () => {
     ]);
   });
 
-  it('carries the generated stamp and an errors array that defaults to empty', () => {
-    const manifest = buildManifest('2026-09-19T20:30:00Z', { full: {}, half: {} });
-    expect(manifest.generated).toBe('2026-09-19T20:30:00Z');
-    expect(manifest.errors).toEqual([]);
+  it('serializes identical content across clock changes without generation metadata', () => {
+    const sets = { full: { 'rotunda.glb': rotunda }, half: { 'looks/x.glb': look } };
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date('2026-09-19T20:30:00Z'));
+      const first = shippedJson(buildManifest(sets));
+      vi.setSystemTime(new Date('2027-10-17T10:00:00Z'));
+      const second = shippedJson(buildManifest(sets));
+      expect(second).toBe(first);
+      expect(Object.keys(JSON.parse(first))).toEqual(['sets', 'errors']);
+      expect(JSON.parse(first).errors).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('keeps a recorded texture failure, which is how a skipped texture stays visible', () => {
     const errors = [
       { set: 'full', file: 'rotunda.glb', texture: 'Floor_A_BaseColor', message: 'ktx exited 1' },
     ];
-    expect(buildManifest('2026-09-19T20:30:00Z', { full: {}, half: {} }, errors).errors).toEqual(errors);
+    expect(buildManifest({ full: {}, half: {} }, errors).errors).toEqual(errors);
   });
 });

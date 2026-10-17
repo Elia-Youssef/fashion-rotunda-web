@@ -66,14 +66,13 @@ export function totalsOf(files) {
 }
 
 /**
- * Assembles the manifest.
+ * Assembles content metadata without wall-clock fields so equal inputs serialize identically.
  *
- * @param generated an ISO 8601 timestamp. The only field allowed to differ between two runs.
  * @param sets `{ full: { 'rotunda.glb': fileEntry, ... }, half: { ... } }`.
  * @param errors texture failures, `{ set, file, texture, message }`.
  */
-export function buildManifest(generated, sets, errors = []) {
-  const out = { generated, sets: {}, errors };
+export function buildManifest(sets, errors = []) {
+  const out = { sets: {}, errors };
   for (const name of SET_NAMES) {
     const files = sets[name] ?? {};
     out.sets[name] = { files: sortedByKey(files), totals: totalsOf(files) };
