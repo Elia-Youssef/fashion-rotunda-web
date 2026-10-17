@@ -249,4 +249,251 @@ describe('mountA11y', () => {
       expect(liveRegion?.textContent).toBe(enabled ? 'Music on' : 'Music off');
     },
   );
+
+  it('keeps stored onboarding completion on a visit without the reset parameter', () => {
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, 'done');
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '' });
+
+    expect(root.querySelector('.onboarding-card')).toBeNull();
+    expect(localStorage.getItem(ONBOARDING_STORAGE_KEY)).toBe('done');
+  });
+
+  it('tolerates a storage that refuses the onboarding reset removal', () => {
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, 'done');
+    const removeItem = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new Error('storage restricted');
+    });
+    try {
+      expect(() => {
+        a11y = mountA11y({ root, aside, canvas, announcer, search: '?onboarding=reset' });
+      }).not.toThrow();
+    } finally {
+      removeItem.mockRestore();
+    }
+    expect(a11y).not.toBeNull();
+  });
+
+  it('completes the orbit step on a canvas drag but not on a lone pointerup', () => {
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '' });
+    expect(typeof a11y.onboarding.complete).toBe('function');
+    const stepTitle = () => root.querySelector('.onboarding-card__title')?.textContent;
+    expect(stepTitle()).toBe('Explore the room');
+
+    window.dispatchEvent(new Event('pointerup'));
+    expect(stepTitle()).toBe('Explore the room');
+
+    canvas.dispatchEvent(new Event('pointerdown'));
+    window.dispatchEvent(new Event('pointerup'));
+    expect(stepTitle()).toBe('Select a look');
+  });
+
+  it('completes the lights step only for input inside the light panel', async () => {
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '' });
+    canvas.dispatchEvent(new Event('pointerdown'));
+    window.dispatchEvent(new Event('pointerup'));
+    canvas.dataset.look = 'zoot-suit';
+    await Promise.resolve();
+    expect(root.querySelector('.onboarding-card__title')?.textContent).toBe('Adjust lighting');
+
+    const outside = document.createElement('input');
+    aside.appendChild(outside);
+    outside.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(localStorage.getItem(ONBOARDING_STORAGE_KEY)).toBeNull();
+    expect(root.querySelector('.onboarding-card')).not.toBeNull();
+
+    // A text node inside the panel is not an element control, so it is not panel input either.
+    const panelText = document.createTextNode('panel label');
+    aside.querySelector('.lightpanel')?.appendChild(panelText);
+    panelText.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(localStorage.getItem(ONBOARDING_STORAGE_KEY)).toBeNull();
+
+    const panelInput = aside.querySelector('.lightpanel input')!;
+    panelInput.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(localStorage.getItem(ONBOARDING_STORAGE_KEY)).toBe('done');
+    expect(root.querySelector('.onboarding-card')).toBeNull();
+  });
+
+  it('announces a look switch through the product card heading when the rail has no label', async () => {
+    const heading = document.createElement('h3');
+    heading.className = 'product-card__name';
+    heading.textContent = 'Wallis Dress';
+    aside.appendChild(heading);
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
+    const liveRegion = root.querySelector('.a11y-live-region')!;
+
+    canvas.dataset.look = 'mondrian-dress';
+    await Promise.resolve();
+
+    expect(liveRegion.textContent).toBe('Now showing: Wallis Dress');
+  });
+
+  it('announces the raw look id when no visitor-facing name exists', async () => {
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
+    const liveRegion = root.querySelector('.a11y-live-region')!;
+
+    canvas.dataset.look = 'lone-look';
+    await Promise.resolve();
+
+    expect(liveRegion.textContent).toBe('Now showing: lone-look');
+  });
+
+  it('stays silent when the look attribute is removed after a switch', async () => {
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
+    const liveRegion = root.querySelector('.a11y-live-region')!;
+    canvas.dataset.look = 'zoot-suit';
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+    const spokenNode = liveRegion.firstChild;
+    expect(liveRegion.textContent).toBe('Now showing: Zoot Suit');
+
+    delete canvas.dataset.look;
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+
+    expect(liveRegion.textContent).toBe('Now showing: Zoot Suit');
+    expect(liveRegion.firstChild).toBe(spokenNode);
+  });
+
+  it('does not re-announce a look record whose value did not change', async () => {
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
+    const liveRegion = root.querySelector('.a11y-live-region')!;
+
+    canvas.dataset.look = 'wallis-dress';
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+    expect(liveRegion.textContent).toBe('');
+
+    canvas.dataset.look = 'zoot-suit';
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+    const spokenNode = liveRegion.firstChild;
+    expect(liveRegion.textContent).toBe('Now showing: Zoot Suit');
+
+    canvas.dataset.look = 'zoot-suit';
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+    expect(liveRegion.firstChild).toBe(spokenNode);
+  });
+
+  it('ignores a repeated variant record and stays silent when the variant is removed', async () => {
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
+    const liveRegion = root.querySelector('.a11y-live-region')!;
+
+    canvas.dataset.variant = 'base';
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+    expect(liveRegion.textContent).toBe('');
+
+    canvas.dataset.variant = 'dark';
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+    const spokenNode = liveRegion.firstChild;
+    expect(liveRegion.textContent).toBe('Mannequin: Dark charcoal');
+
+    delete canvas.dataset.variant;
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+    expect(liveRegion.textContent).toBe('Mannequin: Dark charcoal');
+    expect(liveRegion.firstChild).toBe(spokenNode);
+  });
+
+  it('advances the onboarding looks step when the announced look changes', async () => {
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '' });
+    canvas.dispatchEvent(new Event('pointerdown'));
+    window.dispatchEvent(new Event('pointerup'));
+
+    canvas.dataset.look = 'zoot-suit';
+    await Promise.resolve();
+
+    expect(root.querySelector('.onboarding-card__title')?.textContent).toBe('Adjust lighting');
+  });
+
+  it('announces a rotate button that appears after mount', async () => {
+    aside.querySelector('button[data-action="rotate"]')?.remove();
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
+    const liveRegion = root.querySelector('.a11y-live-region')!;
+
+    const lateButton = document.createElement('button');
+    lateButton.dataset.action = 'rotate';
+    lateButton.setAttribute('aria-pressed', 'false');
+    aside.appendChild(lateButton);
+    await Promise.resolve();
+    expect(liveRegion.textContent).toBe('');
+
+    lateButton.setAttribute('aria-pressed', 'true');
+    await Promise.resolve();
+    expect(liveRegion.textContent).toBe('Rotate on');
+  });
+
+  it('ignores a repeated or removed rotate pressed attribute', async () => {
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
+    const liveRegion = root.querySelector('.a11y-live-region')!;
+    const rotateBtn = aside.querySelector<HTMLButtonElement>('button[data-action="rotate"]')!;
+
+    rotateBtn.setAttribute('aria-pressed', 'false');
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+    expect(liveRegion.textContent).toBe('');
+
+    rotateBtn.setAttribute('aria-pressed', 'true');
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+    const spokenNode = liveRegion.firstChild;
+    expect(liveRegion.textContent).toBe('Rotate on');
+
+    rotateBtn.removeAttribute('aria-pressed');
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+    expect(liveRegion.textContent).toBe('Rotate on');
+    expect(liveRegion.firstChild).toBe(spokenNode);
+  });
+
+  it('mounts without a music header and stays silent', () => {
+    header.remove();
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
+    const liveRegion = root.querySelector('.a11y-live-region')!;
+    expect(liveRegion.textContent).toBe('');
+  });
+
+  it('ignores a repeated or removed music pressed attribute', async () => {
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1' });
+    const liveRegion = root.querySelector('.a11y-live-region')!;
+    const musicBtn = header.querySelector<HTMLButtonElement>('button.music-switch')!;
+
+    musicBtn.setAttribute('aria-pressed', 'false');
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+    expect(liveRegion.textContent).toBe('');
+
+    musicBtn.setAttribute('aria-pressed', 'true');
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+    const spokenNode = liveRegion.firstChild;
+    expect(liveRegion.textContent).toBe('Music on');
+
+    musicBtn.removeAttribute('aria-pressed');
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+    expect(liveRegion.textContent).toBe('Music on');
+    expect(liveRegion.firstChild).toBe(spokenNode);
+  });
+
+  it('stops every announcement channel and removes its owned surfaces on dispose', async () => {
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '' });
+    expect(root.querySelector('.onboarding-card')).not.toBeNull();
+    expect(root.querySelector('#a11y-tooltip')).not.toBeNull();
+    const liveRegion = root.querySelector('.a11y-live-region')!;
+
+    a11y.dispose();
+    a11y.dispose();
+    expect(root.querySelector('.onboarding-card')).toBeNull();
+    expect(root.querySelector('#a11y-tooltip')).toBeNull();
+
+    canvas.dataset.look = 'zoot-suit';
+    aside.querySelector('button[data-action="rotate"]')?.setAttribute('aria-pressed', 'true');
+    header.querySelector('button.music-switch')?.setAttribute('aria-pressed', 'true');
+    await Promise.resolve();
+    vi.advanceTimersByTime(ANNOUNCEMENT_WINDOW_MS);
+    expect(liveRegion.textContent).toBe('');
+  });
 });

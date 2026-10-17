@@ -111,6 +111,24 @@ describe('mountAnnouncer', () => {
     expect(region.textContent).toBe('First');
     expect(root.querySelector('.a11y-live-region')).toBeNull();
   });
+
+  it('holds a message that arrives inside the window reopened by a spoken tail', () => {
+    announcer = mountAnnouncer(root);
+    const region = root.querySelector('.a11y-live-region')!;
+
+    announcer.say('First');
+    announcer.say('Second');
+    vi.advanceTimersByTime(500);
+    expect(region.textContent).toBe('Second');
+
+    // The tail message reopened the coalescing window, so the next one waits inside it.
+    announcer.say('Third');
+    expect(region.textContent).toBe('Second');
+    vi.advanceTimersByTime(499);
+    expect(region.textContent).toBe('Second');
+    vi.advanceTimersByTime(1);
+    expect(region.textContent).toBe('Third');
+  });
 });
 
 describe('mountPageAnnouncer', () => {
@@ -149,5 +167,24 @@ describe('prefersReducedMotion', () => {
   it('returns a boolean based on matchMedia', () => {
     const value = prefersReducedMotion();
     expect(typeof value).toBe('boolean');
+  });
+
+  it('reports false without matchMedia and follows the query result with it', () => {
+    // jsdom ships no matchMedia, so the unavailable-environment guard is the live path here.
+    expect(typeof window.matchMedia).toBe('undefined');
+    expect(prefersReducedMotion()).toBe(false);
+
+    const media = window as unknown as {
+      matchMedia?: ((query: string) => { matches: boolean }) | undefined;
+    };
+    try {
+      media.matchMedia = () => ({ matches: true });
+      expect(prefersReducedMotion()).toBe(true);
+      media.matchMedia = () => ({ matches: false });
+      expect(prefersReducedMotion()).toBe(false);
+    } finally {
+      media.matchMedia = undefined;
+    }
+    expect(prefersReducedMotion()).toBe(false);
   });
 });
