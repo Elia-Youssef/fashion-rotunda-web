@@ -256,11 +256,13 @@
   box-sizing: border-box;
 }
 
-/* One focus policy for every native control; the component stylesheets carry none of their own. */
+/* Shared focus indicator for native controls and the keyboard-focusable backend badge.
+   Component stylesheets may refine the indicator for their controls. */
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+.badge:focus-visible {
   outline: var(--focus-ring) solid var(--focus);
   outline-offset: var(--focus-offset);
 }
