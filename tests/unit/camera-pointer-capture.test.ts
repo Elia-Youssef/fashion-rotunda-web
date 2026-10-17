@@ -78,6 +78,21 @@ describe('pointer capture compatibility', () => {
     expect(() => releasePointer(element, FIRST_POINTER)).not.toThrow();
   });
 
+  it('surfaces name-only lookalikes that are not DOMExceptions', () => {
+    // Only genuine DOMException signals of a dead pointer are tolerated; an ordinary error
+    // that happens to carry the same name must stay visible to the caller.
+    const element = document.createElement('div');
+    const lookalike = Object.assign(new Error('name-only pointer signal'), { name: 'NotFoundError' });
+    const failed = (): never => { throw lookalike; };
+    Object.defineProperties(element, {
+      setPointerCapture: { value: failed },
+      releasePointerCapture: { value: failed },
+      hasPointerCapture: { value: () => true },
+    });
+    expect(() => capturePointer(element, FIRST_POINTER)).toThrow(lookalike);
+    expect(() => releasePointer(element, FIRST_POINTER)).toThrow(lookalike);
+  });
+
   it('skips unavailable APIs and releases through an API without an ownership query', () => {
     const element = document.createElement('div');
     Object.defineProperties(element, {
