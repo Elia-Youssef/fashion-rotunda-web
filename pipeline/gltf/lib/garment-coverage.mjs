@@ -12,8 +12,6 @@ export const SEAM_TOLERANCE = 0.000001;
 export const CONTACT_TOLERANCE = 0.0001;
 /** One millimetre leaves room for meshopt position quantization after fitting. */
 export const FIT_MARGIN = 0.001;
-/** A two millimetre strip below an opening preserves its visible interior. */
-export const OPENING_GUARD = 0.002;
 
 /** Extracts triangle data in scene space; attributes and variants stay on the original primitive. */
 export function surfaceParts(document, groupName) {

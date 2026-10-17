@@ -55,7 +55,6 @@ export interface SurfaceMeasurement {
 export declare const SEAM_TOLERANCE: number;
 export declare const CONTACT_TOLERANCE: number;
 export declare const FIT_MARGIN: number;
-export declare const OPENING_GUARD: number;
 export declare function surfaceParts(document: Document, groupName: string): DocumentSurfacePart[];
 export declare function combinedSurface(parts: SurfacePart[]): BufferGeometry;
 export declare function surfaceTopology(geometry: BufferGeometry): SurfaceTopology;
