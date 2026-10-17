@@ -61,6 +61,12 @@
   pointer-events: none;
 }
 
+/* Pill layout rules set their own display value, including the short-landscape rule in styles.css.
+   Preserve the DOM hidden contract above those rules so a hidden Look pill cannot paint. */
+.shell-pill--look[hidden] {
+  display: none !important;
+}
+
 /* Short-landscape sheet rules in styles.css set this wrapper's display value. Preserve the DOM
    hidden contract above that layout rule so a closed sheet cannot paint or intercept its pill. */
 .shell-sheet__chrome[hidden] {
