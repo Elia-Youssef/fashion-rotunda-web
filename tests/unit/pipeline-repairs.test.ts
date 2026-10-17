@@ -7,6 +7,7 @@ import {
   planRepairs,
   sourceTextureName,
 } from '../../pipeline/gltf/lib/repairs.mjs';
+import type { MaterialSlots } from '../../pipeline/gltf/lib/repairs.mjs';
 
 // The rule under test is the one that repairs the Unreal exporter's mistakes. It is a name rule on
 // purpose: a re-export that breaks a different material is repaired without a code change, and a
@@ -141,6 +142,20 @@ describe('planRepairs on the export of 2026-09-19', () => {
     expect(repairs).toHaveLength(1);
     expect(repairs[0]!.to).toBe('T_X_BC');
   });
+
+  it('plans nothing for a call without a material instead of throwing', () => {
+    // The plan is a pure function over possibly broken exporter data: no material, no plan.
+    expect(planRepairs(null as unknown as MaterialSlots, ZOOT_TEXTURES)).toEqual([]);
+  });
+
+  it('plans nothing when the list of available textures is missing', () => {
+    // A missing texture folder must not look like one that holds every texture.
+    expect(planRepairs({ name: 'MI_Phantom', baseColor: null }, null)).toEqual([]);
+  });
+
+  it('sees exactly the names a Set holds', () => {
+    expect(planRepairs({ name: 'MI_Phantom', baseColor: null }, new Set(['T_Other_BC']))).toEqual([]);
+  });
 });
 
 describe('planFactorResets', () => {
@@ -180,5 +195,13 @@ describe('planFactorResets', () => {
   it('treats a missing base colour factor as the glTF default', () => {
     expect(planFactorResets(repairBase, { baseColor: null, metallic: 1, roughness: 1 })).toEqual([]);
     expect(NEUTRAL_BASE_COLOR).toEqual([1, 1, 1, 1]);
+  });
+
+  it('resets a factor that leaves the glTF default in a single channel', () => {
+    // One off channel is enough to tint or darken the repaired map, so any difference from the
+    // default forces the reset; only a fully neutral factor is left alone.
+    expect(planFactorResets(repairBase, { baseColor: [1, 0, 0, 0], metallic: 1, roughness: 1 })).toEqual([
+      { factor: 'baseColor', from: [1, 0, 0, 0], to: [1, 1, 1, 1] },
+    ]);
   });
 });
