@@ -1,15 +1,40 @@
-// Node environment on purpose: normaliseLoss and installLossHandlers are the pure pieces of
-// createRenderer, so the loss shapes and the handler chain are covered without constructing a
-// WebGPURenderer, which jsdom could not back with a GPU.
+// Node environment on purpose: the pure pieces of createRenderer (the loss shapes, the handler
+// chain, the error line) are covered without constructing a renderer, and the WebGL 2 GPU badge
+// runs createRenderer against a module double, so nothing here needs a GPU.
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { describeRendererError, installLossHandlers, normaliseLoss } from '../../src/renderer/create';
+import { createRenderer, describeRendererError, installLossHandlers, normaliseLoss } from '../../src/renderer/create';
 import type {
   DeviceLostInfo,
   RendererLossReport,
   RendererOptions,
 } from '../../src/renderer/create';
+
+// The WebGL 2 half of the GPU badge: readWebGlRendererName is reached only through
+// createRenderer, so its cases run the factory with the renderer double below and a live
+// stand-in context. The double keeps this suite independent of the factory suite's harness.
+const webglName = vi.hoisted(() => {
+  const state: { context: unknown } = { context: null };
+  class RendererDouble {
+    backend = { isWebGPUBackend: false };
+    toneMapping = 0;
+    getContext = () => state.context;
+    init(): Promise<void> {
+      return Promise.resolve();
+    }
+    setPixelRatio(): void {}
+    dispose(): void {}
+    onDeviceLost(): void {}
+    onError(): void {}
+  }
+  return { RendererDouble, state };
+});
+
+vi.mock('three/webgpu', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('three/webgpu')>();
+  return { ...actual, WebGPURenderer: webglName.RendererDouble };
+});
 
 describe('normaliseLoss', () => {
   it('keeps the reason and message the WebGPU backend reports', () => {
@@ -155,6 +180,62 @@ describe('installLossHandlers', () => {
       trackTimestamp: true,
     };
     expect(options.trackTimestamp).toBe(true);
+  });
+});
+
+describe('createRenderer on the WebGL 2 backend: the GPU badge', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    webglName.state.context = null;
+  });
+
+  // A context stand-in that passes the instanceof check against the stubbed global and answers
+  // the WEBGL_debug_renderer_info dance exactly as a live context does.
+  function liveContext(extension: unknown, reported: unknown): object {
+    const contextType = class {};
+    vi.stubGlobal('WebGL2RenderingContext', contextType);
+    const context = Object.create(contextType.prototype) as {
+      getExtension: () => unknown;
+      getParameter: () => unknown;
+    };
+    context.getExtension = () => extension;
+    context.getParameter = () => reported;
+    return context;
+  }
+
+  async function badgeName(context: unknown): Promise<string> {
+    webglName.state.context = context;
+    vi.stubGlobal('window', { devicePixelRatio: 1 });
+    const handle = await createRenderer({
+      canvas: { dataset: {} } as HTMLCanvasElement,
+      pixelRatioCap: 2,
+      forceWebGL: true,
+    });
+    expect(handle.backend).toBe('webgl2');
+    return handle.gpuName;
+  }
+
+  it('reports the unmasked renderer string a live context exposes', async () => {
+    const name = 'ANGLE (NVIDIA, NVIDIA GeForce RTX 4090 Direct3D11 vs_5_1 ps_5_1)';
+    const reported = await badgeName(liveContext({ UNMASKED_RENDERER_WEBGL: 0x9246 }, name));
+    expect(reported).toBe(name);
+  });
+
+  it('keeps unknown when the browser masks the debug extension', async () => {
+    await expect(badgeName(liveContext(null, 'irrelevant'))).resolves.toBe('unknown');
+  });
+
+  it('keeps unknown when the extension lacks the constant or it is not a number', async () => {
+    await expect(badgeName(liveContext({}, 'irrelevant'))).resolves.toBe('unknown');
+    await expect(
+      badgeName(liveContext({ UNMASKED_RENDERER_WEBGL: 'not-a-number' }, 'irrelevant')),
+    ).resolves.toBe('unknown');
+  });
+
+  it('keeps unknown when the reported renderer is empty or not a string', async () => {
+    const constant = 0x9246;
+    await expect(badgeName(liveContext({ UNMASKED_RENDERER_WEBGL: constant }, ''))).resolves.toBe('unknown');
+    await expect(badgeName(liveContext({ UNMASKED_RENDERER_WEBGL: constant }, 4090))).resolves.toBe('unknown');
   });
 });
 

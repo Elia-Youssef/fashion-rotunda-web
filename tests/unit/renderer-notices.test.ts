@@ -33,6 +33,17 @@ describe('showPoster', () => {
     expect(root.querySelectorAll('img')).toHaveLength(1);
     expect(root.children).toHaveLength(3);
   });
+
+  it('addresses every poster part with its stylesheet class, in order', () => {
+    const root = document.createElement('div');
+    showPoster(root, { imageUrl: '/poster/hero.jpg', message: 'needs a gpu', credit: 'the studio' });
+
+    const [image, message, credit] = root.children;
+    expect(image?.tagName).toBe('IMG');
+    expect(image?.className).toBe('poster__image');
+    expect(message?.className).toBe('poster__message');
+    expect(credit?.className).toBe('poster__credit');
+  });
 });
 
 describe('showLossNotice', () => {
@@ -68,5 +79,14 @@ describe('showLossNotice', () => {
 
     expect(root.querySelectorAll('[role="alert"]')).toHaveLength(1);
     expect(root.querySelectorAll('button')).toHaveLength(1);
+  });
+
+  it('renders the exact title, reason line and message text', () => {
+    const root = document.createElement('div');
+    showLossNotice(root, { backend: 'webgpu', reason: 'device-collision', message: 'boom' }, vi.fn());
+
+    expect(root.querySelector('.loss-notice__title')?.textContent).toBe('The graphics device was lost.');
+    expect(root.querySelector('.loss-notice__reason')?.textContent).toBe('Reason: device-collision');
+    expect(root.querySelector('.loss-notice__message')?.textContent).toBe('boom');
   });
 });

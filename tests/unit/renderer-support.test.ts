@@ -88,4 +88,19 @@ describe('detectSupport', () => {
     stubThrowingGetContext();
     await expect(detectSupport(window)).resolves.toEqual({ webgpu: false, webgl2: false });
   });
+
+  it('probes the page window when called with no argument', async () => {
+    stubGetContext(null);
+    await expect(detectSupport()).resolves.toEqual({ webgpu: false, webgl2: false });
+  });
+
+  it('probes the document of the window it is given, not the global one', async () => {
+    const probeCanvas = { getContext: (type: string): unknown => (type === 'webgl2' ? {} : null) };
+    const otherWindow = {
+      navigator: window.navigator,
+      document: { createElement: () => probeCanvas },
+    } as unknown as Window & typeof globalThis;
+
+    await expect(detectSupport(otherWindow)).resolves.toEqual({ webgpu: false, webgl2: true });
+  });
 });
