@@ -189,6 +189,24 @@ describe('tooltip wrap and viewport clamp', () => {
     ]);
   });
 
+  it('centres the box on its anchor when both clamps leave room', () => {
+    anchorBox(120, 200, 160, 230);
+    measureBox(100, 40);
+    show();
+    expectInside();
+    expect(position().x).toBe(90);
+  });
+
+  it('publishes whole-pixel coordinates for fractional anchor geometry', () => {
+    // The anchor centre sits at 140 px with a 99 px box: 90.5 px rounds to a whole pixel, so
+    // the box never lands on a subpixel seam.
+    anchorBox(120.5, 200, 159.5, 230);
+    measureBox(99, 40);
+    show();
+    expectInside();
+    expect(position().x).toBe(91);
+  });
+
   it('keeps the box inside when the trigger moves while the tooltip is open', () => {
     anchorBox(120, 30, 160, 60);
     measureBox(304, 46);
@@ -196,7 +214,7 @@ describe('tooltip wrap and viewport clamp', () => {
     anchorBox(4, 300, 44, 330);
     window.dispatchEvent(new Event('scroll'));
     expectInside();
-    expect(position().x).toBe(VIEWPORT_PADDING_PX);
+    expect(position()).toEqual({ x: VIEWPORT_PADDING_PX, y: 248 });
   });
 
   it.each([
@@ -253,6 +271,32 @@ describe('tooltip wrap and viewport clamp', () => {
     expect(tooltip.scrollTop).toBeGreaterThan(0);
     page('Escape');
     show();
+    expect(tooltip.scrollTop).toBe(0);
+  });
+
+  it('hands PageDown back without keyboard focus or with a modifier held', () => {
+    anchor.dataset.tooltip = 'Long tooltip content. '.repeat(50);
+    anchorBox(120, 540, 160, 566);
+    measureOverflowingBox(1600);
+    show();
+    expect(tooltip.hasAttribute('data-scrollable')).toBe(true);
+
+    // Hover owns the box but focus never reached the control: the page keeps its keys.
+    const hoverPage = new KeyboardEvent('keydown', {
+      key: 'PageDown', bubbles: true, cancelable: true,
+    });
+    anchor.dispatchEvent(hoverPage);
+    expect(hoverPage.defaultPrevented).toBe(false);
+    expect(tooltip.scrollTop).toBe(0);
+
+    // With focus and a modifier held, the shortcut belongs to the browser, not the tooltip.
+    vi.spyOn(anchor, 'matches').mockReturnValue(true);
+    anchor.focus();
+    const modifiedPage = new KeyboardEvent('keydown', {
+      key: 'PageDown', bubbles: true, cancelable: true, ctrlKey: true,
+    });
+    anchor.dispatchEvent(modifiedPage);
+    expect(modifiedPage.defaultPrevented).toBe(false);
     expect(tooltip.scrollTop).toBe(0);
   });
 });
