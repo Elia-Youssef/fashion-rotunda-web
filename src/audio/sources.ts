@@ -3,7 +3,7 @@
 // and '' (no). A 'probably' is a firm yes, a 'maybe' is a fallback, and the first firm yes wins
 // even when a 'maybe' was seen earlier in the list.
 
-import type { TrackSource } from './music';
+import type { TrackSource } from './manifest';
 
 /** The first source whose type gets 'probably', else the first that gets 'maybe', else null. */
 export function pickSource(

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseMusicManifest } from '../../src/audio/music';
+import { parseMusicManifest } from '../../src/audio/manifest';
 
 // The fixture is typed rather than asserted: an index signature makes every field readable,
 // writable and deletable by name, and naming tracks and sources as lists of the same shape lets

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { pickSource } from '../../src/audio/sources';
-import type { TrackSource } from '../../src/audio/music';
+import type { TrackSource } from '../../src/audio/manifest';
 
 const opus: TrackSource = { url: 'music-01.ogg', type: 'audio/ogg; codecs="opus"', bytes: 100 };
 const aac: TrackSource = { url: 'music-01.m4a', type: 'audio/mp4; codecs="mp4a.40.2"', bytes: 200 };
