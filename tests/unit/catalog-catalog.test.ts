@@ -47,6 +47,11 @@ describe('parseCatalog', () => {
     },
   );
 
+  it('rejects a source URL whose https prefix is not the exact lowercase literal', () => {
+    const json = catalogJson({ looks: [lookJson({ sourceUrl: 'HTTPS://example.com/source' })] });
+    expect(() => parseCatalog(json)).toThrow('looks[0].sourceUrl');
+  });
+
   it('reads the shape the optimize pass writes', () => {
     const catalog = parseCatalog(catalogJson());
     expect(catalog.version).toBe(CATALOG_VERSION);
@@ -99,6 +104,9 @@ describe('parseCatalog', () => {
     ],
     ['no looks at all', { looks: [] }, 'looks'],
     ['looks that are not a list', { looks: {} }, 'looks'],
+    ['a look that is not an object', { looks: [42] }, 'looks[0] is not an object'],
+    ['a rotunda that is not an object', { rotunda: 'rotunda.glb' }, 'rotunda is not an object'],
+    ['views that are not an object', { views: [] }, 'views is not an object'],
     ['a missing rotunda file', { rotunda: {} }, 'rotunda.file'],
     ['a missing environment file', { environment: {} }, 'environment.file'],
     [
@@ -132,8 +140,37 @@ describe('parseCatalog', () => {
     expect(() => parseCatalog(json)).toThrow('views.proof.position');
   });
 
+  it('throws when a camera pose has extra numbers, not only when it is short', () => {
+    const json = catalogJson({
+      views: { proof: { position: [0, 1.7, 4.2, 5], target: [0, 1, 0], fov: 40 } },
+    });
+    expect(() => parseCatalog(json)).toThrow('views.proof.position has 4 numbers, not 3');
+  });
+
+  it('throws when a number field is not finite, which JSON can produce from 1e999', () => {
+    // JSON.parse turns an overlarge exponent into Infinity, so response.json() really can hand
+    // the parser a non-finite number and the camera a broken pose.
+    const json = catalogJson({
+      views: { proof: { position: [0, 1.7, 4.2], target: [0, 1, 0], fov: Number('1e999') } },
+    });
+    expect(() => parseCatalog(json)).toThrow('views.proof.fov is not a finite number');
+  });
+
+  it('reads and validates every named view, not only the proof camera', () => {
+    const views = {
+      proof: { position: [0, 1.7, 4.2], target: [0, 1, 0], fov: 40 },
+      orbit: { position: [3, 2, -1], target: [0, 1.2, 0], fov: 55 },
+    };
+    const catalog = parseCatalog(catalogJson({ views }));
+    expect(catalog.views.orbit).toEqual({ position: [3, 2, -1], target: [0, 1.2, 0], fov: 55 });
+    const broken = catalogJson({
+      views: { ...views, orbit: { position: [3, 2], target: [0, 1.2, 0], fov: 55 } },
+    });
+    expect(() => parseCatalog(broken)).toThrow('views.orbit.position');
+  });
+
   it.each([[null], [42], ['catalog'], [[]]])('throws when the document is %s', (json) => {
-    expect(() => parseCatalog(json)).toThrow('catalog');
+    expect(() => parseCatalog(json)).toThrow('catalog is not an object');
   });
 });
 
@@ -189,5 +226,17 @@ describe('loadCatalog', () => {
   it('throws when the answer is not the catalogue, which is what a dev server index.html is', async () => {
     const fetchFn: typeof fetch = async () => new Response('<!doctype html>', { status: 200 });
     await expect(loadCatalog('/content/half/catalog.json', fetchFn)).rejects.toThrow();
+  });
+
+  it('calls its fetch implementation with the globalThis receiver the Chrome global needs', async () => {
+    // Chrome's global fetch throws when called detached, so the receiver is part of the call
+    // contract: the page hands loadCatalog the real global and expects it to stay bound.
+    const receivers: unknown[] = [];
+    const fetchFn: typeof fetch = function fetchOnGlobal(this: typeof globalThis) {
+      receivers.push(this);
+      return Promise.resolve(new Response(JSON.stringify(catalogJson())));
+    };
+    await loadCatalog('/content/catalog.json', fetchFn);
+    expect(receivers).toEqual([globalThis]);
   });
 });
