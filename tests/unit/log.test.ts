@@ -12,6 +12,7 @@ function setSearch(search: string): void {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
   setSearch('');
 });
@@ -66,6 +67,16 @@ describe('info', () => {
     info('[archviz] renderer backend: webgl2');
     setSearch('?proof=0&e2e=0');
     info('[archviz] benchmark p95: 9.5 ms');
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('counts a process with no location as asking for nothing', () => {
+    // A process without a location binding has no URL to ask through: the gate reads an
+    // empty search. stubGlobal stands in for that process inside the jsdom environment.
+    vi.stubEnv('DEV', false);
+    const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
+    vi.stubGlobal('location', undefined);
+    info('[archviz] renderer backend: webgpu');
     expect(spy).not.toHaveBeenCalled();
   });
 
