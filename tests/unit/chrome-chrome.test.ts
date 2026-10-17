@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Catalog, CatalogLook } from '../../src/catalog/catalog';
+import { markFirstFrame } from '../../src/proof/marks';
 import { mountChrome } from '../../src/ui/chrome';
 import type { ChromeHandle } from '../../src/ui/chrome';
 import { variantDisplayName } from '../../src/ui/product-card';
@@ -42,7 +43,7 @@ function makeCatalog(): Catalog {
  * swatch is carried to every later look that offers it. The calls array is the shared log the
  * ordering assertions read; every method and the camera hook record into it.
  */
-function fakeShowroom(initialLook: string) {
+function fakeShowroom(initialLook: string | null) {
   let currentLook: string | null = initialLook;
   let currentVariant: string | null = 'base';
   let wantedVariant: string | null = null;
@@ -111,6 +112,52 @@ function fakeShowroom(initialLook: string) {
 
 type FakeShowroom = ReturnType<typeof fakeShowroom>;
 
+interface ManualSwitch {
+  readonly id: string;
+  /** Adopts the look as current, as the real switcher does for the request that wins. */
+  land(variant?: string): void;
+  /** Resolves the switch superseded, leaving whatever look is current. */
+  drop(): void;
+  /** Rejects the switch, as a failed load does. */
+  fail(error: unknown): void;
+}
+
+/**
+ * The fake showroom with switches the test settles one at a time, in any order. Sequences the
+ * shared fake cannot express, like an older switch resolving after a newer failure, run through
+ * this one; the object is the shared fake itself, so its live getters stay live.
+ */
+function manualShowroom(initialLook: string | null): FakeShowroom & { switches: ManualSwitch[] } {
+  const base = fakeShowroom(initialLook);
+  const switches: ManualSwitch[] = [];
+  base.showLook.mockImplementation((id: string): Promise<void> => {
+    base.calls.push(`showLook:${id}`);
+    return new Promise<void>((resolve, reject) => {
+      switches.push({
+        id,
+        land(variant: string = 'base'): void {
+          base.setExternally(id, variant);
+          resolve();
+        },
+        drop(): void {
+          resolve();
+        },
+        fail(error: unknown): void {
+          reject(error);
+        },
+      });
+    });
+  });
+  return Object.assign(base, { switches });
+}
+
+/** Lets every pending microtask of a settle chain run before the assertions read the DOM. */
+async function afterMicrotasks(): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
 let stripRoot: HTMLElement;
 let cardRoot: HTMLElement;
 let chrome: ChromeHandle | null = null;
@@ -134,6 +181,9 @@ interface MountOverrides {
   initialLook?: string;
   onRotateToggle?: () => boolean;
   onChange?: () => void;
+  catalog?: Catalog;
+  stripRoot?: HTMLElement;
+  cardRoot?: HTMLElement;
 }
 
 function mount(overrides: MountOverrides = {}): { handle: ChromeHandle; showroom: FakeShowroom } {
@@ -144,10 +194,10 @@ function mount(overrides: MountOverrides = {}): { handle: ChromeHandle; showroom
   });
   const onChange = overrides.onChange ?? vi.fn();
   chrome = mountChrome({
-    catalog: makeCatalog(),
+    catalog: overrides.catalog ?? makeCatalog(),
     contentBase: '/content',
-    stripRoot,
-    cardRoot,
+    stripRoot: overrides.stripRoot ?? stripRoot,
+    cardRoot: overrides.cardRoot ?? cardRoot,
     announcer: { say: overrides.say ?? vi.fn() },
     showroom,
     onRotateToggle,
@@ -351,6 +401,12 @@ describe('the swatches', () => {
     });
     expect(swatch('dark').getAttribute('aria-checked')).toBe('false');
   });
+
+  it('check the swatch the showroom holds when the card mounts', () => {
+    mount();
+    expect(swatch('base').getAttribute('aria-checked')).toBe('true');
+    expect(swatch('dark').getAttribute('aria-checked')).toBe('false');
+  });
 });
 
 describe('Reset', () => {
@@ -426,6 +482,42 @@ describe('Reset', () => {
       'resetCamera',
     ]);
   });
+
+  it('still resets the camera when the look refuses its default variant, and marks what the showroom kept', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const scripted = fakeShowroom('wallis-dress');
+    let attempts = 0;
+    scripted.setVariant.mockImplementation((name: string): Promise<void> => {
+      scripted.calls.push(`setVariant:${name}`);
+      attempts += 1;
+      if (attempts > 1) {
+        return Promise.reject(new Error('the look would not take its default variant'));
+      }
+      scripted.setExternally('wallis-dress', name);
+      return Promise.resolve();
+    });
+    const onChange = vi.fn();
+    const { showroom } = mount({ showroom: scripted, onChange });
+    swatch('dark').click();
+    await vi.waitFor(() => {
+      expect(swatch('dark').getAttribute('aria-checked')).toBe('true');
+    });
+    actionButton('Reset').click();
+    await vi.waitFor(() => {
+      expect(showroom.calls).toContain('resetCamera');
+    });
+    expect(showroom.calls).toEqual([
+      'setVariant:dark',
+      'setLookYaw:0',
+      'setVariant:base',
+      'resetCamera',
+    ]);
+    // The refused default leaves the check where the showroom says it is: on dark.
+    expect(swatch('dark').getAttribute('aria-checked')).toBe('true');
+    expect(swatch('base').getAttribute('aria-checked')).toBe('false');
+    expect(onChange).toHaveBeenCalledTimes(2);
+    warn.mockRestore();
+  });
 });
 
 describe('Rotate', () => {
@@ -466,5 +558,240 @@ describe('ChromeHandle.dispose', () => {
     expect(stripRoot.childElementCount).toBe(0);
     expect(cardRoot.childElementCount).toBe(1);
     expect(cardRoot.firstElementChild).toBe(badge);
+  });
+});
+
+describe('the thumbnail URL', () => {
+  it('renders an empty box, not an image, for a look without a thumbnail', () => {
+    markFirstFrame();
+    const catalog = makeCatalog();
+    catalog.looks = [{ ...LOOKS[0], thumbnail: null }, LOOKS[1], LOOKS[2]];
+    mount({ catalog });
+    expect(stripButton('wallis-dress').querySelector('img')).toBeNull();
+    expect(stripButton('wallis-dress').querySelector('.catalog-strip__empty')).not.toBeNull();
+    expect(cardRoot.querySelector<HTMLElement>('.product-card__thumb')?.hidden).toBe(true);
+    expect(cardRoot.querySelector<HTMLElement>('.product-card__thumb-empty')?.hidden).toBe(false);
+  });
+
+  it('gives the strip and the card the thumbnail content URL', () => {
+    markFirstFrame();
+    mount();
+    expect(stripButton('wallis-dress').querySelector('img')?.getAttribute('src')).toBe(
+      '/content/thumbs/wallis-dress.jpg',
+    );
+    expect(cardRoot.querySelector('.product-card__thumb')?.getAttribute('src')).toBe(
+      '/content/thumbs/wallis-dress.jpg',
+    );
+  });
+});
+
+describe('a showroom with no current look', () => {
+  it('mounts the card empty and leaves the strip unmarked', () => {
+    mount({ showroom: fakeShowroom(null) });
+    expect(cardText('.product-card h2')).toBe('');
+    expect(cardText('.product-card__description')).toBe('No look on the plinth yet.');
+    expect(cardRoot.querySelectorAll('.product-card__swatch')).toHaveLength(0);
+    expect(stripRoot.querySelectorAll('[aria-current]')).toHaveLength(0);
+  });
+
+  it('does nothing when Reset is pressed with no look on the plinth', async () => {
+    const empty = fakeShowroom(null);
+    const { showroom } = mount({ showroom: empty });
+    actionButton('Reset').click();
+    await afterMicrotasks();
+    expect(showroom.calls).toEqual([]);
+  });
+});
+
+describe('refresh after an external change', () => {
+  it('keeps the last rendered look when the showroom names a look outside the catalogue', async () => {
+    const { handle, showroom } = mount();
+    stripButton('zoot-suit').click();
+    await vi.waitFor(() => {
+      expect(showroom.showLook).toHaveBeenCalledWith('zoot-suit');
+    });
+    showroom.settleNextSwitch();
+    await vi.waitFor(() => {
+      expect(cardText('.product-card h2')).toBe('Zoot Suit');
+    });
+    showroom.setExternally('not-in-catalog', 'base');
+    handle.refresh();
+    expect(cardText('.product-card h2')).toBe('Zoot Suit');
+    expect(stripRoot.querySelectorAll('[aria-current]')).toHaveLength(0);
+  });
+});
+
+describe('the variant mutation queue', () => {
+  it('keeps issuing mutations after a swatch was refused', async () => {
+    const refusing = fakeShowroom('wallis-dress');
+    refusing.setVariant.mockImplementation((name: string): Promise<void> => {
+      refusing.calls.push(`setVariant:${name}`);
+      return Promise.reject(new Error(`the look has no variant "${name}"`));
+    });
+    const { showroom } = mount({ showroom: refusing });
+    swatch('dark').click();
+    await vi.waitFor(() => {
+      expect(showroom.setVariant).toHaveBeenCalledWith('dark');
+    });
+    swatch('light').click();
+    await vi.waitFor(() => {
+      expect(showroom.setVariant).toHaveBeenCalledWith('light');
+    });
+    expect(showroom.setVariant).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('switch races', () => {
+  const failureText = 'That look could not load. Select it again to try once more.';
+
+  it('keeps a newer failure notice when an older switch of the same look settles late', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const manual = manualShowroom('wallis-dress');
+    const onChange = vi.fn();
+    mount({ showroom: manual, onChange });
+    stripButton('zoot-suit').click();
+    stripButton('zoot-suit').click();
+    await vi.waitFor(() => {
+      expect(manual.switches).toHaveLength(2);
+    });
+    manual.switches[1].land();
+    await vi.waitFor(() => {
+      expect(cardText('.product-card h2')).toBe('Zoot Suit');
+    });
+    stripButton('new-look-dress').click();
+    await vi.waitFor(() => {
+      expect(manual.switches).toHaveLength(3);
+    });
+    manual.switches[2].fail(new Error('content unavailable'));
+    const status = document.querySelector<HTMLElement>('[data-look-status]');
+    await vi.waitFor(() => {
+      expect(status?.hidden).toBe(false);
+    });
+    expect(status?.textContent).toBe(failureText);
+    manual.switches[0].drop();
+    await vi.waitFor(() => {
+      expect(onChange).toHaveBeenCalledTimes(3);
+    });
+    expect(status?.textContent).toBe(failureText);
+    expect(status?.hidden).toBe(false);
+    warn.mockRestore();
+  });
+
+  it('keeps the failure notice when the showroom moved on before the retry settled', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const manual = manualShowroom('wallis-dress');
+    mount({ showroom: manual });
+    stripButton('zoot-suit').click();
+    await vi.waitFor(() => {
+      expect(manual.switches).toHaveLength(1);
+    });
+    manual.switches[0].fail(new Error('content unavailable'));
+    const status = document.querySelector<HTMLElement>('[data-look-status]');
+    await vi.waitFor(() => {
+      expect(status?.hidden).toBe(false);
+    });
+    stripButton('zoot-suit').click();
+    await vi.waitFor(() => {
+      expect(manual.switches).toHaveLength(2);
+    });
+    manual.setExternally('new-look-dress', 'light');
+    manual.switches[1].drop();
+    await vi.waitFor(() => {
+      expect(cardText('.product-card h2')).toBe('New Look Dress');
+    });
+    expect(status?.textContent).toBe(failureText);
+    expect(status?.hidden).toBe(false);
+    warn.mockRestore();
+  });
+
+  it('holds the busy mark until the last switch settles', async () => {
+    const manual = manualShowroom('wallis-dress');
+    const onChange = vi.fn();
+    mount({ showroom: manual, onChange });
+    stripButton('zoot-suit').click();
+    stripButton('wallis-dress').click();
+    await vi.waitFor(() => {
+      expect(manual.switches).toHaveLength(2);
+    });
+    manual.switches[1].land();
+    await vi.waitFor(() => {
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+    expect(stripRoot.querySelectorAll('[aria-busy]')).toHaveLength(1);
+    expect(stripButton('wallis-dress').hasAttribute('aria-busy')).toBe(true);
+    manual.switches[0].drop();
+    await vi.waitFor(() => {
+      expect(onChange).toHaveBeenCalledTimes(2);
+    });
+    expect(stripRoot.querySelectorAll('[aria-busy]')).toHaveLength(0);
+  });
+
+  it('stops rewriting the failure notice once disposed', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const manual = manualShowroom('wallis-dress');
+    const { handle } = mount({ showroom: manual });
+    stripButton('zoot-suit').click();
+    await vi.waitFor(() => {
+      expect(manual.switches).toHaveLength(1);
+    });
+    manual.switches[0].fail(new Error('content unavailable'));
+    const status = document.querySelector<HTMLElement>('[data-look-status]');
+    await vi.waitFor(() => {
+      expect(status?.hidden).toBe(false);
+    });
+    stripButton('zoot-suit').click();
+    await vi.waitFor(() => {
+      expect(manual.switches).toHaveLength(2);
+    });
+    handle.dispose();
+    manual.switches[1].land();
+    await afterMicrotasks();
+    expect(status?.textContent).toBe(failureText);
+    expect(status?.hidden).toBe(false);
+    warn.mockRestore();
+  });
+
+  it('calls nothing further once disposed', async () => {
+    const manual = manualShowroom('wallis-dress');
+    const onChange = vi.fn();
+    const { handle } = mount({ showroom: manual, onChange });
+    stripButton('zoot-suit').click();
+    await vi.waitFor(() => {
+      expect(manual.switches).toHaveLength(1);
+    });
+    handle.dispose();
+    manual.switches[0].land();
+    await afterMicrotasks();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('the loop invalidation', () => {
+  it('asks for a redraw after a swatch change', async () => {
+    const onChange = vi.fn();
+    mount({ onChange });
+    swatch('dark').click();
+    await vi.waitFor(() => {
+      expect(onChange).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it('asks for a redraw after Rotate', () => {
+    const onChange = vi.fn();
+    mount({ onChange });
+    actionButton('Rotate').click();
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the failure notice', () => {
+  it('lives in the document that owns the strip root', () => {
+    const otherDocument = document.implementation.createHTMLDocument('chrome notice');
+    const otherStrip = otherDocument.createElement('nav');
+    const otherCard = otherDocument.createElement('aside');
+    otherDocument.body.append(otherStrip, otherCard);
+    mount({ stripRoot: otherStrip, cardRoot: otherCard });
+    expect(otherDocument.querySelector('[data-look-status]')).not.toBeNull();
+    expect(document.querySelector('[data-look-status]')).toBeNull();
   });
 });
