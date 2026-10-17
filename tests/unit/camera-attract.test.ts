@@ -1,30 +1,30 @@
-// Unit tests for the attract loop state machine with a fake clock.
-// Verifies idle start, input interruption, tour order, hold/move timing, reduced motion, the
-// reused tick reading, the setEnabled contract, degenerate view lists, the default clock, and
-// exact replay against poses recorded from the allocating tour.
-
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-  ATTRACT_HOLD_MS,
   ATTRACT_IDLE_MS,
   ATTRACT_MOVE_MS,
+  ATTRACT_RADIUS_M,
+  ATTRACT_HEIGHT_M,
+  ATTRACT_TARGET_HEIGHT_M,
+  ATTRACT_FOV_DEG,
+  ATTRACT_PERIOD_MS,
   createAttract,
 } from '../../src/camera/attract';
-import type { NamedView } from '../../src/camera/presets';
-import golden from '../fixtures/camera-pose-golden.json';
+import { copyPose } from '../../src/camera/blend';
+import type { AttractReading } from '../../src/camera/attract';
 
-const VIEWS: NamedView[] = [
-  { id: 'proof', label: 'Proof', position: [0, 1.7, 4.2], target: [0, 1, 0], fov: 40 },
-  { id: 'entrance', label: 'Entrance', position: [0, 2.2, 6.2], target: [0, 1, 0], fov: 52 },
-  { id: 'detail', label: 'Detail', position: [0, 1.4, 1.396], target: [0, 1.3, 0], fov: 35 },
-];
+const START_POSE: AttractReading['pose'] = { position: [0, 1.7, 4.2], target: [0, 1, 0] };
+
+function readStart(destination: AttractReading): void {
+  copyPose(START_POSE, destination.pose);
+  destination.fov = 40;
+}
 
 describe('attract loop state machine', () => {
   it('reports the remaining idle wait only while a tour can start', () => {
     let clock = 7_000;
     const options = {
-      views: VIEWS, idleMs: 6_000, holdMs: 4_000, moveMs: 3_000,
+      readStart, idleMs: 6_000, moveMs: 3_000,
       enabled: true, reducedMotion: false, now: () => clock,
     };
     const attract = createAttract(options);
@@ -48,21 +48,18 @@ describe('attract loop state machine', () => {
     clock += 7_000;
     attract.setReducedMotion(false);
     expect(attract.msUntilStart()).toBe(6_000);
-    expect(createAttract({ ...options, views: [] }).msUntilStart()).toBeNull();
   });
 
   it('exports expected timing constants', () => {
     expect(ATTRACT_IDLE_MS).toBe(60_000);
-    expect(ATTRACT_HOLD_MS).toBe(4_000);
     expect(ATTRACT_MOVE_MS).toBe(3_000);
   });
 
   it('stays idle before idleMs, then starts touring at idleMs', () => {
     let clock = 0;
     const attract = createAttract({
-      views: VIEWS,
+      readStart,
       idleMs: 10_000,
-      holdMs: 4_000,
       moveMs: 3_000,
       enabled: true,
       reducedMotion: false,
@@ -82,15 +79,14 @@ describe('attract loop state machine', () => {
     const reading = attract.tick();
     expect(attract.running).toBe(true);
     expect(reading).not.toBeNull();
-    expect(reading?.viewId).toBe('entrance');
+    expect(reading?.viewId).toBe('orbit');
   });
 
   it('anchors the idle wait at creation, not at the epoch', () => {
     let clock = 7_000;
     const attract = createAttract({
-      views: VIEWS,
+      readStart,
       idleMs: 5_000,
-      holdMs: 2_000,
       moveMs: 1_000,
       enabled: true,
       reducedMotion: false,
@@ -108,9 +104,8 @@ describe('attract loop state machine', () => {
     vi.useFakeTimers({ toFake: ['performance'] });
     try {
       const attract = createAttract({
-        views: VIEWS,
+        readStart,
         idleMs: ATTRACT_IDLE_MS,
-        holdMs: ATTRACT_HOLD_MS,
         moveMs: ATTRACT_MOVE_MS,
         enabled: true,
         reducedMotion: false,
@@ -128,9 +123,8 @@ describe('attract loop state machine', () => {
   it('stops immediately on input and restarts the idle wait', () => {
     let clock = 0;
     const attract = createAttract({
-      views: VIEWS,
+      readStart,
       idleMs: 5_000,
-      holdMs: 2_000,
       moveMs: 1_000,
       enabled: true,
       reducedMotion: false,
@@ -156,106 +150,11 @@ describe('attract loop state machine', () => {
     expect(attract.running).toBe(true);
   });
 
-  it('tours presets in order with exact move and hold phases', () => {
-    let clock = 0;
-    const attract = createAttract({
-      views: VIEWS,
-      idleMs: 1_000,
-      holdMs: 2_000,
-      moveMs: 1_000,
-      enabled: true,
-      reducedMotion: false,
-      now: () => clock,
-    });
-
-    // Start tour at 1,000 ms.
-    clock = 1_000;
-    const start = attract.tick();
-    expect(start?.viewId).toBe('entrance');
-
-    // Midway through move phase (1,500 ms).
-    clock = 1_500;
-    const moving = attract.tick();
-    expect(moving?.viewId).toBe('entrance');
-    // Position interpolated between proof [0, 1.7, 4.2] and entrance [0, 2.2, 6.2].
-    expect(moving?.pose.position[2]).toBeGreaterThan(4.2);
-    expect(moving?.pose.position[2]).toBeLessThan(6.2);
-
-    // Move completes at 2,000 ms -> lands on entrance.
-    clock = 2_000;
-    const landed = attract.tick();
-    expect(landed?.viewId).toBe('entrance');
-    expect(landed?.pose.position[2]).toBeCloseTo(6.2, 5);
-
-    // Hold phase (2,000 ms to 4,000 ms).
-    clock = 3_500;
-    expect(attract.tick()?.viewId).toBe('entrance');
-
-    // Next preset (detail) begins at 4,000 ms without a destination flash. The first frame stays
-    // on entrance, and the following frame begins the glide toward detail.
-    clock = 4_000;
-    const nextStart = attract.tick();
-    expect(nextStart?.viewId).toBe('detail');
-    expect(nextStart?.pose.position).toEqual(VIEWS[1].position);
-    expect(nextStart?.fov).toBe(52);
-
-    clock = 4_500;
-    const nextMoving = attract.tick();
-    expect(nextMoving?.pose.position[2]).toBeGreaterThan(VIEWS[2].position[2]);
-    expect(nextMoving?.pose.position[2]).toBeLessThan(VIEWS[1].position[2]);
-    expect(nextMoving?.fov).toBeGreaterThan(35);
-    expect(nextMoving?.fov).toBeLessThan(52);
-  });
-
-  it('tours the only view when the list has one entry', () => {
-    let clock = 0;
-    const attract = createAttract({
-      views: [VIEWS[0]],
-      idleMs: 1_000,
-      holdMs: 2_000,
-      moveMs: 1_000,
-      enabled: true,
-      reducedMotion: false,
-      now: () => clock,
-    });
-
-    clock = 1_000;
-    const launch = attract.tick();
-    expect(launch?.viewId).toBe('proof');
-    expect(attract.running).toBe(true);
-
-    // The glide to itself lands and holds; the wraparound stays on the only view.
-    clock = 2_000;
-    expect(attract.tick()?.pose.position[2]).toBeCloseTo(VIEWS[0].position[2], 5);
-    clock = 4_000;
-    const wrapped = attract.tick();
-    expect(wrapped?.viewId).toBe('proof');
-    expect(wrapped?.pose.position).toEqual(VIEWS[0].position);
-  });
-
-  it('never tours when the view list is empty', () => {
-    let clock = 0;
-    const attract = createAttract({
-      views: [],
-      idleMs: 1_000,
-      holdMs: 2_000,
-      moveMs: 1_000,
-      enabled: true,
-      reducedMotion: false,
-      now: () => clock,
-    });
-
-    clock = 50_000;
-    expect(attract.tick()).toBeNull();
-    expect(attract.running).toBe(false);
-  });
-
   it('never starts under reduced motion, including after explicit enable', () => {
     let clock = 0;
     const attract = createAttract({
-      views: VIEWS,
+      readStart,
       idleMs: 1_000,
-      holdMs: 2_000,
       moveMs: 3_000,
       enabled: true,
       reducedMotion: true,
@@ -275,7 +174,7 @@ describe('attract loop state machine', () => {
   it('stops on reduced motion and waits for fresh idle time when motion is allowed again', () => {
     let clock = 0;
     const attract = createAttract({
-      views: VIEWS, idleMs: 1_000, holdMs: 2_000, moveMs: 3_000,
+      readStart, idleMs: 1_000, moveMs: 3_000,
       enabled: true, reducedMotion: false, now: () => clock,
     });
     clock = 1_000;
@@ -296,7 +195,7 @@ describe('attract loop state machine', () => {
   it('keeps explicit disable and the idle clock independent of repeated preference values', () => {
     let clock = 0;
     const attract = createAttract({
-      views: VIEWS, idleMs: 1_000, holdMs: 2_000, moveMs: 3_000,
+      readStart, idleMs: 1_000, moveMs: 3_000,
       enabled: false, reducedMotion: true, now: () => clock,
     });
     attract.setReducedMotion(false);
@@ -312,9 +211,8 @@ describe('attract loop state machine', () => {
   it('does nothing when disabled', () => {
     let clock = 0;
     const attract = createAttract({
-      views: VIEWS,
+      readStart,
       idleMs: 1_000,
-      holdMs: 2_000,
       moveMs: 1_000,
       enabled: false,
       reducedMotion: false,
@@ -326,7 +224,7 @@ describe('attract loop state machine', () => {
     expect(attract.running).toBe(false);
 
     attract.setEnabled(true);
-    // Restart clock from enable.
+    // The existing idle deadline has already passed when enabled.
     clock = 51_000;
     expect(attract.tick()).not.toBeNull();
     expect(attract.running).toBe(true);
@@ -335,9 +233,8 @@ describe('attract loop state machine', () => {
   it('disabling mid-tour stops it and restarts the idle wait from that moment', () => {
     let clock = 0;
     const attract = createAttract({
-      views: VIEWS,
+      readStart,
       idleMs: 5_000,
-      holdMs: 2_000,
       moveMs: 1_000,
       enabled: true,
       reducedMotion: false,
@@ -371,9 +268,8 @@ describe('attract loop state machine', () => {
   it('a repeated disable leaves the idle wait where the first disable set it', () => {
     let clock = 0;
     const attract = createAttract({
-      views: VIEWS,
+      readStart,
       idleMs: 5_000,
-      holdMs: 2_000,
       moveMs: 1_000,
       enabled: true,
       reducedMotion: false,
@@ -400,9 +296,8 @@ describe('attract loop state machine', () => {
     // The tour owns its reading and rewrites it per tick: nothing on a tour frame may allocate.
     let clock = 0;
     const attract = createAttract({
-      views: VIEWS,
+      readStart,
       idleMs: 1_000,
-      holdMs: 2_000,
       moveMs: 1_000,
       enabled: true,
       reducedMotion: false,
@@ -426,44 +321,166 @@ describe('attract loop state machine', () => {
     expect(second?.pose.position).toBe(first?.pose.position);
     expect(second?.pose.target).toBe(first?.pose.target);
     // The reuse carries fresh values, not stale ones.
-    expect(third?.viewId).toBe('entrance');
-    expect(third?.pose.position[2]).toBeCloseTo(6.2, 5);
+    expect(third?.viewId).toBe('orbit');
+    expect(third?.pose.position[0]).toBeGreaterThan(0);
+  });
+});
+
+function orbitTour() {
+  let clock = 0;
+  const live: AttractReading = {
+    pose: { position: [3, 3, -4], target: [0.4, 0.7, -0.2] }, viewId: '', fov: 36,
+  };
+  const read = vi.fn((destination: AttractReading) => {
+    copyPose(live.pose, destination.pose);
+    destination.fov = live.fov;
+  });
+  const tour = createAttract({
+    readStart: read, idleMs: 1_000, moveMs: ATTRACT_MOVE_MS,
+    enabled: true, reducedMotion: false, now: () => clock,
+  });
+  function tick(elapsed: number): AttractReading {
+    clock = 1_000 + elapsed;
+    const reading = tour.tick();
+    expect(reading).not.toBeNull();
+    return reading!;
+  }
+  return { tour, live, read, tick };
+}
+
+function theta(reading: AttractReading): number {
+  return Math.atan2(reading.pose.position[0], reading.pose.position[2]);
+}
+
+function angleDifference(after: number, before: number): number {
+  return Math.atan2(Math.sin(after - before), Math.cos(after - before));
+}
+
+describe('continuous idle orbit', () => {
+  it('exports the approved orbit geometry and timing', () => {
+    expect(ATTRACT_RADIUS_M).toBe(5);
+    expect(ATTRACT_HEIGHT_M).toBe(2);
+    expect(ATTRACT_TARGET_HEIGHT_M).toBe(1.1);
+    expect(ATTRACT_FOV_DEG).toBe(50);
+    expect(ATTRACT_PERIOD_MS).toBe(60_000);
   });
 
-  it.each([
-    ['normal tour', 'normal' as const],
-    ['instant tour', 'reduced' as const],
-  ])('replays the recorded %s pose for pose', (_name, key) => {
-    const recorded = golden.attract[key];
-    // The fixture must describe this test's views, or the replay would compare against a
-    // tour of some other scene.
-    expect(recorded.views).toEqual(VIEWS);
+  it('stays on the five metre circle at two metres high through repeated turns', () => {
+    const { tick } = orbitTour();
+    tick(0);
+    for (let elapsed = 3_000; elapsed <= 183_000; elapsed += 713) {
+      const { pose } = tick(elapsed);
+      expect(Math.abs(Math.hypot(pose.position[0], pose.position[2]) - 5)).toBeLessThan(0.001);
+      expect(Math.abs(pose.position[1] - 2)).toBeLessThan(0.001);
+    }
+  });
 
-    let clock = 0;
-    const attract = createAttract({
-      views: VIEWS,
-      idleMs: 1_000,
-      holdMs: 2_000,
-      moveMs: key === 'reduced' ? 0 : 3_000,
-      enabled: true,
-      reducedMotion: false,
-      now: () => clock,
-    });
+  it('increases azimuth at one full turn per minute regardless of tick spacing', () => {
+    const { tick } = orbitTour();
+    tick(0);
+    let previous = theta(tick(3_000));
+    let total = 0;
+    let previousElapsed = 3_000;
+    for (const elapsed of [3_017, 4_100, 11_003, 23_000, 41_000, 59_123, 63_000]) {
+      const current = theta(tick(elapsed));
+      const advanced = angleDifference(current, previous);
+      expect(advanced).toBeCloseTo(2 * Math.PI * (elapsed - previousElapsed) / 60_000, 10);
+      total += advanced;
+      previous = current;
+      previousElapsed = elapsed;
+    }
+    expect(total).toBeCloseTo(2 * Math.PI, 10);
+  });
 
-    recorded.schedule.forEach((moment, index) => {
-      clock = moment;
-      const reading = attract.tick();
-      const expected = recorded.ticks[index]?.reading;
-      expect(expected).toBeDefined();
-      if (expected === null) {
-        expect(reading).toBeNull();
-        return;
-      }
-      expect(reading).not.toBeNull();
-      expect(reading?.viewId).toBe(expected.viewId);
-      expect(reading?.fov).toBe(expected.fov);
-      expect(reading?.pose.position).toEqual(expected.pose.position);
-      expect(reading?.pose.target).toEqual(expected.pose.target);
-    });
+  it('samples the current pose at each start without a first tick jump', () => {
+    const { tick, tour, live, read } = orbitTour();
+    expect(tour.tick()).toBeNull();
+    expect(read).not.toHaveBeenCalled();
+    live.pose.position = [-4, 2.4, -3];
+    expect(tick(0).pose).toEqual(live.pose);
+    expect(tick(0).fov).toBe(36);
+    expect(read).toHaveBeenCalledOnce();
+    const initialTheta = Math.atan2(-4, -3);
+    expect(Math.abs(angleDifference(theta(tick(1)), initialTheta))).toBeLessThan(1e-9);
+    tour.noteInput();
+    live.pose.position = [2, 1.8, 3];
+    live.pose.target = [-0.3, 1.2, 0.6];
+    live.fov = 47;
+    expect(tick(1_001).pose).toEqual(live.pose);
+    expect(tick(1_001).fov).toBe(47);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
+  it('ramps angular speed from zero to cruising speed continuously during the glide', () => {
+    const { tick } = orbitTour();
+    const startTheta = theta(tick(0));
+    const speed = 2 * Math.PI / 60_000;
+    const firstStep = angleDifference(theta(tick(1)), startTheta);
+    expect(firstStep).toBeGreaterThan(0);
+    expect(firstStep).toBeLessThan(speed * 1e-5);
+    let previousSpeed = firstStep;
+    for (const elapsed of [300, 750, 1_500, 2_250, 3_000]) {
+      const before = theta(tick(elapsed - 1));
+      const after = theta(tick(elapsed));
+      const currentSpeed = angleDifference(after, before);
+      expect(currentSpeed).toBeGreaterThan(previousSpeed);
+      expect(currentSpeed).toBeLessThanOrEqual(speed);
+      previousSpeed = currentSpeed;
+    }
+    const before = theta(tick(2_999));
+    const end = theta(tick(3_000));
+    const after = theta(tick(3_001));
+    expect(angleDifference(end, before) / speed).toBeCloseTo(1, 5);
+    expect(angleDifference(after, end) / speed).toBeCloseTo(1, 10);
+  });
+
+  it('eases radius height aim and fov to the specified arrival over three seconds', () => {
+    const { tick, live } = orbitTour();
+    live.pose.position = [0, 4, 7];
+    tick(0);
+    for (const elapsed of [750, 1_500, 2_250, 3_000]) {
+      const t = elapsed / 3_000;
+      const eased = t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
+      const reading = tick(elapsed);
+      expect(Math.hypot(reading.pose.position[0], reading.pose.position[2]))
+        .toBeCloseTo(7 + (5 - 7) * eased, 10);
+      expect(reading.pose.position[1]).toBeCloseTo(4 + (2 - 4) * eased, 10);
+      expect(reading.pose.target[0]).toBeCloseTo(0.4 * (1 - eased), 10);
+      expect(reading.pose.target[1]).toBeCloseTo(0.7 + (1.1 - 0.7) * eased, 10);
+      expect(reading.pose.target[2]).toBeCloseTo(-0.2 * (1 - eased), 10);
+      expect(reading.fov).toBeCloseTo(36 + (50 - 36) * eased, 10);
+    }
+    expect(tick(4_000).pose.target).toEqual([0, 1.1, -0]);
+    expect(tick(4_000).fov).toBe(50);
+  });
+
+  it('stops on input during both glide and continuous orbit without changing the stopped reading', () => {
+    for (const elapsed of [1_500, 5_000]) {
+      const { tick, tour } = orbitTour();
+      tick(0);
+      const reading = tick(elapsed);
+      const stopped = structuredClone(reading);
+      tour.noteInput();
+      expect(tour.running).toBe(false);
+      expect(tour.tick()).toBeNull();
+      expect(reading).toEqual(stopped);
+      expect(tour.msUntilStart()).toBe(1_000);
+    }
+  });
+
+  it('reuses the reading and pose storage while reading the live camera only at launch', () => {
+    const { tick, read } = orbitTour();
+    const first = tick(0);
+    const pose = first.pose;
+    const position = pose.position;
+    const target = pose.target;
+    for (const elapsed of [500, 3_000, 9_000, 70_000]) {
+      const reading = tick(elapsed);
+      expect(reading).toBe(first);
+      expect(reading.pose).toBe(pose);
+      expect(reading.pose.position).toBe(position);
+      expect(reading.pose.target).toBe(target);
+    }
+    expect(read).toHaveBeenCalledOnce();
   });
 });

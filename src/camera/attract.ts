@@ -1,21 +1,29 @@
-// The attract loop.
-// Tours the catalogue presets in order after ATTRACT_IDLE_MS (60 s) of user inactivity.
-// Each preset is reached via an eased glide over ATTRACT_MOVE_MS (3 s) and held for
-// ATTRACT_HOLD_MS (4 s). Any user input stops the tour immediately and restarts the idle clock.
+// The attract loop glides from the live camera onto one continuous orbit after user inactivity.
+// Any user input stops the tour immediately and restarts the idle clock.
 // Reduced motion prevents the tour and stops it immediately. Disabled by default on touch.
 
-import { blendPoseInto, copyPose } from './blend';
+import { copyPose } from './blend';
 import type { Pose } from './blend';
-import type { NamedView } from './presets';
 
+// Wait a minute so the idle tour does not interrupt inspection.
 export const ATTRACT_IDLE_MS = 60_000;
-export const ATTRACT_HOLD_MS = 4_000;
+// Ease onto the circle over three seconds to avoid a sudden camera change.
 export const ATTRACT_MOVE_MS = 3_000;
+// A 5 m radius sits inside the measured clear annulus, 1.5 m to 7.1 m from the plinth axis.
+export const ATTRACT_RADIUS_M = 5.0;
+// A 2 m camera clears the 0.15 m plinth and frames the 1.55 m to 1.94 m looks.
+export const ATTRACT_HEIGHT_M = 2.0;
+// Aim at 1.1 m to centre the looks above the 0.15 m plinth.
+export const ATTRACT_TARGET_HEIGHT_M = 1.1;
+// A 50 degree vertical view leaves room around the tallest 1.94 m look at 5 m.
+export const ATTRACT_FOV_DEG = 50;
+// One minute per revolution gives every side of the look a slow inspection.
+export const ATTRACT_PERIOD_MS = 60_000;
 
 export interface AttractOptions {
-  views: readonly NamedView[];
+  /** Writes the live pose and FOV once at each idle start; the destination is owned here. */
+  readStart: (destination: AttractReading) => void;
   idleMs: number;
-  holdMs: number;
   moveMs: number;
   enabled: boolean; // false by default on touch; ?attract=1|0 overrides
   reducedMotion: boolean; // prevents the tour independently of its enabled setting
@@ -46,15 +54,13 @@ export interface AttractHandle {
   tick(): AttractReading | null;
 }
 
-type TourPhase = 'move' | 'hold';
-
 function easeProgress(elapsedMs: number, durationMs: number): number {
   const t = durationMs > 0 ? Math.min(1, Math.max(0, elapsedMs / durationMs)) : 1;
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
 export function createAttract(options: AttractOptions): AttractHandle {
-  const { views, idleMs, holdMs, moveMs } = options;
+  const { idleMs, moveMs } = options;
   const now = options.now ?? ((): number => performance.now());
 
   let isEnabled = options.enabled;
@@ -62,26 +68,22 @@ export function createAttract(options: AttractOptions): AttractHandle {
   let isRunning = false;
   let lastInputTime = now();
 
-  let phase: TourPhase = 'move';
-  let phaseStartTime = 0;
-  let sourceIndex = 0;
-  let targetIndex = 0;
+  let startTime = 0;
+  let startTheta = 0;
+  let startRadius = 0;
+  const angularSpeed = 2 * Math.PI / ATTRACT_PERIOD_MS;
 
   // The tick reading and its pose are owned here and written in place: a tour frame must not
-  // allocate a pose, a result object or an array. The tour leg reads the view presets directly
-  // as blend endpoints; a NamedView carries exactly the position and target a Pose needs.
+  // allocate a pose, a result object or an array.
   const reading: AttractReading = {
     pose: { position: [0, 0, 0], target: [0, 0, 0] },
-    viewId: '',
+    viewId: 'orbit',
     fov: 0,
   };
 
-  function report(pose: Pose, viewId: string, fov: number): AttractReading {
-    copyPose(pose, reading.pose);
-    reading.viewId = viewId;
-    reading.fov = fov;
-    return reading;
-  }
+  const start: AttractReading = {
+    pose: { position: [0, 0, 0], target: [0, 0, 0] }, viewId: 'orbit', fov: 0,
+  };
 
   function stop(): void {
     isRunning = false;
@@ -122,12 +124,12 @@ export function createAttract(options: AttractOptions): AttractHandle {
     },
 
     msUntilStart(): number | null {
-      if (!isEnabled || isReducedMotion || views.length === 0 || isRunning) return null;
+      if (!isEnabled || isReducedMotion || isRunning) return null;
       return Math.max(0, idleMs - (now() - lastInputTime));
     },
 
     tick(): AttractReading | null {
-      if (!isEnabled || isReducedMotion || views.length === 0) {
+      if (!isEnabled || isReducedMotion) {
         return null;
       }
 
@@ -135,54 +137,40 @@ export function createAttract(options: AttractOptions): AttractHandle {
 
       if (!isRunning) {
         if (currentTime - lastInputTime >= idleMs) {
-          // Idle timeout reached: launch the tour.
+          options.readStart(start);
           isRunning = true;
-          sourceIndex = 0;
-          targetIndex = views.length > 1 ? 1 : 0;
-          phaseStartTime = currentTime;
-          phase = moveMs === 0 ? 'hold' : 'move';
+          startTime = currentTime;
+          startTheta = Math.atan2(start.pose.position[0], start.pose.position[2]);
+          startRadius = Math.hypot(start.pose.position[0], start.pose.position[2]);
         } else {
           return null;
         }
       }
 
-      const targetView = views[targetIndex];
-      const sourceView = views[sourceIndex];
-
-      if (phase === 'move') {
-        const elapsed = currentTime - phaseStartTime;
-        if (elapsed >= moveMs) {
-          phase = 'hold';
-          phaseStartTime = currentTime;
-          return report(targetView, targetView.id, targetView.fov);
-        }
-        const t = moveMs > 0 ? elapsed / moveMs : 1;
-        blendPoseInto(sourceView, targetView, t, reading.pose);
-        reading.viewId = targetView.id;
-        reading.fov =
-          sourceView.fov + (targetView.fov - sourceView.fov) * easeProgress(elapsed, moveMs);
+      const elapsed = Math.max(0, currentTime - startTime);
+      if (elapsed === 0 && moveMs > 0) {
+        copyPose(start.pose, reading.pose);
+        reading.fov = start.fov;
         return reading;
       }
 
-      // 'hold' phase
-      const elapsed = currentTime - phaseStartTime;
-      if (elapsed >= holdMs) {
-        // Advance to next preset view.
-        sourceIndex = targetIndex;
-        targetIndex = (targetIndex + 1) % views.length;
-        phaseStartTime = currentTime;
-        phase = moveMs === 0 ? 'hold' : 'move';
-        const nextView = views[targetIndex];
-        const heldView = views[sourceIndex];
-        if (moveMs === 0) {
-          return report(nextView, nextView.id, nextView.fov);
-        }
-        // Start the next glide from the view just held. Returning the destination here flashes it
-        // for one frame, then the following frame jumps backwards to the beginning of the glide.
-        return report(heldView, nextView.id, heldView.fov);
-      }
-
-      return report(targetView, targetView.id, targetView.fov);
+      const t = moveMs > 0 ? Math.min(1, elapsed / moveMs) : 1;
+      const eased = easeProgress(elapsed, moveMs);
+      // Integrate smoothstep velocity (3t^2 - 2t^3): zero speed at launch, full speed at arrival.
+      // The integral reaches half the glide duration; continue from there without a speed jump.
+      const angularTime = elapsed < moveMs
+        ? moveMs * (t * t * t - t * t * t * t / 2)
+        : elapsed - moveMs / 2;
+      const theta = startTheta + angularSpeed * angularTime;
+      const radius = startRadius + (ATTRACT_RADIUS_M - startRadius) * eased;
+      reading.pose.position[0] = radius * Math.sin(theta);
+      reading.pose.position[1] = start.pose.position[1] + (ATTRACT_HEIGHT_M - start.pose.position[1]) * eased;
+      reading.pose.position[2] = radius * Math.cos(theta);
+      reading.pose.target[0] = start.pose.target[0] * (1 - eased);
+      reading.pose.target[1] = start.pose.target[1] + (ATTRACT_TARGET_HEIGHT_M - start.pose.target[1]) * eased;
+      reading.pose.target[2] = start.pose.target[2] * (1 - eased);
+      reading.fov = start.fov + (ATTRACT_FOV_DEG - start.fov) * eased;
+      return reading;
     },
   };
 }

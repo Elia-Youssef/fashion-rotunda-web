@@ -8,7 +8,7 @@ import type { PerspectiveCamera } from 'three/webgpu';
 import type { CatalogView } from '../catalog/catalog';
 import { afterFirstFrame } from '../proof/marks';
 import { onReducedMotionChange, prefersReducedMotion } from '../ui/announce';
-import { ATTRACT_HOLD_MS, ATTRACT_IDLE_MS, ATTRACT_MOVE_MS, createAttract } from './attract';
+import { ATTRACT_IDLE_MS, ATTRACT_MOVE_MS, createAttract } from './attract';
 import type { AttractHandle } from './attract';
 import { BLEND_MS, blendPoseInto, copyPose } from './blend';
 import type { Pose } from './blend';
@@ -277,9 +277,18 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
   const attractIdleMs = attractIdleMsFromSearch(search);
 
   const attract = createAttract({
-    views: presets.list,
+    readStart: (destination) => {
+      // The target getter copies once per idle start; running tour frames read no orbit arrays.
+      const target = orbit.target;
+      destination.pose.position[0] = camera.position.x;
+      destination.pose.position[1] = camera.position.y;
+      destination.pose.position[2] = camera.position.z;
+      destination.pose.target[0] = target[0];
+      destination.pose.target[1] = target[1];
+      destination.pose.target[2] = target[2];
+      destination.fov = orbit.fov;
+    },
     idleMs: attractIdleMs,
-    holdMs: ATTRACT_HOLD_MS,
     moveMs: ATTRACT_MOVE_MS,
     enabled: attractEnabled,
     reducedMotion: prefersReducedMotion(),
@@ -290,11 +299,9 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     },
   });
 
-  // The pose and fov the tour last placed: a hold re-reports the same reading on every tick,
-  // and re-placing it would run the orbit apply path for an unchanged camera. The cache only
-  // describes camera state while the tour is driving, so it is voided on input and on every
-  // tick that finds the tour not driving; otherwise a restart on the same view would trust a
-  // placement the visitor has since overwritten.
+  // The pose and fov the tour last placed: repeated ticks at the same time need no placement.
+  // The cache describes camera state while the tour is driving, so input and ticks without tour
+  // ownership void it; otherwise a restart would trust a placement the visitor has since overwritten.
   const lastAttractPose: Pose = { position: [0, 0, 0], target: [0, 0, 0] };
   let lastAttractFov = 0;
   let attractPoseApplied = false;
@@ -615,8 +622,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
         const tickResult = attract.tick();
         if (tickResult !== null) {
           canvas.dataset['attract'] = '1';
-          // Apply only what moved since the last placement, and keep holding either way so the
-          // hold still ends on time and any other animation keeps its frames.
+          // Apply only what moved since the last placement and keep the tour's frames running.
           const pose = tickResult.pose;
           if (
             !attractPoseApplied ||

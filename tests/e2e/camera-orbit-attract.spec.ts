@@ -15,24 +15,20 @@ const YAW_POLL_TIMEOUT_MS = 5_000;
 // it replaced.
 const WAKE_WINDOW_EXPIRY_TIMEOUT_MS = 12_000;
 
-/**
- * The camera travel the attract test demands before it accepts the tour as running. The tour's
- * first leg glides the proof view [0, 1.7, 4.2] to the entrance view [0, 2.2, 6.2], the
- * catalogue's second preset: 2.06 m of straight camera travel over ATTRACT_MOVE_MS (3 s),
- * eased in and out. 0.25 m is 12 percent of that leg, which the ease reaches about 940 ms into
- * the move, so the figure proves real placement work early in the leg while standing far above
- * the orbit's spherical round-trip noise, on the order of 1e-15 m.
- */
+// The sleeping-loop check requires 0.25 m of travel, below the 0.8 m change in radius and
+// well above floating point pose noise.
 const TOUR_MIN_MOVED_M = 0.25;
-
-/** Covers the 500 ms idle start, the eased 940 ms to the minimum travel, and slow-machine slack. */
+// Covers the three second arrival glide plus slow-machine slack.
 const TOUR_MOVE_TIMEOUT_MS = 15_000;
-
-// The short cancellation case uses 500 ms to keep its input checks quick; the separate sleeping-loop
-// case waits 6 s, past the 4 s input wake window. The idle tour arms after the configured delay and
-// publishes data-attract from a rendered frame's update (src/camera/mount.ts), so the wait covers
-// the idle delay plus that first publishing frame; 5 s leaves the rest to slow machines.
-const ATTRACT_START_TIMEOUT_MS = 5_000;
+// Leave enough idle time to observe the stopped camera before a new tour can start.
+const TOUR_IDLE_MS = 6_000;
+// The idle delay plus time for a rendered update to publish the running state.
+const ATTRACT_START_TIMEOUT_MS = TOUR_IDLE_MS + 5_000;
+// Three seconds proves continuing motion; one second proves rest within the next idle wait.
+const TOUR_OBSERVE_MS = 3_000;
+const TOUR_STOP_OBSERVE_MS = 1_000;
+// The arrival contract allows one millimetre of radius and height error.
+const TOUR_POSITION_TOLERANCE_M = 0.001;
 
 // Only delivery of a latched event observation is polled, never the transient stopped-tour state.
 const ATTRACT_INPUT_TIMEOUT_MS = 5_000;
@@ -177,45 +173,46 @@ test('the idle tour wakes the sleeping loop after the input wake window', async 
   }).toBeGreaterThanOrEqual(TOUR_MIN_MOVED_M);
 });
 
-test('attract loop tours presets when idle and cancels on input', async ({ page }) => {
-  await page.goto(backendPath('/?e2e=1&attract=1&attractIdle=500'));
+test('attract loop circles the look when idle and cancels on input', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto(backendPath(`/?e2e=1&attract=1&attractIdle=${TOUR_IDLE_MS}`));
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });
-  // Scene-ready can publish during the native High benchmark; wait for the camera mount itself.
   await page.waitForFunction(() => window.archvizCamera !== undefined, null, {
     timeout: SCENE_READY_TIMEOUT,
   });
-
-  // The pose at rest, before the tour has started. The camera mounts on the proof view and
-  // nothing else moves it, and the tour starts ATTRACT_IDLE_MS (500 ms here) after the camera
-  // mounts, so the read at the mount itself precedes the first placement. A read at scene-ready
-  // can land during the benchmark instead, before the camera exists: the [0, 0, 0] fallback then
-  // sits about 4.5 m from the proof view, and the movement poll below would pass at once without
-  // the tour ever moving the camera. This opening stays hand-rolled for the same reason:
-  // openShowroom's chrome waits could push the read past the idle window it must precede.
-  const restPose = await page.evaluate((): [number, number, number] => {
-    const pos = window.archvizCamera?.orbit.position ?? [0, 0, 0];
-    return [pos[0], pos[1], pos[2]];
-  });
-
   await expect(canvas).toHaveAttribute('data-attract', '1', { timeout: ATTRACT_START_TIMEOUT_MS });
+  await expect.poll(async () => {
+    const pos = await page.evaluate(() => window.archvizCamera!.orbit.position);
+    return Math.max(Math.abs(Math.hypot(pos[0], pos[2]) - 5), Math.abs(pos[1] - 2));
+  }, {
+    message: 'the tour converges to a five metre radius at two metres high',
+    timeout: TOUR_MOVE_TIMEOUT_MS,
+    intervals: [250],
+  }).toBeLessThan(TOUR_POSITION_TOLERANCE_M);
 
-  // The tour must actually move the camera, not only publish its state: a tour that never
-  // placed a pose still turned data-attract on. Poll the published orbit pose until it has
-  // travelled TOUR_MIN_MOVED_M from the rest pose (see the constant for the figure's origin).
-  await expect
-    .poll(async () => {
-      const pos = await page.evaluate((): [number, number, number] => {
-        const position = window.archvizCamera?.orbit.position ?? [0, 0, 0];
-        return [position[0], position[1], position[2]];
-      });
-      return Math.hypot(pos[0] - restPose[0], pos[1] - restPose[1], pos[2] - restPose[2]);
-    }, {
-      message: 'the attract tour never moved the camera',
-      timeout: TOUR_MOVE_TIMEOUT_MS,
-      intervals: [250],
-    })
-    .toBeGreaterThanOrEqual(TOUR_MIN_MOVED_M);
+  const travel = await page.evaluate(async ({ duration }) => {
+    const start = performance.now();
+    const initial = window.archvizCamera!.orbit.position;
+    let previous = Math.atan2(initial[0], initial[2]);
+    let advanced = 0;
+    let minimumStep = 0;
+    let maximumError = 0;
+    do {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const pos = window.archvizCamera!.orbit.position;
+      const theta = Math.atan2(pos[0], pos[2]);
+      const step = Math.atan2(Math.sin(theta - previous), Math.cos(theta - previous));
+      minimumStep = Math.min(minimumStep, step);
+      advanced += step;
+      previous = theta;
+      maximumError = Math.max(maximumError, Math.abs(Math.hypot(pos[0], pos[2]) - 5), Math.abs(pos[1] - 2));
+    } while (performance.now() - start < duration);
+    return { advanced, minimumStep, maximumError };
+  }, { duration: TOUR_OBSERVE_MS });
+  expect(travel.advanced, 'azimuth keeps increasing over three seconds').toBeGreaterThan(0.25);
+  expect(travel.minimumStep, 'azimuth never reverses').toBeGreaterThanOrEqual(-1e-10);
+  expect(travel.maximumError).toBeLessThan(TOUR_POSITION_TOLERANCE_M);
 
   // This listener is registered after mount.ts's bubbling window input listener. Latch the
   // real state in the trusted event task, before any later frame can restart the idle tour.
@@ -248,4 +245,19 @@ test('attract loop tours presets when idle and cancels on input', async ({ page 
       timeout: ATTRACT_INPUT_TIMEOUT_MS,
     })
     .toBe(false);
+  await expect(canvas).toHaveAttribute('data-attract', '0', { timeout: ATTRACT_INPUT_TIMEOUT_MS });
+  const drift = await page.evaluate(async ({ duration }) => {
+    const start = performance.now();
+    const stopped = window.archvizCamera!.orbit.position;
+    let maximum = 0;
+    do {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const position = window.archvizCamera!.orbit.position;
+      maximum = Math.max(maximum, Math.hypot(
+        position[0] - stopped[0], position[1] - stopped[1], position[2] - stopped[2],
+      ));
+    } while (performance.now() - start < duration);
+    return maximum;
+  }, { duration: TOUR_STOP_OBSERVE_MS });
+  expect(drift, 'the camera stays where pointer input stopped the tour').toBeLessThan(1e-10);
 });
