@@ -169,6 +169,31 @@ describe('mountLightPanel', () => {
     expect(studioReadout('key', 'color')).toBe('#00ff88');
   });
 
+  it('emits the touched light from every row, leaving the other lights untouched', () => {
+    const onChange = vi.fn();
+    mount(DEFAULT_RIG, onChange);
+
+    const fillSwitch = studioControl('fill', 'on');
+    fillSwitch.checked = true;
+    fillSwitch.dispatchEvent(new Event('change', { bubbles: true }));
+    let emittedRig = onChange.mock.calls[0][0] as Rig;
+    expect(emittedRig.lights.find((l) => l.id === 'fill')?.on).toBe(true);
+
+    const backIntensity = studioControl('back', 'intensity');
+    backIntensity.value = '12.5';
+    backIntensity.dispatchEvent(new Event('input', { bubbles: true }));
+    emittedRig = onChange.mock.calls[1][0] as Rig;
+    expect(emittedRig.lights.find((l) => l.id === 'back')?.intensity).toBe(12.5);
+    expect(emittedRig.lights.find((l) => l.id === 'key')?.intensity).toBe(15);
+
+    const fillColor = studioControl('fill', 'color');
+    fillColor.value = '#abcdef';
+    fillColor.dispatchEvent(new Event('input', { bubbles: true }));
+    emittedRig = onChange.mock.calls[2][0] as Rig;
+    expect(emittedRig.lights.find((l) => l.id === 'fill')?.color).toBe('#abcdef');
+    expect(emittedRig.lights.find((l) => l.id === 'key')?.color).toBe('#ffffff');
+  });
+
   it('dragging daylight range fires onChange and updates readout', () => {
     const onChange = vi.fn();
     mount(DEFAULT_RIG, onChange);
@@ -237,6 +262,24 @@ describe('mountLightPanel', () => {
 
     range.value = '10';
     range.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('dispose silences the switch, color and daylight listeners as well', () => {
+    const onChange = vi.fn();
+    const handle = mount(DEFAULT_RIG, onChange);
+    const on = studioControl('key', 'on');
+    const color = studioControl('key', 'color');
+    const daylight = daylightControl();
+
+    handle.dispose();
+
+    on.checked = false;
+    on.dispatchEvent(new Event('change', { bubbles: true }));
+    color.value = '#123456';
+    color.dispatchEvent(new Event('input', { bubbles: true }));
+    daylight.value = '0.2';
+    daylight.dispatchEvent(new Event('input', { bubbles: true }));
     expect(onChange).not.toHaveBeenCalled();
   });
 
@@ -330,6 +373,22 @@ describe('mountLightPanel', () => {
     expect(studioReadout('fill', 'intensity')).toBe('20.0 cd');
     expect(studioReadout('back', 'intensity')).toBe('7.0 cd');
     expect(studioControl('back', 'on').checked).toBe(false);
+    expect(daylightReadout()).toBe('Dawn');
+  });
+
+  it('setRig still updates the rows after an earlier light is missing', () => {
+    const handle = mount();
+    handle.setRig({
+      lights: [
+        { ...DEFAULT_RIG.lights[1], intensity: 40 },
+        { ...DEFAULT_RIG.lights[2], intensity: 10 },
+      ],
+      daylight: 0.2,
+      exposure: 1,
+    });
+    expect(studioReadout('key', 'intensity')).toBe('15.0 cd');
+    expect(studioReadout('fill', 'intensity')).toBe('40.0 cd');
+    expect(studioReadout('back', 'intensity')).toBe('10.0 cd');
     expect(daylightReadout()).toBe('Dawn');
   });
 
