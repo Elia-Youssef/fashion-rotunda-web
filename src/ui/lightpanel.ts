@@ -77,6 +77,7 @@ function layoutText(text: string, layout: 'sheet' | 'bar'): HTMLSpanElement {
 }
 
 function addStudioRow(panel: HTMLElement, entry: RigLight, idPrefix: string): StudioRowControls {
+  // Structure only: render() in mountLightPanel writes the control values.
   const row = element('fieldset', 'lightpanel__row');
   row.dataset['light'] = entry.id;
 
@@ -95,7 +96,6 @@ function addStudioRow(panel: HTMLElement, entry: RigLight, idPrefix: string): St
   const on = element('input', 'lightpanel__switch');
   on.type = 'checkbox';
   on.id = onId;
-  on.checked = entry.on;
   on.dataset['tooltip'] = `Toggle ${entry.label} on or off`;
   onGroup.append(onLabel, on);
 
@@ -111,12 +111,10 @@ function addStudioRow(panel: HTMLElement, entry: RigLight, idPrefix: string): St
   intensity.min = String(CANDELA_RANGE[0]);
   intensity.max = String(CANDELA_RANGE[1]);
   intensity.step = '0.5';
-  intensity.value = String(entry.intensity);
   intensity.dataset['tooltip'] = `Adjust ${entry.label} intensity in candela`;
 
   const intensityValue = element('output', 'lightpanel__value lightpanel__value--intensity');
   intensityValue.setAttribute('for', intensityId);
-  intensityValue.textContent = formatCandela(entry.intensity);
   intensityGroup.append(intensityLabel, intensity, intensityValue);
 
   // 3. Labelled Native Colour Input with Normalized #RRGGBB Readout
@@ -128,12 +126,10 @@ function addStudioRow(panel: HTMLElement, entry: RigLight, idPrefix: string): St
   const color = element('input', 'lightpanel__color');
   color.type = 'color';
   color.id = colorId;
-  color.value = entry.color;
   color.dataset['tooltip'] = `Choose ${entry.label} color`;
 
   const colorValue = element('output', 'lightpanel__value lightpanel__value--color');
   colorValue.setAttribute('for', colorId);
-  colorValue.textContent = entry.color;
   colorGroup.append(colorLabel, color, colorValue);
 
   row.append(onGroup, intensityGroup, colorGroup);
@@ -150,7 +146,8 @@ function addStudioRow(panel: HTMLElement, entry: RigLight, idPrefix: string): St
   };
 }
 
-function addDaylightRow(panel: HTMLElement, daylight: number, idPrefix: string): DaylightControls {
+function addDaylightRow(panel: HTMLElement, idPrefix: string): DaylightControls {
+  // Structure only: render() in mountLightPanel writes the control values.
   const row = element('fieldset', 'lightpanel__row lightpanel__row--daylight');
   row.dataset['light'] = 'daylight';
 
@@ -174,7 +171,6 @@ function addDaylightRow(panel: HTMLElement, daylight: number, idPrefix: string):
   range.min = String(DAYLIGHT_RANGE[0]);
   range.max = String(DAYLIGHT_RANGE[1]);
   range.step = String(DAYLIGHT_STEP);
-  range.value = String(daylight);
   range.setAttribute('list', listId);
   range.dataset['tooltip'] = 'Continuous daylight atmosphere: Dawn to Day to Noon';
 
@@ -207,7 +203,6 @@ function addDaylightRow(panel: HTMLElement, daylight: number, idPrefix: string):
 
   const value = element('output', 'lightpanel__value lightpanel__value--daylight');
   value.setAttribute('for', rangeId);
-  value.textContent = formatDaylightPhase(daylight);
 
   group.append(label, trackWrap, value);
   row.appendChild(group);
@@ -229,7 +224,7 @@ export function mountLightPanel(root: HTMLElement, options: LightPanelOptions): 
   const studioRows = current.lights.map((entry) => addStudioRow(panel, entry, idPrefix));
 
   // Render 1 Daylight / Atmosphere Row
-  const daylightControls = addDaylightRow(panel, current.daylight, idPrefix);
+  const daylightControls = addDaylightRow(panel, idPrefix);
 
   root.appendChild(panel);
 
