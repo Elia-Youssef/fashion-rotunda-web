@@ -43,7 +43,7 @@ export function mountLobby(options: {
         </div>
         <div class="entry-lobby__loading-pane" hidden>
           <progress class="entry-lobby__progress-bar" max="1" value="0"></progress>
-          <p class="entry-lobby__status" aria-live="polite">Loading your experience</p>
+          <p class="entry-lobby__status" aria-live="polite">Opening the rotunda</p>
           <p class="entry-lobby__progress-readout">0.0 MB of 0.0 MB</p>
           <div class="entry-lobby__fact-container">
             <span class="entry-lobby__fact-heading">${APPROVED_FACTS[0].heading}</span>
@@ -52,6 +52,7 @@ export function mountLobby(options: {
         </div>
         <div class="entry-lobby__error-pane" hidden>
           <p class="entry-lobby__error-message"></p>
+          <p class="entry-lobby__error-hint" hidden></p>
           <button type="button" class="entry-lobby__retry-btn" id="lobby-retry-btn">RETRY LOADING</button>
         </div>
       </div>

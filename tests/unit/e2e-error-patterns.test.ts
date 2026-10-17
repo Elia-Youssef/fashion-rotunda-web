@@ -33,7 +33,7 @@ const declarations = [
     message: 'THREE.THREE.WebGPURenderer: WebGL Device Lost:\n\nMessage: Unknown reason',
     unrelated: 'THREE.WebGPURenderer: WebGL Device Lost:' },
   { name: 'reveal device loss', pattern: loss[1]!,
-    message: '[archviz] transition error The graphics device was lost. Reload to restore the showroom.',
+    message: "[archviz] transition error Your device's graphics restarted. Reload to continue where you left off.",
     unrelated: '[archviz] transition error Renderer initialization failed. Please retry.' },
   { name: 'injected reveal failure', pattern: reveal[0]!,
     message: '[archviz] transition error Injected transition failure',

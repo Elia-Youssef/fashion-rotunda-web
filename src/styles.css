@@ -590,7 +590,8 @@ footer .proof-panel__measure {
 }
 
 /* Loss notice: the GPU died mid-session, the only recovery is a reload, so the overlay covers
-   the frozen canvas and says exactly that. */
+   the frozen canvas and says exactly that in plain words; the technical reason waits behind a
+   closed Details toggle under the button. */
 
 .loss-notice {
   position: fixed;
@@ -610,9 +611,26 @@ footer .proof-panel__measure {
   font-weight: 600;
 }
 
+.loss-notice__text {
+  max-width: 40ch;
+  margin: 0;
+}
+
+.loss-notice__details {
+  justify-self: center;
+  max-width: 40ch;
+  margin-top: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--type-sm);
+}
+
+.loss-notice__details summary {
+  cursor: pointer;
+}
+
 .loss-notice__reason,
 .loss-notice__message {
-  margin: 0;
+  margin: var(--space-1) 0 0;
   color: var(--text-muted);
 }
 

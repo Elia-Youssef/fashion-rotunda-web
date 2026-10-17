@@ -451,6 +451,16 @@
   line-height: 1.5;
   color: var(--brand-text-secondary);
   margin: 0 0 var(--space-3) 0;
+  /* A line break in a message starts a new line, so a cause and its step can read as two lines. */
+  white-space: pre-line;
+}
+
+/* The unsupported surface's optional fix, a smaller line under the message in the same colour. */
+.entry-lobby__error-hint {
+  font-size: var(--type-desc-xs);
+  line-height: 1.5;
+  color: var(--brand-text-secondary);
+  margin: 0 0 var(--space-3) 0;
 }
 
 .entry-lobby__retry-btn {

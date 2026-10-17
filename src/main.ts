@@ -29,7 +29,7 @@ import { latestLookSwitchMs, markFirstFrame, snapshot } from './proof/marks';
 import { loadProof } from './proof/load';
 import { createRenderer, describeRendererError } from './renderer/create';
 import { withCompilationDeadline } from './renderer/compile-deadline';
-import { showLossNotice, showPoster } from './renderer/notices';
+import { DEVICE_LOST_MESSAGE, showLossNotice, showPoster } from './renderer/notices';
 import { detectSupport } from './renderer/support';
 import { SCENE_BACKGROUND, createShowroom } from './scene/showroom';
 import type { Showroom, TurntableState } from './scene/showroom';
@@ -45,7 +45,7 @@ import { mountBadge } from './ui/badge';
 import { mountChrome } from './ui/chrome';
 import { mountShell } from './ui/shell';
 import { createAudioEngine } from './audio/engine';
-import { lobbyWanted, mountEntryLobby } from './ui/entry-lobby';
+import { LOBBY_READY_MESSAGE, lobbyWanted, mountEntryLobby } from './ui/entry-lobby';
 import type { EntryLobby } from './ui/entry-lobby';
 import { FULL_POSTER_URL, PHONE_POSTER_URL } from './ui/entry-lobby/markup';
 import { SceneRevealCoordinator } from './ui/scene-reveal';
@@ -121,12 +121,24 @@ const WAKE_MS = 4000;
 const BENCHMARK_MS = 2000;
 
 /**
- * The unsupported surface's one sentence, shown before the Load press when not even the APIs
- * exist and after it when neither backend can start. No reload repairs absent support, so the
- * Load action stays disabled and there is no retry.
+ * The unsupported surface names the cause a visitor can act on. Without even the graphics APIs the
+ * browser itself is too old, which is known before the Load press. With the APIs present but
+ * neither backend able to start, the device or its settings are the cause, known only after the
+ * press; graphics acceleration switched off is the common case a visitor can fix. No reload
+ * repairs absent support, so the Load action stays disabled and there is no retry. Both messages
+ * put the step to try on its own line under the cause, which the lobby pane keeps.
  */
 const UNSUPPORTED_BROWSER_MESSAGE =
-  'This exhibition requires WebGPU or WebGL 2. Your graphics browser does not support these features.';
+  "This browser can't open the showroom.\nPlease try again in an up-to-date Chrome, Edge, Safari or Firefox.";
+const UNSUPPORTED_DEVICE_MESSAGE =
+  "This device can't open the showroom.\nPlease try again on another computer, tablet or phone.";
+const UNSUPPORTED_DEVICE_HINT =
+  'On a computer, turning on "graphics acceleration" in your browser settings often fixes this.';
+
+/** Static presence only: no adapter request, no GPU context. */
+function graphicsApisPresent(): boolean {
+  return 'gpu' in navigator || 'WebGL2RenderingContext' in window;
+}
 
 const search = location.search;
 const params = new URLSearchParams(search);
@@ -187,12 +199,10 @@ async function main(): Promise<void> {
     footerElement?.removeAttribute('inert');
     footerElement?.removeAttribute('aria-hidden');
   } else {
-    // Static presence only: no adapter request, no GPU context, no content request. When not
-    // even the APIs exist, the unsupported surface is known before the visitor's gesture. APIs
-    // that exist but cannot start are decided after the gesture, by detectSupport below.
-    const hasWebGpuApi = 'gpu' in navigator;
-    const hasWebGl2Api = 'WebGL2RenderingContext' in window;
-    if (!hasWebGpuApi && !hasWebGl2Api) {
+    // No content request either. When not even the APIs exist, the unsupported surface is known
+    // before the visitor's gesture. APIs that exist but cannot start are decided after the
+    // gesture, by detectSupport below.
+    if (!graphicsApisPresent()) {
       lobby = mountEntryLobby({
         search,
         unsupportedMessage: UNSUPPORTED_BROWSER_MESSAGE,
@@ -227,11 +237,12 @@ async function main(): Promise<void> {
   const support = await detectSupport();
   if (!support.webgpu && !support.webgl2) {
     if (lobby !== null) {
-      lobby.setUnsupported(UNSUPPORTED_BROWSER_MESSAGE);
+      // The lobby path reaches here only with the APIs present, so the device is the cause.
+      lobby.setUnsupported(UNSUPPORTED_DEVICE_MESSAGE, UNSUPPORTED_DEVICE_HINT);
     } else {
       showPoster(page, {
         imageUrl: window.matchMedia(TOUCH_POINTER_QUERY).matches ? PHONE_POSTER_URL : FULL_POSTER_URL,
-        message: 'This page needs WebGPU or WebGL 2. Your browser has neither.',
+        message: graphicsApisPresent() ? UNSUPPORTED_DEVICE_MESSAGE : UNSUPPORTED_BROWSER_MESSAGE,
         credit: 'Still from the Unreal Engine original.',
       });
     }
@@ -288,7 +299,6 @@ async function main(): Promise<void> {
     forceWebGL,
     trackTimestamp: proofOn,
     onDeviceLost: (info) => {
-      const message = 'The graphics device was lost. Reload to restore the showroom.';
       recovery.setRendererError(true);
       updateRecoveryEligibility();
       canvas.dataset['scene'] = 'error';
@@ -296,10 +306,10 @@ async function main(): Promise<void> {
       // Reload); the lobby shows the same failure without announcing it a second time.
       const announcedByNotice = { announce: false };
       if (revealCoordinator !== null) {
-        revealCoordinator.fail(message, announcedByNotice);
+        revealCoordinator.fail(DEVICE_LOST_MESSAGE, announcedByNotice);
       } else {
         // Before the coordinator exists, the opaque lobby is already the fail-closed surface.
-        lobby?.setError(message, announcedByNotice);
+        lobby?.setError(DEVICE_LOST_MESSAGE, announcedByNotice);
       }
       showLossNotice(document.body, info, () => location.reload());
     },
@@ -925,7 +935,7 @@ async function main(): Promise<void> {
           }
 
           const a11y = mountA11y({ root: document.body, aside: shell.roots.card, canvas, search, announcer });
-          a11y.announcer.say('Experience ready');
+          a11y.announcer.say(LOBBY_READY_MESSAGE);
         },
         onError: (err) => {
           canvas.dataset['scene'] = 'error';

@@ -29,7 +29,7 @@ test('fails closed and keeps reload recovery operable when WebGL is lost during 
 
   expectConsoleError(page, /^THREE\.THREE\.WebGPURenderer: WebGL Device Lost:/,
     'WEBGL_lose_context deliberately loses the renderer while the reveal is black');
-  expectConsoleError(page, /^\[archviz\] transition error The graphics device was lost\. Reload to restore the showroom\.$/,
+  expectConsoleError(page, /^\[archviz\] transition error Your device's graphics restarted\. Reload to continue where you left off\.$/,
     'the frozen reveal reports the deliberately lost device while showing recovery');
   await page.evaluate(() => {
     const scene = document.querySelector('canvas#scene');
@@ -43,8 +43,12 @@ test('fails closed and keeps reload recovery operable when WebGL is lost during 
 
   const notice = page.locator('[role="alert"]');
   await expect(notice).toHaveCount(1);
+  await expect(notice.locator('.loss-notice__title')).toHaveText('The showroom paused');
   const reload = notice.getByRole('button', { name: 'Reload' });
   await expect(reload).toBeVisible();
+  // The technical reason waits behind the closed Details toggle, out of a visitor's sight.
+  await expect(notice.locator('details.loss-notice__details')).not.toHaveAttribute('open');
+  await expect(notice.locator('.loss-notice__reason')).toBeHidden();
   await expect(lobby).toHaveAttribute('data-state', 'error');
   await expect(veil).toBeHidden();
   await expect(lobby.getByRole('button', { name: 'RETRY LOADING' })).toBeVisible();

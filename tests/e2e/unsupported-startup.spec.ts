@@ -53,6 +53,9 @@ async function readSurface(page: Page): Promise<{
   paneRole: string | null;
   title: string | null;
   message: string | null;
+  messageLines: number;
+  hint: string | null;
+  hintVisible: boolean;
   loadDisabled: boolean | null;
   retryHidden: boolean | 'until-found' | null;
   retryDrawn: boolean;
@@ -67,6 +70,12 @@ async function readSurface(page: Page): Promise<{
       paneRole: pane?.getAttribute('role') ?? null,
       title: pane?.querySelector('.entry-lobby__error-title')?.textContent ?? null,
       message: pane?.querySelector('.entry-lobby__error-message')?.textContent ?? null,
+      // innerText keeps a line break only where the stylesheet renders it, so this counts the
+      // lines the visitor sees from the message's own breaks.
+      messageLines: (pane?.querySelector<HTMLElement>('.entry-lobby__error-message')?.innerText ?? '')
+        .split('\n').length,
+      hint: pane?.querySelector('.entry-lobby__error-hint')?.textContent ?? null,
+      hintVisible: (pane?.querySelector<HTMLElement>('.entry-lobby__error-hint')?.offsetParent ?? null) !== null,
       loadDisabled: load?.disabled ?? null,
       retryHidden: retry?.hidden ?? null,
       // Computed, not the attribute: a display value from the stylesheet must not draw a
@@ -106,9 +115,16 @@ test('flags: unsupported surface after Load, no retry drawn, no content request'
     expect(surface.paneVisible).toBe(true);
     expect(surface.paneRole).toBe('alert');
     expect(surface.title?.toLowerCase()).toBe('3d unavailable');
+    // The browser has both APIs here, so the device is named as the cause, with the step to try on
+    // its own line and the fix below it.
     expect(surface.message).toBe(
-      'This exhibition requires WebGPU or WebGL 2. Your graphics browser does not support these features.',
+      "This device can't open the showroom.\nPlease try again on another computer, tablet or phone.",
     );
+    expect(surface.messageLines).toBe(2);
+    expect(surface.hint).toBe(
+      'On a computer, turning on "graphics acceleration" in your browser settings often fixes this.',
+    );
+    expect(surface.hintVisible).toBe(true);
     expect(surface.loadDisabled).toBe(true);
     expect(surface.retryHidden).toBe(true);
     expect(surface.retryDrawn, 'the hidden retry button must not be drawn').toBe(false);
@@ -162,6 +178,13 @@ test('deleted APIs: unsupported surface at mount, retry button not drawn', async
     expect(surface.paneVisible).toBe(true);
     expect(surface.paneRole).toBe('alert');
     expect(surface.title?.toLowerCase()).toBe('3d unavailable');
+    // Without either API the browser itself is too old: the step to try on its own line, no
+    // device hint.
+    expect(surface.message).toBe(
+      "This browser can't open the showroom.\nPlease try again in an up-to-date Chrome, Edge, Safari or Firefox.",
+    );
+    expect(surface.messageLines).toBe(2);
+    expect(surface.hintVisible).toBe(false);
     expect(surface.loadDisabled).toBe(true);
     expect(surface.retryHidden).toBe(true);
     expect(surface.retryDrawn, 'the hidden retry button must not be drawn').toBe(false);

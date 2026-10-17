@@ -35,9 +35,18 @@ export function showPoster(root: HTMLElement, options: PosterOptions): void {
 }
 
 /**
- * Appends a single role="alert" overlay with the loss reason, the renderer's message and a reload
- * button, the only recovery a dead GPU context offers. A second call does not duplicate: a
- * flapping context must not stack overlays on top of the first one.
+ * A lost device in a visitor's words, with the one step that recovers it. The page keeps the look,
+ * lighting and view in its address, so a reload continues where the visit stopped. main.ts shows
+ * the same sentences on the lobby when the loss comes before the reveal.
+ */
+export const DEVICE_LOST_MESSAGE = "Your device's graphics restarted. Reload to continue where you left off.";
+
+/**
+ * Appends a single role="alert" overlay that explains the loss in plain words, with a reload
+ * button, the only recovery a dead GPU context offers. The loss reason and the renderer's own
+ * message stay behind a closed Details toggle: kept for support, out of the alert's announcement.
+ * A second call does not duplicate: a flapping context must not stack overlays on top of the
+ * first one.
  */
 export function showLossNotice(root: HTMLElement, info: DeviceLostInfo, onReload: () => void): void {
   if (root.querySelector('.loss-notice') !== null) {
@@ -50,7 +59,23 @@ export function showLossNotice(root: HTMLElement, info: DeviceLostInfo, onReload
 
   const title = document.createElement('p');
   title.className = 'loss-notice__title';
-  title.textContent = 'The graphics device was lost.';
+  title.textContent = 'The showroom paused';
+
+  const text = document.createElement('p');
+  text.className = 'loss-notice__text';
+  text.textContent = `${DEVICE_LOST_MESSAGE} If this keeps happening, close other apps or tabs and try again.`;
+
+  const reload = document.createElement('button');
+  reload.type = 'button';
+  reload.className = 'loss-notice__reload';
+  reload.textContent = 'Reload';
+  reload.addEventListener('click', () => onReload());
+
+  const details = document.createElement('details');
+  details.className = 'loss-notice__details';
+
+  const summary = document.createElement('summary');
+  summary.textContent = 'Details';
 
   const reason = document.createElement('p');
   reason.className = 'loss-notice__reason';
@@ -60,12 +85,7 @@ export function showLossNotice(root: HTMLElement, info: DeviceLostInfo, onReload
   message.className = 'loss-notice__message';
   message.textContent = info.message;
 
-  const reload = document.createElement('button');
-  reload.type = 'button';
-  reload.className = 'loss-notice__reload';
-  reload.textContent = 'Reload';
-  reload.addEventListener('click', () => onReload());
-
-  notice.append(title, reason, message, reload);
+  details.append(summary, reason, message);
+  notice.append(title, text, reload, details);
   root.appendChild(notice);
 }

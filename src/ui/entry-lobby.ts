@@ -69,7 +69,11 @@ export interface EntryLobby {
    * failure once. Announced by default.
    */
   setError(message: string, options?: { announce?: boolean }): void;
-  setUnsupported(message: string): void;
+  /**
+   * Turns the error pane into the support explanation, with no retry. `hint`, when given, is a
+   * smaller second line naming a fix the visitor can try on the same device.
+   */
+  setUnsupported(message: string, hint?: string): void;
   waitUntilReadyHidden(): Promise<void>;
   prepareForReveal(): void;
   dispose(): void;
@@ -101,6 +105,29 @@ export const APPROVED_FACTS: Array<{ heading: string; text: string }> = [
     text: 'Tri-point studio lighting rig combined with architectural daylight dome illumination.',
   },
 ];
+
+/**
+ * The loading line, in the showroom's voice. Each arrival step stands for one more tracked file
+ * in, so the line never runs ahead of the bar; a tracker with more files than steps holds the last
+ * arrival step until every file is in. With every file in, the scene still prepares before the
+ * reveal, and the line says so. A repeat visit served from the cache is greeted instead of counted.
+ */
+const ARRIVAL_STEPS = ['Opening the rotunda', 'Polishing the marble', 'Dressing the mannequin'] as const;
+const SCENE_STEP = 'Setting the lights';
+const CACHED_STEP = 'Welcome back';
+
+/** The lobby's last line, also the page's spoken readiness once the scene is revealed. */
+export const LOBBY_READY_MESSAGE = 'Welcome to the rotunda';
+
+function loadingLine(reading: ProgressReading, complete: boolean): string {
+  if (complete) {
+    return SCENE_STEP;
+  }
+  if (reading.fromCache) {
+    return CACHED_STEP;
+  }
+  return ARRIVAL_STEPS[Math.min(reading.ended, ARRIVAL_STEPS.length - 1)];
+}
 
 /** Fallback helper to safely read window.localStorage */
 function safeLocalStorage(): KeyValueStore | null {
@@ -139,6 +166,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
   const factText = lobby.querySelector<HTMLElement>('.entry-lobby__fact-text');
   const retryBtn = lobby.querySelector<HTMLButtonElement>('#lobby-retry-btn');
   const errorMessage = lobby.querySelector<HTMLElement>('.entry-lobby__error-message');
+  const errorHint = lobby.querySelector<HTMLElement>('.entry-lobby__error-hint');
   const errorTitle = lobby.querySelector<HTMLElement>('.entry-lobby__error-title');
 
   let currentState: LobbyState = 'idle';
@@ -192,15 +220,26 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
   /**
    * The unsupported surface, shared by the mount-time knowledge (no API even exists) and the
    * post-press knowledge (no backend can start): the error pane becomes a support explanation
-   * with no retry, because reloading cannot create support the browser lacks.
+   * with no retry, because reloading cannot create support the browser lacks. The hint is written
+   * before the pane shows, like the message, so the alert announces both.
    */
-  function applyUnsupportedSurface(message: string): void {
+  function applyUnsupportedSurface(message: string, hint?: string): void {
     if (loadBtn !== null) {
       loadBtn.disabled = true;
     }
+    const describedBy: string[] = [];
     if (errorMessage !== null) {
       errorMessage.id = 'lobby-unsupported-message';
-      loadBtn?.setAttribute('aria-describedby', errorMessage.id);
+      describedBy.push(errorMessage.id);
+    }
+    if (hint !== undefined && errorHint !== null) {
+      errorHint.id = 'lobby-unsupported-hint';
+      errorHint.textContent = hint;
+      errorHint.hidden = false;
+      describedBy.push(errorHint.id);
+    }
+    if (describedBy.length > 0) {
+      loadBtn?.setAttribute('aria-describedby', describedBy.join(' '));
     }
     showErrorPane(message, '3D unavailable', true);
     if (retryBtn !== null) {
@@ -360,9 +399,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
         );
       }
       if (statusElement !== null) {
-        const base = reading.fromCache ? 'Loading from cache' : 'Loading your experience';
-        statusElement.textContent =
-          reading.totalFiles === 0 ? base : `${base} - ${reading.ended} of ${reading.totalFiles} files`;
+        statusElement.textContent = loadingLine(reading, complete);
       }
     },
 
@@ -378,7 +415,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       transitionTo('ready-hidden');
 
       if (statusElement !== null) {
-        statusElement.textContent = 'Experience ready';
+        statusElement.textContent = LOBBY_READY_MESSAGE;
       }
       if (progressBar !== null) {
         progressBar.value = 1;
@@ -456,7 +493,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       }
     },
 
-    setUnsupported(message: string): void {
+    setUnsupported(message: string, hint?: string): void {
       if (currentState === 'disposed') {
         return;
       }
@@ -475,7 +512,7 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       if (cardElement !== null) {
         cardElement.dataset['view'] = 'error';
       }
-      applyUnsupportedSurface(message);
+      applyUnsupportedSurface(message, hint);
       // The retry is gone and Load is disabled, so the dialog itself takes focus and the alert
       // is what a screen reader lands on.
       lobby.tabIndex = -1;

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadContentSet, chooseLook } from '../../src/catalog/bootstrap';
 import { parseCatalog } from '../../src/catalog/catalog';
-import { APPROVED_FACTS, trackFirstFrameProgress } from '../../src/ui/entry-lobby';
+import { APPROVED_FACTS, LOBBY_READY_MESSAGE, trackFirstFrameProgress } from '../../src/ui/entry-lobby';
 import type { ProgressReading } from '../../src/ui/entry-lobby';
 import { installLobbyHarness, mountLobby } from '../support/entry-lobby';
 
@@ -34,26 +34,49 @@ describe('loading state and truthful progress', () => {
     expect(element.querySelector('.entry-lobby__progress-readout')?.textContent).toBe(
       '5.0 MB of 10.0 MB',
     );
-    expect(element.querySelector('.entry-lobby__status')?.textContent).toBe(
-      'Loading your experience - 2 of 4 files',
-    );
+    expect(element.querySelector('.entry-lobby__status')?.textContent).toBe('Dressing the mannequin');
   });
 
-  it('reports cache hits truthfully', () => {
+  it('steps the loading line once per arrived file and never ahead of the files', () => {
     const { lobby, element } = mountLobby();
+    const status = element.querySelector('.entry-lobby__status')!;
+    expect(status.textContent).toBe('Opening the rotunda');
     element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
 
-    lobby.setProgress({
-      received: 0,
-      expected: 10_000_000,
-      ended: 4,
-      totalFiles: 4,
-      fromCache: true,
+    const lines = [0, 1, 2, 3].map((ended) => {
+      lobby.setProgress({ received: ended, expected: 3, ended, totalFiles: 3, fromCache: false });
+      return status.textContent;
     });
+    expect(lines).toEqual([
+      'Opening the rotunda',
+      'Polishing the marble',
+      'Dressing the mannequin',
+      'Setting the lights',
+    ]);
 
-    expect(element.querySelector('.entry-lobby__status')?.textContent).toBe(
-      'Loading from cache - 4 of 4 files',
-    );
+    // A tracker with more files than steps holds the last arrival step until every file is in.
+    lobby.setProgress({ received: 4, expected: 5, ended: 4, totalFiles: 5, fromCache: false });
+    expect(status.textContent).toBe('Dressing the mannequin');
+  });
+
+  it('greets a repeat visit served from the cache, then says when the scene prepares', () => {
+    const { lobby, element } = mountLobby();
+    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+    const status = element.querySelector('.entry-lobby__status')!;
+
+    lobby.setProgress({ received: 0, expected: 10_000_000, ended: 1, totalFiles: 4, fromCache: true });
+    expect(status.textContent).toBe('Welcome back');
+
+    lobby.setProgress({ received: 0, expected: 10_000_000, ended: 4, totalFiles: 4, fromCache: true });
+    expect(status.textContent).toBe('Setting the lights');
+  });
+
+  it('ends the loading line with the welcome when the scene is ready', () => {
+    const { lobby, element } = mountLobby();
+    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+    lobby.setReady();
+    expect(element.querySelector('.entry-lobby__status')?.textContent).toBe(LOBBY_READY_MESSAGE);
+    expect(LOBBY_READY_MESSAGE).toBe('Welcome to the rotunda');
   });
 });
 

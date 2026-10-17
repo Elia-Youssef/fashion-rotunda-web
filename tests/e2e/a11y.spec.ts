@@ -369,7 +369,7 @@ test('transition manages inert state, focus transfer, and live announcements dur
 
   // Announcer announced readiness
   const announcer = page.locator('.a11y-live-region');
-  await expect(announcer).toContainText('Experience ready');
+  await expect(announcer).toContainText('Welcome to the rotunda');
 });
 
 test('prefers-reduced-motion bypasses decorative fading during transition', async ({ page }) => {

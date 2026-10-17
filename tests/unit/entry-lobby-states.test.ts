@@ -218,6 +218,36 @@ describe('unsupported surface after the Load press', () => {
     expect(description?.closest('[hidden], [inert], [aria-hidden="true"]')).toBeNull();
   });
 
+  it('shows a given hint as a second line inside the alert and in the Load description', () => {
+    const hint = 'Turning on graphics acceleration often fixes this.';
+    const { lobby, element } = mountLobby();
+    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+    const pane = element.querySelector<HTMLElement>('.entry-lobby__error-pane')!;
+    const hintLine = pane.querySelector<HTMLElement>('.entry-lobby__error-hint')!;
+    expect(hintLine.hidden).toBe(true);
+
+    lobby.setUnsupported(message, hint);
+
+    expect(hintLine.hidden).toBe(false);
+    expect(hintLine.textContent).toBe(hint);
+    const ids = element
+      .querySelector<HTMLButtonElement>('#lobby-load-btn')!
+      .getAttribute('aria-describedby')!
+      .split(' ');
+    expect(ids.map((id) => document.getElementById(id)?.textContent)).toEqual([message, hint]);
+  });
+
+  it('keeps the hint line hidden and out of the description without a hint', () => {
+    const { lobby, element } = mountLobby();
+    element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();
+
+    lobby.setUnsupported(message);
+
+    expect(element.querySelector<HTMLElement>('.entry-lobby__error-hint')!.hidden).toBe(true);
+    expect(element.querySelector('#lobby-load-btn')!.getAttribute('aria-describedby'))
+      .toBe('lobby-unsupported-message');
+  });
+
   it('is terminal: a later ready does not replace the unsupported pane', () => {
     const { lobby, element } = mountLobby();
     element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();

@@ -4,7 +4,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { showLossNotice, showPoster } from '../../src/renderer/notices';
+import { DEVICE_LOST_MESSAGE, showLossNotice, showPoster } from '../../src/renderer/notices';
 import type { DeviceLostInfo } from '../../src/renderer/create';
 
 describe('showPoster', () => {
@@ -47,15 +47,38 @@ describe('showPoster', () => {
 });
 
 describe('showLossNotice', () => {
-  it('appends one alert carrying the reason, the message and a reload button', () => {
+  it('appends one alert that explains the loss in plain words with a reload button', () => {
     const root = document.createElement('div');
     showLossNotice(root, { backend: 'webgl2', reason: 'unknown', message: 'context lost' }, vi.fn());
 
     const alert = root.querySelector('[role="alert"]');
     expect(alert).not.toBeNull();
-    expect(alert?.textContent).toContain('unknown');
-    expect(alert?.textContent).toContain('context lost');
+    expect(alert?.querySelector('.loss-notice__title')?.textContent).toBe('The showroom paused');
+    expect(alert?.querySelector('.loss-notice__text')?.textContent).toBe(
+      `${DEVICE_LOST_MESSAGE} If this keeps happening, close other apps or tabs and try again.`,
+    );
+    expect(DEVICE_LOST_MESSAGE).toBe("Your device's graphics restarted. Reload to continue where you left off.");
     expect(alert?.querySelector('button')?.textContent).toBe('Reload');
+  });
+
+  it('keeps the reason and the renderer message behind a closed Details toggle', () => {
+    const root = document.createElement('div');
+    showLossNotice(root, { backend: 'webgl2', reason: 'unknown', message: 'context lost' }, vi.fn());
+
+    const details = root.querySelector<HTMLDetailsElement>('[role="alert"] details.loss-notice__details');
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(false);
+    expect(details?.querySelector('summary')?.textContent).toBe('Details');
+    expect(details?.querySelector('.loss-notice__reason')?.textContent).toBe('Reason: unknown');
+    expect(details?.querySelector('.loss-notice__message')?.textContent).toBe('context lost');
+    // The plain-words text and the button come first; the technical lines live only in the toggle.
+    const alert = root.querySelector('[role="alert"]')!;
+    expect([...alert.children].map((child) => child.className)).toEqual([
+      'loss-notice__title',
+      'loss-notice__text',
+      'loss-notice__reload',
+      'loss-notice__details',
+    ]);
   });
 
   it('calls onReload once per click', () => {
@@ -85,7 +108,7 @@ describe('showLossNotice', () => {
     const root = document.createElement('div');
     showLossNotice(root, { backend: 'webgpu', reason: 'device-collision', message: 'boom' }, vi.fn());
 
-    expect(root.querySelector('.loss-notice__title')?.textContent).toBe('The graphics device was lost.');
+    expect(root.querySelector('.loss-notice__title')?.textContent).toBe('The showroom paused');
     expect(root.querySelector('.loss-notice__reason')?.textContent).toBe('Reason: device-collision');
     expect(root.querySelector('.loss-notice__message')?.textContent).toBe('boom');
   });

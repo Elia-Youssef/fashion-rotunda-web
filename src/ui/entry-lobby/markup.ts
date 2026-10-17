@@ -99,7 +99,7 @@ export function buildLobbyMarkup(doc: Document): HTMLElement {
             <div class="entry-lobby__bar-container">
               <progress class="entry-lobby__progress-bar" max="1" value="0" aria-label="Exhibition loading progress"></progress>
             </div>
-            <p class="entry-lobby__status" aria-live="polite">Loading your experience</p>
+            <p class="entry-lobby__status" aria-live="polite">Opening the rotunda</p>
             <p class="entry-lobby__progress-readout">0.0 MB of 0.0 MB</p>
             <div class="entry-lobby__fact-container">
               <div class="entry-lobby__fact-diamond" aria-hidden="true"></div>
@@ -118,6 +118,7 @@ export function buildLobbyMarkup(doc: Document): HTMLElement {
             </div>
             <h2 class="entry-lobby__error-title">SHOWROOM INITIALIZATION FAILED</h2>
             <p class="entry-lobby__error-message">We were unable to load the 3D showroom assets. Please verify your internet connection and select retry below.</p>
+            <p class="entry-lobby__error-hint" hidden></p>
             <button type="button" class="entry-lobby__retry-btn" id="lobby-retry-btn">RETRY LOADING</button>
           </div>
         </div>

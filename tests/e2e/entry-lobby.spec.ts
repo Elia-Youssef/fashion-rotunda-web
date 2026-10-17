@@ -438,8 +438,9 @@ test('counts the deep-linked look: the bar rises and reaches its total', async (
   await rotunda.waitUntilEntered();
 
   // While the lobby is still loading, the tracker publishes the readout total and the status
-  // count: the total must be the deep-linked look's share of the manifest, formatted the way
-  // formatProgress formats it, and the count the three tracked files.
+  // line: the total must be the deep-linked look's share of the manifest, formatted the way
+  // formatProgress formats it, and the line an arrival step past the opening one that stops
+  // short of the scene step, because the held rotunda keeps the tracked files incomplete.
   const readout = lobby.locator('.entry-lobby__progress-readout');
   await expect
     .poll(async () => (await readout.textContent()) ?? '', {
@@ -449,10 +450,10 @@ test('counts the deep-linked look: the bar rises and reaches its total', async (
     .toMatch(expectedTotal);
   await expect
     .poll(async () => (await lobby.locator('.entry-lobby__status').textContent()) ?? '', {
-      message: 'the status publishes the three tracked files while the load runs',
+      message: 'the status steps with the arrived files while the rotunda is held',
       timeout: TRACKER_READING_TIMEOUT_MS,
     })
-    .toMatch(/ of 3 files$/);
+    .toMatch(/^(Polishing the marble|Dressing the mannequin)$/);
 
   const progress = lobby.locator('.entry-lobby__progress-bar');
   await expect
