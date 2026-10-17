@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mountMusic } from '../../src/audio/mount';
 import type { MusicMount } from '../../src/audio/mount';
 import type { AudioBuses, AudioEngine } from '../../src/audio/engine';
+import { MUSIC_STORAGE_KEY } from '../../src/audio/preference';
 
 // The mount is driven through the same kind of fakes the player test uses, one level lower: the
 // engine is the real one and the AudioContext under it is the fake, so the state listener the
@@ -170,6 +171,7 @@ beforeEach(() => {
     },
   );
   localStorage.clear();
+  delete window.archvizMusic;
 });
 
 afterEach(() => {
@@ -177,6 +179,7 @@ afterEach(() => {
   mounted = null;
   header.remove();
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -331,6 +334,24 @@ describe('mountMusic and an interrupted context', () => {
     expect(FakeAudioContext.created, 'music=off creates no context').toHaveLength(0);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('starts nothing when the interruption arrives while the music is off', async () => {
+    mounted = mountMusic({ headerRoot: header, search: '', baseUrl: '/content/music' });
+    await settle();
+    expect(mounted.player.state).toBe('playing');
+
+    // The visitor stopped the music, then the phone call comes. There is nothing to recover:
+    // starting the loop again would be music nobody asked for.
+    button().click();
+    await settle();
+    expect(mounted.player.state).toBe('off');
+
+    context().resumesTo = 'interrupted';
+    context().moveTo('interrupted');
+    await settle();
+    expect(mounted.player.state, 'off stays off').toBe('off');
+    expect(button().dataset.music).toBe('off');
+  });
 });
 
 describe('mountMusic and the first gesture', () => {
@@ -383,5 +404,242 @@ describe('mountMusic and the first gesture', () => {
     document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
     await settle();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('mountMusic and the stored preference', () => {
+  it('honours a stored off preference', async () => {
+    localStorage.setItem(MUSIC_STORAGE_KEY, 'off');
+    mounted = mountMusic({ headerRoot: header, search: '', baseUrl: '/content/music' });
+    await settle();
+    expect(mounted.player.state).toBe('off');
+    expect(FakeAudioContext.created, 'a stored no creates no context').toHaveLength(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('treats a store that cannot be read as no store, not as off', async () => {
+    const owner =
+      Object.getOwnPropertyDescriptor(window, 'localStorage') ??
+      Object.getOwnPropertyDescriptor(Window.prototype, 'localStorage');
+    if (owner === undefined) {
+      throw new Error('no localStorage descriptor to restore');
+    }
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new Error('storage blocked');
+      },
+    });
+    try {
+      mounted = mountMusic({ headerRoot: header, search: '', baseUrl: '/content/music' });
+      await settle();
+      expect(mounted.player.state, 'the default preference still applies').toBe('playing');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      Object.defineProperty(window, 'localStorage', owner);
+    }
+  });
+
+  it('stores the choice each toggle makes', async () => {
+    mounted = mountMusic({ headerRoot: header, search: '', baseUrl: '/content/music' });
+    await settle();
+    expect(mounted.player.state).toBe('playing');
+
+    button().click();
+    await settle();
+    expect(mounted.player.state).toBe('off');
+    expect(localStorage.getItem(MUSIC_STORAGE_KEY)).toBe('off');
+
+    button().click();
+    await settle();
+    expect(mounted.player.state).toBe('playing');
+    expect(localStorage.getItem(MUSIC_STORAGE_KEY)).toBe('on');
+  });
+
+  it('stores on when the visitor retries from an error', async () => {
+    fetchMock.mockImplementation(async () => ({
+      ok: false,
+      status: 500,
+      json: async () => manifestJson(),
+      arrayBuffer: async () => new ArrayBuffer(64),
+    }));
+    mounted = mountMusic({ headerRoot: header, search: '', baseUrl: '/content/music' });
+    await settle();
+    expect(mounted.player.state).toBe('error');
+
+    button().click();
+    await settle();
+    expect(localStorage.getItem(MUSIC_STORAGE_KEY)).toBe('on');
+  });
+});
+
+describe('mountMusic and the armed listeners', () => {
+  it('drops the listeners when the visitor declines the armed music', async () => {
+    activation.hasBeenActive = false;
+    mounted = mountMusic({ headerRoot: header, search: '?music=on', baseUrl: '/content/music' });
+    await settle();
+    expect(mounted.player.state).toBe('armed');
+
+    button().click();
+    await settle();
+    expect(mounted.player.state).toBe('off');
+
+    // The visitor said no; a later gesture anywhere on the page is not a change of mind.
+    activation.hasBeenActive = true;
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    await settle();
+    expect(mounted.player.state).toBe('off');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('listens again when the music is switched back on before any gesture', async () => {
+    activation.hasBeenActive = false;
+    mounted = mountMusic({ headerRoot: header, search: '?music=on', baseUrl: '/content/music' });
+    await settle();
+    button().click();
+    await settle();
+    expect(mounted.player.state).toBe('off');
+
+    button().click();
+    await settle();
+    expect(mounted.player.state, 'armed again through the switch').toBe('armed');
+
+    activation.hasBeenActive = true;
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    await settle();
+    expect(mounted.player.state, 'the re-armed listeners heard it').toBe('playing');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves no listener behind when the starting gesture fails to load', async () => {
+    fetchMock.mockImplementation(async () => ({
+      ok: false,
+      status: 500,
+      json: async () => manifestJson(),
+      arrayBuffer: async () => new ArrayBuffer(64),
+    }));
+    activation.hasBeenActive = false;
+    mounted = mountMusic({ headerRoot: header, search: '?music=on', baseUrl: '/content/music' });
+    await settle();
+    expect(mounted.player.state).toBe('armed');
+
+    activation.hasBeenActive = true;
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    await settle();
+    expect(mounted.player.state).toBe('error');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // The one gesture the listener existed for has happened; a retry needs the switch.
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    await settle();
+    expect(mounted.player.state).toBe('error');
+    expect(fetchMock, 'no second fetch from a leftover listener').toHaveBeenCalledTimes(1);
+  });
+
+  it('hears the gesture before a handler that stops propagation', async () => {
+    activation.hasBeenActive = false;
+    mounted = mountMusic({ headerRoot: header, search: '?music=on', baseUrl: '/content/music' });
+    await settle();
+    const swallow = (event: Event): void => {
+      event.stopPropagation();
+    };
+    document.body.addEventListener('pointerdown', swallow);
+    try {
+      activation.hasBeenActive = true;
+      document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      await settle();
+      expect(mounted.player.state, 'capture beats the swallowing handler').toBe('playing');
+    } finally {
+      document.body.removeEventListener('pointerdown', swallow);
+    }
+  });
+});
+
+describe('mountMusic and the deferred start', () => {
+  it('draws the armed switch while the deferred start waits', () => {
+    mounted = mountMusic({
+      headerRoot: header, search: '?music=on', baseUrl: '/content/music', deferPlay: true,
+    });
+    expect(button().dataset.music, 'armed from the state alone, nothing fetched behind it').toBe(
+      'armed',
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('starts nothing for a visitor whose choice is off', async () => {
+    mounted = mountMusic({
+      headerRoot: header, search: '?music=off', baseUrl: '/content/music', deferPlay: true,
+    });
+    await mounted.startDeferred();
+    await settle();
+    expect(mounted.player.state).toBe('off');
+    expect(FakeAudioContext.created).toHaveLength(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('plays the deferred start for the on preference', async () => {
+    mounted = mountMusic({
+      headerRoot: header, search: '?music=on', baseUrl: '/content/music', deferPlay: true,
+    });
+    await mounted.startDeferred();
+    await settle();
+    expect(mounted.player.state).toBe('playing');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the e2e handle on window', () => {
+  it('exposes the live state while the page runs in dev', async () => {
+    mounted = mountMusic({ headerRoot: header, search: '', baseUrl: '/content/music' });
+    expect(window.archvizMusic).toBeDefined();
+    await settle();
+    expect(window.archvizMusic?.state()).toBe('playing');
+  });
+
+  it('follows the e2e switch only when dev is off', () => {
+    vi.stubEnv('DEV', false);
+    const withSwitch = mountMusic({
+      headerRoot: header, search: '?e2e=1', baseUrl: '/content/music',
+    });
+    expect(window.archvizMusic).toBeDefined();
+    withSwitch.dispose();
+    expect(window.archvizMusic).toBeUndefined();
+
+    mounted = mountMusic({ headerRoot: header, search: '', baseUrl: '/content/music' });
+    expect(window.archvizMusic, 'no switch, no handle').toBeUndefined();
+  });
+
+  it('reads the position from the loop clock', async () => {
+    mounted = mountMusic({ headerRoot: header, search: '', baseUrl: '/content/music' });
+    await settle();
+    context().currentTime = 10;
+    expect(window.archvizMusic?.position()).toBe(10);
+  });
+
+  it('is gone after dispose', async () => {
+    mounted = mountMusic({ headerRoot: header, search: '', baseUrl: '/content/music' });
+    await settle();
+    mounted.dispose();
+    mounted = null;
+    expect(window.archvizMusic).toBeUndefined();
+  });
+});
+
+describe('mountMusic dispose', () => {
+  it('removes the switch from the header', () => {
+    mounted = mountMusic({ headerRoot: header, search: '', baseUrl: '/content/music' });
+    expect(header.querySelector('button.music-switch')).not.toBeNull();
+    mounted.dispose();
+    mounted = null;
+    expect(header.querySelector('button.music-switch')).toBeNull();
+  });
+
+  it('closes the audio context', async () => {
+    mounted = mountMusic({ headerRoot: header, search: '', baseUrl: '/content/music' });
+    await settle();
+    expect(mounted.player.state).toBe('playing');
+    mounted.dispose();
+    mounted = null;
+    expect(context().state).toBe('closed');
   });
 });
