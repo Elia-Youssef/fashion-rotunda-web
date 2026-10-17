@@ -98,12 +98,14 @@ export async function composeLighting(options: LightingOptions): Promise<Lightin
   registerRectAreaLights();
   options.renderer.shadowMap.enabled = options.sunShadow;
 
+  let rig: Rig = options.initial === undefined ? DEFAULT_RIG : parseRig(options.initial, DEFAULT_RIG);
+
   let environment: Environment;
   let environmentScale: number;
   const hdrUrl = skySourceFromParam(options.sky ?? null) === 'hdr' ? options.environmentUrl : undefined;
   try {
     if (hdrUrl === undefined) {
-      environment = await createProceduralEnvironment(options.renderer);
+      environment = await createProceduralEnvironment(options.renderer, rig.daylight);
       environmentScale = PROCEDURAL_ENVIRONMENT_SCALE;
     } else {
       environment = await createHdrEnvironment(options.renderer, hdrUrl);
@@ -115,7 +117,6 @@ export async function composeLighting(options: LightingOptions): Promise<Lightin
     environmentScale = ROOM_ENVIRONMENT_SCALE;
   }
 
-  let rig: Rig = options.initial === undefined ? DEFAULT_RIG : parseRig(options.initial, DEFAULT_RIG);
   const three: ThreeRig = createThreeRig(rig, {
     shadowMapSize: options.shadowMapSize,
     sunShadow: options.sunShadow,

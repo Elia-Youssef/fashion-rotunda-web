@@ -36,7 +36,7 @@ export { createSkyOnlyBackground, orientHdrEquirectangular } from './visible-sky
 
 export interface Environment {
   texture: Texture;
-  /** Procedural skies only: rebuild on a changed value, retaining the last output if conversion fails. */
+  /** Procedural skies only: rebuild on a changed palette, retaining the last output if conversion fails. */
   updateDaylight?(daylight: number): void;
   /** Assigns the map and its strength. Intensity comes from daylightParameters(...).skyIntensity. */
   apply(scene: Scene, intensity: number, backgroundIntensity?: number): void;
@@ -173,15 +173,18 @@ export async function createRoomEnvironment(renderer: WebGPURenderer): Promise<E
  * lighting copy goes through the same PMREMGenerator.fromEquirectangular path the HDR used; the
  * visible copy, bluer and with a pale horizon, becomes scene.background.
  */
-export async function createProceduralEnvironment(renderer: WebGPURenderer): Promise<Environment> {
+export async function createProceduralEnvironment(
+  renderer: WebGPURenderer,
+  initialDaylight = SKY_REFERENCE_DAYLIGHT,
+): Promise<Environment> {
   await renderer.init();
-  let daylight = SKY_REFERENCE_DAYLIGHT;
+  let daylight = paletteDaylight(initialDaylight);
   let current = buildProceduralEnvironment(renderer, daylight);
   let disposed = false;
   return {
     get texture(): Texture { return current.texture; },
     updateDaylight(value: number): void {
-      const next = skyDaylightValue(value);
+      const next = paletteDaylight(value);
       if (disposed || next === daylight) return;
       // Build before handoff: failed conversion releases only its own resources.
       const replacement = buildProceduralEnvironment(renderer, next);
@@ -199,6 +202,11 @@ export async function createProceduralEnvironment(renderer: WebGPURenderer): Pro
       current.dispose();
     },
   };
+}
+
+/** Day through Noon has one palette; compare this input rather than the intensity control's value. */
+function paletteDaylight(value: number): number {
+  return Math.min(skyDaylightValue(value), SKY_REFERENCE_DAYLIGHT);
 }
 
 /** Each rebuild owns its candidate independently until every construction step succeeds. */

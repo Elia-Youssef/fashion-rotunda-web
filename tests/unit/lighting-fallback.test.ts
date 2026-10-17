@@ -50,6 +50,7 @@ describe('environment selection and fallback', () => {
       scene, renderer: { shadowMap: {} } as WebGPURenderer, panelRoot: null,
       shadowMapSize: 512, sunShadow: false, onChange: vi.fn(), initial: 'v2;day,0.25',
     });
+    expect(factories.procedural).toHaveBeenCalledExactlyOnceWith(expect.anything(), 0.25);
     expect(selected.updateDaylight).toHaveBeenCalledExactlyOnceWith(0.25);
     expect(selected.updateDaylight.mock.invocationCallOrder[0]).toBeLessThan(selected.apply.mock.invocationCallOrder[0]);
     const error = new Error('update failed');
@@ -76,7 +77,7 @@ describe('environment selection and fallback', () => {
     });
     expect(factories[name]).toHaveBeenCalledTimes(1);
     if (name === 'hdr') expect(factories.hdr).toHaveBeenCalledWith(renderer, '/sky.hdr');
-    else expect(factories.procedural).toHaveBeenCalledWith(renderer);
+    else expect(factories.procedural).toHaveBeenCalledWith(renderer, DEFAULT_RIG.daylight);
     expect(factories[name === 'hdr' ? 'procedural' : 'hdr']).not.toHaveBeenCalled();
     expect(factories.room).not.toHaveBeenCalled();
     expect(scene.environment).toBe(selected.texture);

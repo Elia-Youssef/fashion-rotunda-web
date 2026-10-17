@@ -478,7 +478,7 @@ describe('composeLighting', () => {
   it('selects the procedural sky when the hdr param is chosen without a url', async () => {
     const h = await mountCompose({ sky: 'hdr' });
     expect(composeMocks.procedural).toHaveBeenCalledTimes(1);
-    expect(composeMocks.procedural).toHaveBeenLastCalledWith(h.renderer);
+    expect(composeMocks.procedural).toHaveBeenLastCalledWith(h.renderer, DEFAULT_RIG.daylight);
     expect(composeMocks.hdr).not.toHaveBeenCalled();
     expect(composeMocks.room).not.toHaveBeenCalled();
     const boot = daylightParameters(DEFAULT_RIG.daylight);

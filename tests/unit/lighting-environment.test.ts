@@ -1,9 +1,16 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import type { Texture } from 'three';
 import type { WebGPURenderer } from 'three/webgpu';
+import { createHash } from 'node:crypto';
+// @ts-expect-error The internal cache predicate has no published declaration.
+import NodeManager from 'three/src/renderers/common/nodes/NodeManager.js';
+// @ts-expect-error The internal render-object predicate has no published declaration.
+import RenderObject from 'three/src/renderers/common/RenderObject.js';
+
 
 const state = vi.hoisted(() => ({
   fail: '',
+  capturePixels: false,
   error: { reason: 'construction failed' },
   resources: [] as { name: string; resource: { dispose(): void } }[],
   releases: [] as string[],
@@ -58,6 +65,7 @@ vi.mock('three', async (importOriginal) => {
   return {
     ...actual,
     DataTexture: vi.fn(function (...args: ConstructorParameters<typeof actual.DataTexture>) {
+      if (state.capturePixels) return new actual.DataTexture(...args);
       step('background-create');
       const texture = record('background', new actual.DataTexture(...args));
       Object.defineProperty(texture, 'mapping', {
@@ -151,10 +159,11 @@ vi.mock('../../src/lighting/sky', async (importOriginal) => {
   const actual = await vi.importActual<typeof import('three')>('three');
   return {
     ...sky,
-    createGradientSkyTexture: vi.fn((palette: unknown, name: string) => {
+    createGradientSkyTexture: vi.fn((palette: import('../../src/lighting/sky').SkyPalette, name: string) => {
       state.skyPalettes.push({ name, palette });
       const label = name.endsWith('lighting') ? 'source' : 'background';
       step(`${label}-create`);
+      if (state.capturePixels) return record(label, sky.createGradientSkyTexture(palette, name));
       return record(label, new actual.DataTexture(new Uint16Array(512 * 256 * 4), 512, 256,
         undefined, actual.HalfFloatType));
     }),
@@ -267,6 +276,7 @@ const renderer = {
 
 beforeEach(() => {
   state.fail = '';
+  state.capturePixels = false;
   state.resources = [];
   state.releases = [];
   state.throwing.clear();
@@ -548,6 +558,35 @@ describe('visible HDR background derivation', () => {
 });
 
 describe('procedural daylight updates', () => {
+  it.each([undefined, 0.5])('boots at default %s with the original palette bytes', async (initial) => {
+    state.capturePixels = true;
+    const environment = await createProceduralEnvironment(renderer as unknown as WebGPURenderer, initial);
+    expect(createGradientSkyTexture).toHaveBeenNthCalledWith(1, environmentSkyPalette(), 'procedural sky lighting');
+    expect(createGradientSkyTexture).toHaveBeenNthCalledWith(2, visibleSkyPalette(), 'procedural sky visible');
+    for (const [name, digest] of [
+      ['source', '5c22892497aed78426940972524a2559135030592be30c39f4b8787be95d5eb3'],
+      ['background', '9b30a460a8eddac24a9d0cec815199d4480784ed625f78683c9f9969202ad07a'],
+    ]) {
+      const texture = state.resources.find((entry) => entry.name === name)!.resource as import('three').DataTexture;
+      const pixels = texture.image.data as Uint16Array;
+      expect(createHash('sha256').update(Buffer.from(pixels.buffer)).digest('hex')).toBe(digest);
+    }
+    environment.updateDaylight!(0.5);
+    expect(createGradientSkyTexture).toHaveBeenCalledTimes(2);
+    environment.dispose();
+    expectReleasedOnce();
+  });
+
+  it.each([0, 0.25])('boots directly at Dawn value %s without constructing Day first', async (initial) => {
+    const environment = await createProceduralEnvironment(renderer as unknown as WebGPURenderer, initial);
+    expect(createGradientSkyTexture).toHaveBeenNthCalledWith(1, environmentSkyPalette(initial), 'procedural sky lighting');
+    expect(createGradientSkyTexture).toHaveBeenNthCalledWith(2, visibleSkyPalette(initial), 'procedural sky visible');
+    environment.updateDaylight!(initial);
+    expect(createGradientSkyTexture).toHaveBeenCalledTimes(2);
+    environment.dispose();
+    expectReleasedOnce();
+  });
+
   it('releases every replaced texture and target once across many slider changes', async () => {
     const environment = await createProceduralEnvironment(renderer as unknown as WebGPURenderer);
     const scene = new Scene();
@@ -555,15 +594,20 @@ describe('procedural daylight updates', () => {
     for (let step = 0; step < 101; step += 1) {
       const daylight = step / 100;
       environment.updateDaylight!(daylight);
-      expect(environment.texture).not.toBe(previous);
+      if (daylight <= 0.5) expect(environment.texture).not.toBe(previous);
+      else expect(environment.texture).toBe(previous);
       environment.apply(scene, 0.4, 0.25);
       expect(scene.environment).toBe(environment.texture);
       expect(scene.background).toBe(state.resources.at(-3)!.resource);
       expect(createGradientSkyTexture).toHaveBeenLastCalledWith(visibleSkyPalette(daylight), 'procedural sky visible');
       expect(createGradientSkyTexture).toHaveBeenNthCalledWith(
-        2 * (step + 1) + 1, environmentSkyPalette(daylight), 'procedural sky lighting');
+        2 * (Math.min(step, 50) + 1) + 1, environmentSkyPalette(daylight), 'procedural sky lighting');
       const live = state.resources.filter(({ resource }) => vi.mocked(resource.dispose).mock.calls.length === 0);
-      expect(live.map(({ name }) => name)).toEqual(['background', 'target']);
+      // Identify the current generation, not merely two resources with the right labels.
+      expect(live).toHaveLength(2);
+      expect(live[0].resource).toBe(scene.background);
+      expect(live[1].resource).toBe(state.output);
+      expect(scene.environment).toBe(state.output!.texture);
       for (const { resource } of state.resources) {
         expect(vi.mocked(resource.dispose).mock.calls.length).toBeLessThanOrEqual(1);
       }
@@ -586,9 +630,52 @@ describe('procedural daylight updates', () => {
       environment.apply(new Scene(), 0.4, 0.25);
     }
     environment.updateDaylight!(Number.NaN);
+    for (let step = 51; step <= 100; step += 1) environment.updateDaylight!(step / 100);
+    environment.updateDaylight!(Infinity);
     expect(state.resources).toHaveLength(acquired);
     expect(environment.texture).toBe(texture);
     environment.dispose();
+    expectReleasedOnce();
+  });
+
+  it.each([1, 2, 3])('counts real render-object update predicates per palette step, run %s', async (run) => {
+    const actual = await vi.importActual<typeof import('three')>('three');
+    const scene = new actual.Scene();
+    const material = new actual.MeshStandardMaterial();
+    const mesh = new actual.Mesh(new actual.BufferGeometry(), material);
+    const camera = new actual.PerspectiveCamera();
+    const offlineRenderer = {
+      info: { calls: 0 }, lighting: { enabled: true }, shadowMap: { enabled: false, type: 0 },
+      getOutputRenderTarget: () => null, contextNode: { id: 1, version: 0 },
+      backend: { isWebGPUBackend: true }, _currentSourceMaterial: null,
+    };
+    const nodes = new NodeManager(offlineRenderer, offlineRenderer.backend);
+    const environment = await createProceduralEnvironment(renderer as unknown as WebGPURenderer);
+    environment.apply(scene, 0.4, 0.25);
+    const object = new RenderObject(nodes, {}, offlineRenderer, mesh, material, scene, camera,
+      { getCacheKey: () => 1 }, { id: 1 }, null);
+    object.onDispose = () => {};
+    const versions = material.version;
+    const counts = { run, noon: [] as number[], dawn: [] as number[], materialVersionChanges: 0 };
+    for (const direction of ['noon', 'dawn'] as const) {
+      for (let step = 1; step <= 20; step += 1) {
+        environment.updateDaylight!(0.5 + (direction === 'noon' ? 1 : -1) * step / 40);
+        environment.apply(scene, 0.4, 0.25);
+        offlineRenderer.info.calls += 1;
+        const invalidation = Number(object.needsUpdate);
+        counts[direction].push(invalidation);
+        expect(invalidation).toBe(direction === 'noon' ? 0 : 1);
+        // Establish the cache baseline that a refreshed render object would have on the next draw.
+        object.initialNodesCacheKey = object.getDynamicCacheKey();
+      }
+    }
+    counts.materialVersionChanges = material.version - versions;
+    expect(counts.materialVersionChanges).toBe(0);
+    console.info('Daylight render-object update counts:', JSON.stringify(counts));
+    object.dispose();
+    environment.dispose();
+    mesh.geometry.dispose();
+    material.dispose();
     expectReleasedOnce();
   });
 
