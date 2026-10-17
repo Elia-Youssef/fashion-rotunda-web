@@ -13,10 +13,6 @@ export interface DirEntryLike {
 /** Lists one directory's entries; injectable so tests can reorder the walk. */
 export type ListDir = (dir: string) => DirEntryLike[];
 
-export declare const CONTENT_TYPES: Record<string, string>;
-export declare const FIXED_KEY_BY_PATH: Record<string, string>;
-export declare const EXCLUDED_FILES: ExclusionRule[];
-
 export declare function objectKeyFor(path: string, sha256: string): string;
 export declare function contentTypeFor(path: string): string;
 export declare function sha256Hex(bytes: Uint8Array): string;

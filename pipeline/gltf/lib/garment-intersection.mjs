@@ -3,7 +3,7 @@ import { Matrix4 } from 'three';
 import { MeshBVH } from 'three-mesh-bvh';
 import { combinedSurface, surfaceTopology } from './garment-coverage.mjs';
 
-export function findSurfaceIntersection(parts) {
+function findSurfaceIntersection(parts) {
   const geometry = combinedSurface(parts), topology = surfaceTopology(geometry);
   const first = new MeshBVH(geometry, { indirect: true });
   const second = new MeshBVH(geometry.clone(), { indirect: true });

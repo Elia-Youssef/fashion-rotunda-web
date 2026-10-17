@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mountProofPanel, overlayWanted } from '../../src/proof/panel';
+import { mountProofPanel } from '../../src/proof/panel';
+import { overlayWanted } from '../../src/proof/overlay';
 import type { ProofSnapshot } from '../../src/proof/marks';
 import type { Page } from '@playwright/test';
 import { nextProofReading } from '../e2e/support/preservation';
@@ -599,7 +600,6 @@ describe('mountProofPanel', () => {
     root.remove();
   });
 });
-
 
 it('keeps scene-file budgets separate from both browser request totals', () => {
   const root = document.createElement('div');

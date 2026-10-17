@@ -6,10 +6,6 @@ import type { GovernorEvent } from '../post/governor';
 import { TIERS } from '../tiers/table';
 import type { TierName } from '../tiers/table';
 
-// One rule, one home: the predicate lives in ./overlay and the panel re-exports it instead of
-// carrying a second copy that can drift from it.
-export { overlayWanted } from './overlay';
-
 export interface PanelOptions {
   read: () => ProofSnapshot;
   measure: (signal: AbortSignal) => Promise<void>; // disables its button while the orbit runs

@@ -5,7 +5,7 @@ import { MeshBVH } from 'three-mesh-bvh';
 import { combinedSurface, CONTACT_TOLERANCE, SEAM_TOLERANCE } from './garment-coverage.mjs';
 
 /** Ten-centimetre bands match the coverage report's height rows, in scene-space metres. */
-export const HEIGHT_BAND = 0.1;
+const HEIGHT_BAND = 0.1;
 
 /**
  * Coverage uses the garment's horizontal section extent centre at the vertex height. A ray
@@ -13,7 +13,7 @@ export const HEIGHT_BAND = 0.1;
  * inside or crossing that garment hit. Separate limbs wholly beyond the shell are excluded.
  * Triangle-plane intersections define the extent without requiring manifold edges or closure.
  */
-export function createVertexCoverage(garmentParts, bodyParts) {
+function createVertexCoverage(garmentParts, bodyParts) {
   const geometry = combinedSurface(garmentParts), bodyGeometry = combinedSurface(bodyParts);
   geometry.computeBoundingBox();
   const bounds = geometry.boundingBox, sections = new Map();

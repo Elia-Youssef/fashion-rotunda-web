@@ -1,5 +1,5 @@
 // The showroom colour grade. Pure, typed arrays only, no three.js, so the
-// lookup table, its monotonicity and its identity round-trip are testable in node.
+// lookup table, its monotonicity and its identity coordinates are testable in node.
 //
 // The grade applies in display space after ACES filmic tone mapping and sRGB conversion:
 // 1. A gentle S-curve enhancing midtone contrast.
@@ -84,24 +84,4 @@ export function gradeLut(size: number): Float32Array {
   }
 
   return table;
-}
-
-/**
- * Nearest-cell sampler, for unit tests.
- * Resolves normalized [0, 1] coordinates to the nearest discrete LUT cell.
- */
-export function sampleLut(
-  table: Float32Array,
-  size: number,
-  r: number,
-  g: number,
-  b: number,
-): [number, number, number] {
-  const maxIdx = size - 1;
-  const ir = Math.min(maxIdx, Math.max(0, Math.round(r * maxIdx)));
-  const ig = Math.min(maxIdx, Math.max(0, Math.round(g * maxIdx)));
-  const ib = Math.min(maxIdx, Math.max(0, Math.round(b * maxIdx)));
-  const offset = (ir + ig * size + ib * size * size) * 3;
-
-  return [table[offset]!, table[offset + 1]!, table[offset + 2]!];
 }

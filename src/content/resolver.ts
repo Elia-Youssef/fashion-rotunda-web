@@ -1,6 +1,6 @@
 // Logical content paths stay independent of the transport and its object layout.
-export const LOCAL_CONTENT_BASE = '/content';
-export const BASIS_DIRECTORY = 'basis/';
+const LOCAL_CONTENT_BASE = '/content';
+const BASIS_DIRECTORY = 'basis/';
 const BASIS_FILES = ['basis_transcoder.js', 'basis_transcoder.wasm'];
 // SHA-256 encodes 256 bits as 64 hexadecimal characters.
 const SHA256_HEX = /^[a-f0-9]{64}$/;

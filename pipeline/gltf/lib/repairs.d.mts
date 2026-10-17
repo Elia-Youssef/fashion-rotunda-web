@@ -14,9 +14,6 @@ export interface Repair {
   to: string;
   reason: 'empty-slot' | 'orm-in-normal-slot';
 }
-
-export declare const REPAIRABLE_SLOTS: RepairSlot[];
-export declare const SLOT_SUFFIX: Record<RepairSlot, string>;
 export declare function materialKey(materialName: string | null | undefined): string | null;
 export declare function sourceTextureName(key: string, suffix: string): string;
 export declare function isOrmName(textureName: string | null | undefined): boolean;

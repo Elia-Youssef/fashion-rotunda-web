@@ -11,7 +11,7 @@ import { assertNoSurfaceIntersections } from './garment-intersection.mjs';
 
 /** Later covered intervals took 31 passes in the measured repair. Sixty-four bounds that
  *  advancing face boundary with room for quantization, without allowing a partial output. */
-export const MAX_FIT_PASSES = 64;
+const MAX_FIT_PASSES = 64;
 
 /** The selected coarse shell separates limb contacts while fitting only its covered torso. */
 export const LOOK_FIT_POLICIES = {

@@ -1,5 +1,4 @@
 export declare const SRGB_SLOT_PATTERN: RegExp;
-export declare const NORMAL_SLOT_PATTERN: RegExp;
 export declare const COLOR_SLOTS: string[];
 export declare function isColorSlot(slot: string): boolean;
 export declare function isNormalSlot(slot: string): boolean;

@@ -15,7 +15,7 @@
 export const SRGB_SLOT_PATTERN = /color|emissive|diffuse/i;
 
 /** Normal maps are the one slot family that needs UASTC: ETC1S banding shows as lighting noise. */
-export const NORMAL_SLOT_PATTERN = /normal/i;
+const NORMAL_SLOT_PATTERN = /normal/i;
 
 /** The two core colour slots, kept as data so a test can check the pattern covers them. */
 export const COLOR_SLOTS = ['baseColorTexture', 'emissiveTexture'];

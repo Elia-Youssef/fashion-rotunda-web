@@ -15,24 +15,24 @@ export const MAX_GARMENT_DISPLACEMENT = 0.04;
  *  shape limit still rejects the multiple-fold edge expansion caused by isolated vertex spikes. */
 export const MAX_GARMENT_EDGE_RATIO = 1.5;
 /** A 200 mm surface neighbourhood spreads a hand contact beyond its supporting triangle. */
-export const GARMENT_FALLOFF_RADIUS = 0.2;
+const GARMENT_FALLOFF_RADIUS = 0.2;
 /** Four edge lengths keep the contact face inside the smooth support. */
-export const MIN_CONTACT_SUPPORT_EDGES = 4;
+const MIN_CONTACT_SUPPORT_EDGES = 4;
 /** Gradient-constrained contacts settle gradually; the finite bound refuses a partial result. */
-export const MAX_SHELL_PASSES = 128;
+const MAX_SHELL_PASSES = 128;
 /** Sixteen initial torso passes match the established covered-surface prefit. */
-export const MAX_TORSO_PASSES = 16;
+const MAX_TORSO_PASSES = 16;
 /** Five percent strain headroom accommodates serialized quantization on short edges. */
-export const EDGE_RATIO_HEADROOM = 0.95;
+const EDGE_RATIO_HEADROOM = 0.95;
 /** A finite projection solve refuses an unresolved spike instead of shipping it. */
-export const MAX_FALLOFF_PASSES = 2048;
+const MAX_FALLOFF_PASSES = 2048;
 /** Ten micrometres is below contact tolerance; actual edge ratios are checked after projection. */
-export const FALLOFF_TOLERANCE = CONTACT_TOLERANCE / 10;
+const FALLOFF_TOLERANCE = CONTACT_TOLERANCE / 10;
 
 const key = point => point.toArray().map(v => Math.round(v / SEAM_TOLERANCE)).join(',');
 /** Separate from the nearest protected body boundary. An exterior point continues away
  *  from that body, rather than being pulled back into it. */
-export function closestBodyExit(surface, point, outward) {
+function closestBodyExit(surface, point, outward) {
   const closest = surface.closestPointToPoint(point);
   if (!closest) throw new Error('Body contact has no nearest surface');
   const delta = closest.point.clone().sub(point), distance = delta.length();
@@ -44,7 +44,7 @@ export function closestBodyExit(surface, point, outward) {
 
 /** Fit only original first-interval torso vertices. Every excluded limb vertex stays exact.
  *  The garment-only contact stage handles triangles straddling protected intervals. */
-export function fitCoveredTorso(garmentParts, bodyParts) {
+function fitCoveredTorso(garmentParts, bodyParts) {
   const coverage = createCoverage(combinedSurface(garmentParts), combinedSurface(bodyParts));
   const allowed = new Set(bodyParts.flatMap(part => part.points.filter(point => coverage.query(point))));
   const original = new Map([...allowed].map(point => [point, point.clone()]));
@@ -111,7 +111,7 @@ export function validateSurfaceShape(garment, body, before) {
 }
 
 /** Compact C2 falloff has zero slope at the centre and support boundary. */
-export function garmentFalloff(distance, radius) {
+function garmentFalloff(distance, radius) {
   const t = Math.min(1, Math.max(0, distance / radius));
   return (1 - t) ** 4 * (1 + 4 * t);
 }

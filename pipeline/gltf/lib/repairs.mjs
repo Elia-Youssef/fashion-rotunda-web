@@ -17,10 +17,10 @@
 // it, so nothing here touches a file or a glTF document.
 
 /** The four slots the rule can fill, in the order repairs are reported. */
-export const REPAIRABLE_SLOTS = ['baseColor', 'normal', 'metallicRoughness', 'occlusion'];
+const REPAIRABLE_SLOTS = ['baseColor', 'normal', 'metallicRoughness', 'occlusion'];
 
 /** Which source suffix feeds which slot. */
-export const SLOT_SUFFIX = {
+const SLOT_SUFFIX = {
   baseColor: 'BC',
   normal: 'NM',
   metallicRoughness: 'ORM',

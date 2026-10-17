@@ -2,7 +2,7 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { posix, resolve, win32 } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { assemble, isWithinExportRoot, plainText, resolveExportFile } from '../../pipeline/gltf/assemble.mjs';
+import { assemble, isWithinExportRoot, resolveExportFile } from '../../pipeline/gltf/assemble.mjs';
 
 const temporaryDirectories: string[] = [];
 afterEach(() => {
@@ -67,17 +67,6 @@ describe('resolveExportFile', () => {
 
   it('rejects an empty recorded path', () => {
     expect(() => resolveExportFile(root, '')).toThrow('must stay below');
-  });
-});
-
-describe('plainText', () => {
-  it('returns an empty string for non-string catalogue metadata', () => {
-    expect(plainText(42)).toBe('');
-    expect(plainText(null)).toBe('');
-  });
-
-  it('unwraps the NSLOCTEXT wrapper to its source text', () => {
-    expect(plainText('NSLOCTEXT("a","b","hi there")')).toBe('hi there');
   });
 });
 

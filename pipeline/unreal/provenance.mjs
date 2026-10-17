@@ -9,7 +9,7 @@ import { basename, isAbsolute, relative, resolve, sep } from 'node:path';
 import { contentDir, provenanceDir, sourceDir } from '../config.mjs';
 
 export const exportEvidenceRoot = provenanceDir;
-export const knownGoodTrees = Object.freeze([
+const knownGoodTrees = Object.freeze([
   resolve(sourceDir, 'unreal'),
   contentDir,
 ]);

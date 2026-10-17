@@ -4,7 +4,6 @@ export declare function isWithinExportRoot(
   candidate: string,
   paths?: Pick<typeof import('node:path'), 'relative' | 'isAbsolute'>,
 ): boolean;
-export declare function plainText(value: unknown): string;
 export declare function resolveExportFile(exportRoot: string, recordedPath: unknown): string;
 export declare function assemble(options?: {
   out?: string;

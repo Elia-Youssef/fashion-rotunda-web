@@ -15,7 +15,6 @@ export interface TreeManifest {
 }
 
 export const exportEvidenceRoot: string;
-export const knownGoodTrees: readonly string[];
 
 export function assertNewIsolatedOutput(candidate: string): string;
 export function createEvidenceRun(now?: Date, entropy?: string): {

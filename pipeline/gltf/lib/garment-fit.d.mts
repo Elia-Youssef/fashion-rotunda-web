@@ -17,7 +17,6 @@ export interface FitResult {
 
 export type LookFit = { applied: false } | (FitResult & { applied: true; method: SurfaceFitMethod }) |
   (ContactFit & { applied: true; method: 'contact-clearance' });
-export declare const MAX_FIT_PASSES: number;
 export declare const LOOK_FIT_POLICIES: Record<string, {
   garmentGroup: string; bodyGroup: string; method: FitMethod; coverage?: CoverageOptions; margin?: number;
 }>;

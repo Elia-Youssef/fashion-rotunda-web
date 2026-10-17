@@ -16,7 +16,7 @@ import { extname, join } from 'node:path';
 
 /** MIME type by extension. An extension missing from this table stops the build instead of
  *  uploading a guessed type, because the type becomes the object's Content-Type header. */
-export const CONTENT_TYPES = {
+const CONTENT_TYPES = {
   '.glb': 'model/gltf+binary',
   '.hdr': 'image/vnd.radiance',
   '.jpg': 'image/jpeg',
@@ -33,7 +33,7 @@ export const CONTENT_TYPES = {
  * appends its own file names to the transcoder directory, so those files keep the names the
  * loader requests under content/basis/.
  */
-export const FIXED_KEY_BY_PATH = {
+const FIXED_KEY_BY_PATH = {
   'basis/basis_transcoder.js': 'content/basis/basis_transcoder.js',
   'basis/basis_transcoder.wasm': 'content/basis/basis_transcoder.wasm',
 };
@@ -47,7 +47,7 @@ export const FIXED_KEY_BY_PATH = {
  * name. A new file the page never fetches gets an entry here, with its reason, never a silent
  * skip: what is not listed is uploaded.
  */
-export const EXCLUDED_FILES = [];
+const EXCLUDED_FILES = [];
 
 /** The object key for one content file: fixed where a consumer needs a directory, hashed otherwise. */
 export function objectKeyFor(path, sha256) {

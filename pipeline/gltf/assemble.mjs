@@ -52,20 +52,6 @@ export function resolveExportFile(exportRoot, recordedPath) {
   return candidate;
 }
 
-/** Unreal's text export sometimes keeps the NSLOCTEXT wrapper; the page wants the sentence only. */
-export function plainText(value) {
-  if (typeof value !== 'string') return '';
-  const match = value.match(/^NSLOCTEXT\("[^"]*",\s*"[^"]*",\s*"([\s\S]*)"\)$/);
-  const text = match ? match[1] : value;
-  return text
-    .replace(/\\"/g, '"')
-    .replace(/\\'/g, "'")
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201c\u201d]/g, '"')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 /**
  * Moves every scene node of `part` into `target`'s single scene under one named node, and returns
  * the materials that came with it. mergeDocuments keeps the part's scene; that scene is dropped
