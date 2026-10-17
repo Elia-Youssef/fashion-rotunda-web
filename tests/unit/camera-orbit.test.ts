@@ -333,7 +333,7 @@ describe('createOrbit', () => {
     });
     pointer(target, 'pointermove', 250, 100, 2);
     expect(tracked.get(2)).toBe(second);
-    expect(second).toEqual({ x: 250, y: 100 });
+    expect(second).toEqual({ x: 250, y: 100, pan: false });
     expect(readSpherical(target.orbit).radius).toBeCloseTo(PROOF_RADIUS * 200 / 150, 9);
     pointer(target, 'pointerdown', 500, 100, 3);
     pointer(target, 'pointermove', 600, 100, 3);
@@ -345,7 +345,7 @@ describe('createOrbit', () => {
     expect(release.mock.calls).toEqual([[3]]);
     pointer(target, 'pointermove', 150, 100, 1);
     expect(tracked.get(1)).toBe(first);
-    expect(first).toEqual({ x: 150, y: 100 });
+    expect(first).toEqual({ x: 150, y: 100, pan: false });
     expect(readSpherical(target.orbit).theta).toBeCloseTo(-0.25, 9);
     expect(iterate).not.toHaveBeenCalled();
     target.orbit.setEnabled(false);
@@ -627,14 +627,12 @@ describe('createOrbit', () => {
     expect(target.orbit.moving).toBe(false);
   });
 
-  it('treats middle and right mouse buttons as non-inspection inputs', () => {
-    for (const button of [1, 2]) {
-      const target = make();
-      buttonDown(target, button);
-      expect(target.orbit.moving).toBe(false);
-      pointer(target, 'pointermove', 300, 100);
-      expect(readSpherical(target.orbit).theta).toBeCloseTo(0, 9);
-    }
+  it('treats the middle mouse button as a non-inspection input', () => {
+    const target = make();
+    buttonDown(target, 1);
+    expect(target.orbit.moving).toBe(false);
+    pointer(target, 'pointermove', 300, 100);
+    expect(readSpherical(target.orbit).theta).toBeCloseTo(0, 9);
   });
 
   it('a move with no delta neither rotates nor refreshes the release window', () => {

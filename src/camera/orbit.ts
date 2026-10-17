@@ -16,6 +16,9 @@ export interface OrbitLimits {
   maxDistance: number;
   minPolar: number; // radians from straight up; 0.15 keeps the camera off the zenith
   maxPolar: number; // Math.PI / 2 - 0.05 keeps it above the floor
+  /** User pan range in world metres; authored poses keep their own target. */
+  minTargetHeight?: number;
+  maxTargetHeight?: number;
 }
 
 export interface OrbitOptions {
@@ -84,6 +87,8 @@ const FRAME_MS = 16.7;
 const STILL_EPSILON = 1e-4;
 /** One keydown rotates by three degrees, so a held key repeats into a steady pan. */
 const KEY_ROTATE = Math.PI / 60;
+/** Ten centimetres per keydown, including the browser's held-key repeats. */
+const KEY_PAN_METRES = 0.1;
 /**
  * A release this long after the last pointer move is a release from rest: the hand held the
  * subject still and then let go, so there is no velocity to carry and the armed glide is dropped.
@@ -95,6 +100,7 @@ const STALE_RELEASE_MS = 80;
 interface TrackedPointer {
   x: number;
   y: number;
+  pan: boolean;
 }
 
 export function createOrbit(options: OrbitOptions): OrbitHandle {
@@ -126,6 +132,8 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
   // STALE_RELEASE_MS. Negative infinity so a release before any move is stale by construction.
   let lastMoveMs = Number.NEGATIVE_INFINITY;
   let pinchSpread = 0;
+  let pinchMidpointY = 0;
+  let panning = false;
   let capturedPointer: number | null = null;
   let isEnabled = true;
 
@@ -242,6 +250,26 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     apply();
   }
 
+  /** Translate camera and target together, keeping their spherical offset and view direction. */
+  function panBy(metres: number): void {
+    finishGlide();
+    pendingTheta = 0;
+    pendingPhi = 0;
+    target.y = MathUtils.clamp(
+      target.y + metres,
+      limits.minTargetHeight ?? Number.NEGATIVE_INFINITY,
+      limits.maxTargetHeight ?? Number.POSITIVE_INFINITY,
+    );
+    apply();
+  }
+
+  function panPixels(dy: number): void {
+    const height = element.getBoundingClientRect().height;
+    if (height <= 0 || dy === 0) return;
+    const metresPerPixel = 2 * spherical.radius * Math.tan(MathUtils.degToRad(camera.fov) / 2) / height;
+    panBy(dy * metresPerPixel);
+  }
+
   function capture(pointerId: number): void {
     // A drag that leaves the canvas must keep delivering moves to it; jsdom has no pointer
     // capture, and the unit tests dispatch their events on the element directly anyway.
@@ -268,18 +296,27 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     return Math.hypot(a.x - b.x, a.y - b.y);
   }
 
+  function readPinchMidpointY(): number {
+    const values = pointers.values();
+    const a = values.next().value!;
+    const b = values.next().value!;
+    return (a.y + b.y) / 2;
+  }
+
   function onPointerDown(event: PointerEvent): void {
     if (!isEnabled) {
       return;
     }
     finishGlide();
-    if (event.pointerType === 'mouse' && event.button !== 0) {
-      return; // the left button only; middle and right are not inspection inputs
+    if (event.pointerType === 'mouse' && event.button !== 0 && event.button !== 2) {
+      return; // the middle button is not an inspection input
     }
-    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const pan = event.pointerType === 'mouse' && (event.button === 2 || event.shiftKey);
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY, pan });
     if (pointers.size === 1) {
       // Grabbing the subject stops whatever glide was left over from the previous gesture.
       dragging = true;
+      panning = pan;
       lastX = event.clientX;
       lastY = event.clientY;
       pendingTheta = 0;
@@ -290,6 +327,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
       pendingTheta = 0;
       pendingPhi = 0;
       pinchSpread = readPinchSpread();
+      pinchMidpointY = readPinchMidpointY();
     }
     capture(event.pointerId);
   }
@@ -303,11 +341,14 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     pointer.y = event.clientY;
     if (pointers.size >= 2) {
       const spread = readPinchSpread();
+      const midpointY = readPinchMidpointY();
+      panPixels(midpointY - pinchMidpointY);
       if (pinchSpread > 0 && spread > 0) {
         // Fingers apart dollies in, fingers together dollies out, by how much the spread changed.
         dollyBy(pinchSpread / spread);
       }
       pinchSpread = spread;
+      pinchMidpointY = midpointY;
       return;
     }
     if (!dragging) {
@@ -318,6 +359,10 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     lastX = event.clientX;
     lastY = event.clientY;
     if (dx !== 0 || dy !== 0) {
+      if (panning) {
+        panPixels(dy);
+        return;
+      }
       // Dragging right orbits one way and dragging left the other, as in every orbit control;
       // dragging down lifts the camera toward the zenith and dragging up drops it to the floor.
       rotateBy(-dx * ROTATE_PER_PIXEL, -dy * ROTATE_PER_PIXEL, true);
@@ -335,10 +380,14 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
       // delete() removed a pointer above and one entry remains, so next() holds that pointer.
       const remaining = pointers.values().next().value!;
       dragging = true;
+      panning = remaining.pan;
       lastX = remaining.x;
       lastY = remaining.y;
       pendingTheta = 0;
       pendingPhi = 0;
+    } else if (pointers.size >= 2) {
+      pinchSpread = readPinchSpread();
+      pinchMidpointY = readPinchMidpointY();
     } else if (pointers.size === 0) {
       dragging = false;
       if (prefersReducedMotion() || now() - lastMoveMs > STALE_RELEASE_MS) {
@@ -374,6 +423,14 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     }
     // The listener sits on the canvas itself, so it only fires while the canvas holds focus.
     switch (event.key) {
+      case 'PageUp':
+        event.preventDefault();
+        panBy(KEY_PAN_METRES);
+        break;
+      case 'PageDown':
+        event.preventDefault();
+        panBy(-KEY_PAN_METRES);
+        break;
       case 'ArrowLeft':
         rotateBy(KEY_ROTATE, 0, false);
         break;
@@ -403,11 +460,16 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
   }
 
   function reset(): void {
+    finishGlide();
     spherical.copy(resetSpherical);
     target.copy(resetTarget);
     pendingTheta = 0;
     pendingPhi = 0;
     apply();
+  }
+
+  function onContextMenu(event: Event): void {
+    event.preventDefault();
   }
 
   element.addEventListener('pointerdown', onPointerDown);
@@ -417,6 +479,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
   element.addEventListener('pointercancel', onPointerUp);
   element.addEventListener('wheel', onWheel, { passive: true });
   element.addEventListener('keydown', onKeyDown);
+  element.addEventListener('contextmenu', onContextMenu);
 
   return {
     update(dtMs: number): boolean {
@@ -439,7 +502,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
         }
         return true;
       }
-      if (dragging) {
+      if (pointers.size > 0) {
         // rotateBy has already applied every move of this drag to the spherical state. Draining
         // the glide here would apply the last move a second time, at a scale set by how many
         // pointer moves the device delivers per frame; the glide belongs to the release.
@@ -556,7 +619,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
     get moving(): boolean {
       // A held drag is motion too: the post chain drops its heavy effects to half resolution on
       // this signal, and a drag that only reported motion once it glided kept them at full.
-      return dragging || pendingTheta !== 0 || pendingPhi !== 0 || activeGlide !== null;
+      return pointers.size > 0 || pendingTheta !== 0 || pendingPhi !== 0 || activeGlide !== null;
     },
 
     get position(): [number, number, number] {
@@ -578,6 +641,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
       element.removeEventListener('pointercancel', onPointerUp);
       element.removeEventListener('wheel', onWheel);
       element.removeEventListener('keydown', onKeyDown);
+      element.removeEventListener('contextmenu', onContextMenu);
       if (capturedPointer !== null) {
         releaseCapture(capturedPointer);
       }

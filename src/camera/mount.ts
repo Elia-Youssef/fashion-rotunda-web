@@ -65,12 +65,18 @@ export interface CameraMount {
   dispose(): void;
 }
 
+// Measured 2026-10-17: plinth top 0.15 m; tallest look head about 2.09 m.
+const MIN_TARGET_HEIGHT = 0.15;
+const MAX_TARGET_HEIGHT = 2.1;
+
 /** Inside the rotunda, above the floor, off the zenith: the room is about 16 m across. */
 const LIMITS: OrbitLimits = {
   minDistance: 1.2,
   maxDistance: 7,
   minPolar: 0.15,
   maxPolar: Math.PI / 2 - 0.05,
+  minTargetHeight: MIN_TARGET_HEIGHT,
+  maxTargetHeight: MAX_TARGET_HEIGHT,
 };
 
 /** The per-frame fraction of remaining motion the orbit sheds at 60 Hz. */

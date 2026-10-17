@@ -17,6 +17,7 @@ interface Live {
   currentLook: string | null;
   currentVariant: string | null;
   position: [number, number, number];
+  target: [number, number, number];
   /** Every pose the mount asked the orbit to move to, in order. */
   moved: [number, number, number][];
   yaw: number;
@@ -52,6 +53,7 @@ function makeStage(search: string): Stage {
     currentLook: null,
     currentVariant: null,
     position: [...PROOF_POSITION],
+    target: [...PROOF_TARGET],
     moved: [],
     yaw: 0,
     running: false,
@@ -86,9 +88,13 @@ function makeStage(search: string): Stage {
         get position(): [number, number, number] {
           return live.position;
         },
-        moveTo: (position: [number, number, number]): void => {
+        get target(): [number, number, number] {
+          return live.target;
+        },
+        moveTo: (position: [number, number, number], target: [number, number, number]): void => {
           live.moved.push(position);
           live.position = [...position];
+          live.target = [...target];
         },
       },
       turntable: {
@@ -174,6 +180,70 @@ afterEach(() => {
 });
 
 describe('share mount', () => {
+  it.each([0.75, 1.3])('uses the supplied proof height %s for a three-number camera link', (height) => {
+    const stage = makeStage('?cam=1.5,2,3');
+    stage.options.proofTarget = [0, height, 0];
+    mount(stage);
+    expect(stage.live.target).toEqual([0, height, 0]);
+  });
+
+  it.each([0.75, 1.3])('preserves linked height one when the proof height is %s', async (height) => {
+    const stage = makeStage('?cam=1.5,2,3,1');
+    stage.options.proofTarget = [0, height, 0];
+    mount(stage);
+    expect(stage.live.target).toEqual([0, 1, 0]);
+    await tick(500);
+    expect(window.location.search).toBe('?cam=1.500,2.000,3.000,1.000');
+  });
+
+  it.each([0.75, 1.3])('omits a target height equal to proof height %s to the millimetre', async (height) => {
+    const stage = makeStage('');
+    stage.options.proofTarget = [0, height, 0];
+    stage.live.target = [0, height, 0];
+    mount(stage);
+    stage.live.position[1] += 0.2;
+    stage.live.target[1] += 0.0004;
+    await tick(500);
+    expect(window.location.search).toBe('?cam=0.000,1.900,4.200');
+    stage.live.target[1] = height + 0.0006;
+    await tick(500);
+    expect(window.location.search).toBe(`?cam=0.000,1.900,4.200,${(height + 0.001).toFixed(3)}`);
+  });
+
+  it.each([
+    ['?cam=1.5,2,3', 1],
+    ['?cam=1.5,2,3,1.65', 1.65],
+  ] as const)('restores the camera target height from %s', (search, height) => {
+    const stage = makeStage(search);
+    mount(stage);
+    expect(stage.live.position).toEqual([1.5, 2, 3]);
+    expect(stage.live.target).toEqual([0, height, 0]);
+    expect(stage.options.proofTarget).toEqual(PROOF_TARGET);
+  });
+
+  it('writes a fourth camera number after vertical pan and omits it on returning home', async () => {
+    const stage = makeStage('');
+    mount(stage);
+    stage.live.position[1] += 0.5;
+    stage.live.target[1] += 0.5;
+    await tick(500);
+    expect(window.location.search).toBe('?cam=0.000,2.200,4.200,1.500');
+    stage.live.target = [...PROOF_TARGET];
+    await tick(500);
+    expect(window.location.search).toBe('?cam=0.000,2.200,4.200');
+    stage.live.position = [...PROOF_POSITION];
+    await tick(500);
+    expect(window.location.search).toBe('');
+  });
+
+  it('keeps a changed target height in a link even at the proof camera position', async () => {
+    const stage = makeStage('');
+    mount(stage);
+    stage.live.target[1] = 1.5;
+    await tick(500);
+    expect(window.location.search).toBe('?cam=0.000,1.700,4.200,1.500');
+  });
+
   it('publishes an elapsed observer update before the next timer task', async () => {
     const stage = makeStage('');
     mount(stage);

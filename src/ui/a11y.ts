@@ -23,7 +23,8 @@ export interface A11yMount {
 }
 
 const CANVAS_LABEL =
-  'Showroom. Drag to orbit, arrow keys to turn, plus and minus to zoom, Home to reset';
+  'Showroom. Drag to orbit, arrow keys to turn, plus and minus to zoom, ' +
+  'Page Up and Page Down to move up and down, Home to reset';
 
 export function mountA11y(options: A11yMountOptions): A11yMount {
   const { root, aside, canvas, search, announcer } = options;

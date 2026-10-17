@@ -8,8 +8,8 @@ export interface ShareState {
   variant: string | null;
   /** serializeRig output, or null for the level's own rig. */
   rig: string | null;
-  /** Orbit position in metres, three decimals; null means the proof pose. */
-  camera: [number, number, number] | null;
+  /** Orbit position and optional target height in metres; null means the proof pose. */
+  camera: [number, number, number, number?] | null;
   /** Turntable yaw in radians, three decimals; null means zero. */
   yaw: number | null;
   turning: boolean;
@@ -107,16 +107,18 @@ export function parseShareState(search: string): ShareState {
   const rawRig = params.get('rig');
   const rig = rawRig !== null && isValidRigString(rawRig) ? rawRig : null;
 
-  let camera: [number, number, number] | null = null;
+  let camera: ShareState['camera'] = null;
   const rawCam = params.get('cam');
   if (rawCam !== null) {
     const parts = rawCam.split(',');
-    if (parts.length === 3) {
+    if ((parts.length === 3 || parts.length === 4) && parts.every((part) => part.trim() !== '')) {
       const x = Number(parts[0]);
       const y = Number(parts[1]);
       const z = Number(parts[2]);
-      if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z)) {
+      const height = parts.length === 4 ? Number(parts[3]) : undefined;
+      if ([x, y, z].every(Number.isFinite) && (height === undefined || Number.isFinite(height))) {
         camera = [round(x, 3), round(y, 3), round(z, 3)];
+        if (height !== undefined) camera.push(round(height, 3));
       }
     }
   }
@@ -167,9 +169,10 @@ function serializeOwned(key: string, state: ShareState): string | null {
     case 'rig':
       return state.rig !== null && state.rig !== DEFAULT_RIG_SERIALIZED ? state.rig : null;
     case 'cam':
-      return state.camera !== null
-        ? state.camera.map((n) => round(n, 3).toFixed(3)).join(',')
-        : null;
+      if (state.camera === null) return null;
+      return state.camera
+        .filter((n): n is number => n !== undefined)
+        .map((n) => round(n, 3).toFixed(3)).join(',');
     case 'yaw':
       return state.yaw !== null && round(state.yaw, 3) !== 0
         ? round(state.yaw, 3).toFixed(3)

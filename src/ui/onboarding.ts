@@ -5,11 +5,14 @@
 import './onboarding.css';
 
 import { prefersReducedMotion } from './announce';
+import { TOUCH_POINTER_QUERY } from '../tiers/decide';
 
 export interface OnboardingStep {
   id: 'orbit' | 'looks' | 'lights';
   title: string;
   text: string;
+  /** Alternate instructions for a coarse pointer, when the step needs them. */
+  touchText?: string;
   /** The element the step points at, by selector; the step waits for it to exist. */
   anchor: string;
 }
@@ -18,7 +21,10 @@ export const ONBOARDING_STEPS: readonly OnboardingStep[] = [
   {
     id: 'orbit',
     title: 'Explore the room',
-    text: 'Drag or use arrow keys to rotate the view around the plinth.',
+    text: 'Drag or use arrow keys to rotate the view around the plinth. ' +
+      'Right-drag, or Page Up and Page Down, to move up and down.',
+    touchText: 'Drag or use arrow keys to rotate the view around the plinth. ' +
+      'Drag with two fingers to move up and down.',
     anchor: '#scene',
   },
   {
@@ -239,7 +245,8 @@ export function mountOnboarding(options: OnboardingOptions): OnboardingHandle {
     const step = ONBOARDING_STEPS[index];
 
     titleEl.textContent = step.title;
-    textEl.textContent = step.text;
+    const coarse = typeof window.matchMedia === 'function' && window.matchMedia(TOUCH_POINTER_QUERY).matches;
+    textEl.textContent = (coarse ? step.touchText : undefined) ?? step.text;
     nextBtn.textContent = index === ONBOARDING_STEPS.length - 1 ? 'Done' : 'Next';
 
     const anchor = document.querySelector<HTMLElement>(step.anchor);

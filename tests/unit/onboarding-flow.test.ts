@@ -35,6 +35,7 @@ beforeEach(() => {
 afterEach(() => {
   handle?.dispose();
   handle = null;
+  vi.unstubAllGlobals();
   root.remove();
   document.querySelector('#scene')?.remove();
   document.querySelector('#looks')?.remove();
@@ -54,6 +55,17 @@ function storageAdapter() {
 }
 
 describe('ONBOARDING_STEPS', () => {
+  it('stores both pointer instructions in the orbit step data', () => {
+    expect(ONBOARDING_STEPS[0].text).toBe(
+      'Drag or use arrow keys to rotate the view around the plinth. ' +
+      'Right-drag, or Page Up and Page Down, to move up and down.',
+    );
+    expect(ONBOARDING_STEPS[0].touchText).toBe(
+      'Drag or use arrow keys to rotate the view around the plinth. ' +
+      'Drag with two fingers to move up and down.',
+    );
+  });
+
   it('defines the three required steps in order', () => {
     expect(ONBOARDING_STEPS).toHaveLength(3);
     expect(ONBOARDING_STEPS.map((s) => s.id)).toEqual(['orbit', 'looks', 'lights']);
@@ -62,6 +74,17 @@ describe('ONBOARDING_STEPS', () => {
 });
 
 describe('mountOnboarding', () => {
+  it.each([false, true])('explains vertical pan for coarse pointer %s', (coarse) => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query === '(pointer: coarse)' && coarse })));
+    handle = mountOnboarding({ root, storage: storageAdapter() });
+    handle.start();
+    const expected = coarse ? 'Drag with two fingers to move up and down.' :
+      'Right-drag, or Page Up and Page Down, to move up and down.';
+    expect(root.querySelector('.onboarding-card__text')?.textContent).toBe(
+      `Drag or use arrow keys to rotate the view around the plinth. ${expected}`,
+    );
+  });
+
   it.each(['skip', 'next'] as const)('retires a retained %s control on disposal', (control) => {
     const storage = { getItem: vi.fn(() => null), setItem: vi.fn() };
     const onDismissed = vi.fn();

@@ -47,7 +47,7 @@ async function mount(): Promise<ShareMountOptions> {
     defaultLook: 'look', defaultVariant: 'base',
     lighting: { rig: DEFAULT_RIG, apply: () => {}, serialize: () => DEFAULT_RIG_SERIALIZED },
     camera: {
-      orbit: { position: [0, 1, 4], moveTo: () => {} },
+      orbit: { position: [0, 1, 4], target: [0, 1, 0], moveTo: () => {} },
       turntable: { yaw: 0, running: false, setYaw: () => {}, start: () => {}, stop: () => {} },
     },
     music: { player: { state: 'off' } }, postFeatures: () => 'off', proofTarget: [0, 1, 0],

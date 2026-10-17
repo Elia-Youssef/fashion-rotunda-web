@@ -29,6 +29,7 @@ export interface ShareMountOptions {
   camera: {
     orbit: {
       readonly position: [number, number, number];
+      readonly target: [number, number, number];
       moveTo(position: [number, number, number], target: [number, number, number]): void;
     };
     turntable: {
@@ -107,7 +108,8 @@ export function mountShare(options: ShareMountOptions): ShareMount {
   if (bootState.camera !== null) {
     // moveTo, not setPose: setPose re-homes the orbit, which would point the card's Reset at the
     // shared pose instead of the proof view the page was built with.
-    options.camera.orbit.moveTo(bootState.camera, options.proofTarget);
+    const [x, y, z, height = options.proofTarget[1]] = bootState.camera;
+    options.camera.orbit.moveTo([x, y, z], [options.proofTarget[0], height, options.proofTarget[2]]);
   }
   if (bootState.yaw !== null) {
     options.camera.turntable.setYaw(bootState.yaw);
@@ -151,8 +153,10 @@ export function mountShare(options: ShareMountOptions): ShareMount {
     const dy = pos[1] - proofPosition[1];
     const dz = pos[2] - proofPosition[2];
     const distSq = dx * dx + dy * dy + dz * dz;
-    const camera: [number, number, number] | null =
-      distSq < 0.0001 ? null : [pos[0], pos[1], pos[2]];
+    const height = options.camera.orbit.target[1];
+    const heightChanged = Math.round(height * 1000) !== Math.round(options.proofTarget[1] * 1000);
+    const camera: ShareState['camera'] = distSq < 0.0001 && !heightChanged
+      ? null : heightChanged ? [pos[0], pos[1], pos[2], height] : [pos[0], pos[1], pos[2]];
 
     const turning = options.camera.turntable.running;
 

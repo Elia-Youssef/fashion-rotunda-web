@@ -132,7 +132,8 @@ describe('mountA11y', () => {
     a11y = mountA11y({ root, aside, canvas, announcer, search: '' });
 
     expect(canvas.getAttribute('aria-label')).toBe(
-      'Showroom. Drag to orbit, arrow keys to turn, plus and minus to zoom, Home to reset',
+      'Showroom. Drag to orbit, arrow keys to turn, plus and minus to zoom, ' +
+      'Page Up and Page Down to move up and down, Home to reset',
     );
     expect(canvas.hasAttribute('role')).toBe(false);
     expect(canvas.tabIndex).toBe(0);

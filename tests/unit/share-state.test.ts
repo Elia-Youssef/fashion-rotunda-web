@@ -98,8 +98,34 @@ describe('share state parsing and serialization', () => {
   it('ignores malformed camera coordinates', () => {
     expect(parseShareState('?cam=1,2').camera).toBeNull();
     expect(parseShareState('?cam=1,2,abc').camera).toBeNull();
-    expect(parseShareState('?cam=1,2,3,4').camera).toBeNull();
+    expect(parseShareState('?cam=1,2,3,4,5').camera).toBeNull();
   });
+
+  it('round trips three camera coordinates without adding a target height', () => {
+    const state = parseShareState('?cam=1.5,2,3');
+    expect(state.camera).toEqual([1.5, 2, 3]);
+    expect(buildSearch('', state)).toBe('?cam=1.500,2.000,3.000');
+    expect(parseShareState(buildSearch('', state)).camera).toEqual([1.5, 2, 3]);
+  });
+
+  it('round trips a fourth camera number as target height with three decimals', () => {
+    const state = parseShareState('?cam=1.5,2,3,1.65432');
+    expect(state.camera).toEqual([1.5, 2, 3, 1.654]);
+    expect(buildSearch('', state)).toBe('?cam=1.500,2.000,3.000,1.654');
+    expect(parseShareState(buildSearch('', state)).camera).toEqual([1.5, 2, 3, 1.654]);
+  });
+
+  it('preserves an explicit fourth camera number without choosing a proof default', () => {
+    expect(buildSearch('', stateWith({ camera: [1.5, 2, 3, 1] }))).toBe('?cam=1.500,2.000,3.000,1.000');
+    expect(buildSearch('', stateWith({ camera: [1.5, 2, 3, 1.0001] }))).toBe('?cam=1.500,2.000,3.000,1.000');
+    expect(parseShareState('?cam=1.5,2,3,1').camera).toEqual([1.5, 2, 3, 1]);
+  });
+
+  it.each(['1,2,3,NaN', '1,2,3,Infinity', '1,2,3,', '1,2,,1.5'])(
+    'rejects malformed camera height or coordinates in %s', (value) => {
+      expect(parseShareState(`?cam=${value}`).camera).toBeNull();
+    },
+  );
 
   it('ignores malformed yaw and treats zero yaw as null', () => {
     expect(parseShareState('?yaw=abc').yaw).toBeNull();
