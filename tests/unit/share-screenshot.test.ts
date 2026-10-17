@@ -6,6 +6,12 @@ import type { ScreenshotOptions } from '../../src/share/screenshot';
 
 type NavigatorKey = 'share' | 'canShare';
 
+/** The payload deliverStill hands to navigator.share. */
+interface SharePayload {
+  files: File[];
+  title: string;
+}
+
 /**
  * jsdom's navigator carries neither share nor canShare, so a test that defines one has to take it
  * away again: left behind, it tells every later test in this file that the page can share.
@@ -113,6 +119,46 @@ describe('share screenshot module', () => {
     await captureStill({ renderer, canvas, drawFrame: () => undefined, scale: 2 });
     expect(ratios).toEqual([2]);
     expect(currentPixelRatio).toBe(1);
+  });
+
+  it('captureStill draws at the ratio recorded with the request, not the live one', async () => {
+    // The scaler can step while a capture is prepared; the still keeps the size the request
+    // recorded, and the page goes back to the ratio it runs at now.
+    let liveRatio = 1.25;
+    const setRatio = vi.fn((value: number) => {
+      liveRatio = value;
+    });
+    const renderer = { getPixelRatio: () => liveRatio, setPixelRatio: setRatio };
+    const canvas = document.createElement('canvas');
+    canvas.toBlob = vi.fn((callback: BlobCallback) => {
+      callback(new Blob(['png-bytes'], { type: 'image/png' }));
+    });
+
+    const blob = await captureStill({
+      renderer,
+      canvas,
+      drawFrame: () => undefined,
+      scale: 2,
+      requestedPixelRatio: 1,
+    });
+    expect(blob).toBeInstanceOf(Blob);
+    expect(setRatio).toHaveBeenNthCalledWith(1, 2);
+    expect(setRatio).toHaveBeenNthCalledWith(2, 1.25);
+  });
+
+  it('captureStill rejects when toBlob yields a null blob', async () => {
+    const setRatio = vi.fn();
+    const renderer = { getPixelRatio: () => 1, setPixelRatio: setRatio };
+    const canvas = document.createElement('canvas');
+    canvas.toBlob = vi.fn((callback: BlobCallback) => {
+      callback(null);
+    });
+
+    // A null read is a failed read: resolving it would hand the caller a still it cannot use.
+    await expect(
+      captureStill({ renderer, canvas, drawFrame: () => undefined, scale: 2 }),
+    ).rejects.toThrow('Canvas toBlob produced a null blob');
+    expect(setRatio).toHaveBeenLastCalledWith(1);
   });
 
   it('deliverStill downloads via temporary object URL when share is unsupported', async () => {
@@ -237,5 +283,94 @@ describe('share screenshot module', () => {
     await vi.runAllTimersAsync();
     expect(revokeURL).toHaveBeenCalledExactlyOnceWith('blob:live');
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('deliverStill offers the share sheet the captured file under its own name', async () => {
+    const blob = new Blob(['still-bytes'], { type: 'image/png' });
+    const share = vi.fn().mockResolvedValue(undefined);
+    const canShare = vi.fn().mockReturnValue(true);
+    stubNavigator('share', share);
+    stubNavigator('canShare', canShare);
+    const fileName = 'fashion-rotunda-look-01-20260920-120000.png';
+
+    expect(await deliverStill(blob, fileName)).toBe('shared');
+    expect(share).toHaveBeenCalledTimes(1);
+    const payload = share.mock.calls[0][0] as SharePayload;
+    expect(payload.title).toBe(fileName);
+    expect(payload.files).toHaveLength(1);
+    expect(payload.files[0]).toBeInstanceOf(File);
+    expect(payload.files[0].name).toBe(fileName);
+    expect(payload.files[0].type).toBe('image/png');
+    // The permission was asked about the very file that is handed over, never a placeholder.
+    expect(payload.files[0]).toBe((canShare.mock.calls[0][0] as SharePayload).files[0]);
+  });
+
+  it('deliverStill downloads without sharing when the device cannot share files', async () => {
+    vi.useFakeTimers();
+    const blob = new Blob(['still-bytes'], { type: 'image/png' });
+    const share = vi.fn().mockResolvedValue(undefined);
+    stubNavigator('share', share);
+    stubNavigator('canShare', vi.fn().mockReturnValue(false));
+    const createURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:unshareable');
+    const download = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+
+    expect(await deliverStill(blob, 'still.png')).toBe('downloaded');
+    expect(share).not.toHaveBeenCalled();
+    expect(createURL).toHaveBeenCalledTimes(1);
+    // Identity, not deep equality: in this environment blobs with different bytes compare
+    // equal structurally, so only identity pins which blob the URL was made from.
+    expect(createURL.mock.calls[0][0]).toBe(blob);
+    expect(download).toHaveBeenCalledTimes(1);
+  });
+
+  it('deliverStill warns and still downloads when the share sheet refuses', async () => {
+    vi.useFakeTimers();
+    const refused = new TypeError('Share refused');
+    stubNavigator('share', vi.fn().mockRejectedValue(refused));
+    stubNavigator('canShare', vi.fn().mockReturnValue(true));
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:refused');
+    const revokeURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const download = vi
+      .spyOn(HTMLAnchorElement.prototype, 'click')
+      .mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    // A refusal that is not a dismissal is a fault worth one console line, and the visitor
+    // still gets the still through the download.
+    expect(await deliverStill(new Blob(['still']), 'still.png')).toBe('downloaded');
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      '[archviz] the share sheet refused the still, downloading it',
+      refused,
+    );
+    expect(download).toHaveBeenCalledTimes(1);
+    await vi.runAllTimersAsync();
+    expect(revokeURL).toHaveBeenCalledWith('blob:refused');
+  });
+
+  it('deliverStill downloads the captured blob under the requested name and cleans up', async () => {
+    vi.useFakeTimers();
+    const fileName = 'fashion-rotunda-look-02-20261017-101500.png';
+    const clicked: HTMLAnchorElement[] = [];
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:captured');
+    const revokeURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clicked.push(this);
+    });
+
+    expect(await deliverStill(new Blob(['still-bytes'], { type: 'image/png' }), fileName)).toBe(
+      'downloaded',
+    );
+    expect(clicked).toHaveLength(1);
+    // The link the visitor's click follows carries the still and the name it is saved under.
+    expect(clicked[0].download).toBe(fileName);
+    expect(clicked[0].href).toBe('blob:captured');
+    // The temporary anchor leaves the DOM once the click has been issued.
+    expect(clicked[0].isConnected).toBe(false);
+    await vi.runAllTimersAsync();
+    expect(revokeURL).toHaveBeenCalledWith('blob:captured');
   });
 });
