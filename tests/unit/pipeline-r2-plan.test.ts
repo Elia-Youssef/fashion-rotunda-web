@@ -141,6 +141,40 @@ describe('planUploads', () => {
       planUploads(manifestOf([{ path: 'a.glb', key: 'content/a.glb', contentType: '' }]), { bucket: 'b' }),
     ).toThrow(/no contentType/);
   });
+
+  it('stops on an entry whose field is not a string', () => {
+    const entries = [
+      { path: 42, key: 'content/a.glb', contentType: 'model/gltf+binary' },
+      { path: 'a.glb', key: 'content/a.glb', contentType: null },
+    ] as unknown as Parameters<typeof manifestOf>[0];
+    expect(() => planUploads(manifestOf([entries[0]]), { bucket: 'b' })).toThrow(/no path/);
+    expect(() => planUploads(manifestOf([entries[1]]), { bucket: 'b' })).toThrow(/no contentType/);
+  });
+
+  it('stops on an entry missing a field', () => {
+    const noPath = [{ key: 'content/a.glb', contentType: 'model/gltf+binary' }] as unknown as
+      Parameters<typeof manifestOf>[0];
+    const noKey = [{ path: 'a.glb', key: '', contentType: 'model/gltf+binary' }] as unknown as
+      Parameters<typeof manifestOf>[0];
+    expect(() => planUploads(manifestOf(noPath), { bucket: 'b' })).toThrow(/no path/);
+    expect(() => planUploads(manifestOf(noKey), { bucket: 'b' })).toThrow(/no key/);
+  });
+
+  it('names the offending segment when a command part cannot survive the shell', () => {
+    const manifest = manifestOf([
+      { path: 'a.glb', key: 'content/a.glb', contentType: 'model/gltf+binary' },
+    ]);
+    expect(() => planUploads(manifest, { bucket: 'my bucket' })).toThrow(/as one argument: my bucket/);
+    const badKey = manifestOf([
+      { path: 'a.glb', key: 'content/a glb', contentType: 'model/gltf+binary' },
+    ]);
+    expect(() => planUploads(badKey, { bucket: 'b' })).toThrow(/as one argument: content\/a glb/);
+  });
+
+  it('stops on a files field that is not an array', () => {
+    const manifest = { origin: ORIGIN, files: 'rotunda.glb' } as unknown as R2Manifest;
+    expect(() => planUploads(manifest, { bucket: 'b' })).toThrow(/no files array/);
+  });
 });
 
 describe('renderPlanText', () => {
@@ -158,6 +192,31 @@ describe('renderPlanText', () => {
         '# skipped (already uploaded): content/bb.glb (1 paths: rotunda.glb)',
         'wrangler r2 object put demo-bucket/content/shared.json --file public/content/catalog.json' +
           ` --content-type application/json --cache-control "${CACHE_CONTROL}"`,
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('renders asymmetric counts and every path of both skipped keys', () => {
+    const manifest = manifestOf([
+      { path: 'catalog.json', key: 'content/shared.json', contentType: 'application/json' },
+      { path: 'half/catalog.json', key: 'content/shared.json', contentType: 'application/json' },
+      { path: 'rotunda.glb', key: 'content/bb.glb', contentType: 'model/gltf+binary' },
+      { path: 'env.hdr', key: 'content/cc.hdr', contentType: 'image/vnd.radiance' },
+    ]);
+    const plan = planUploads(manifest, {
+      bucket: 'demo-bucket',
+      uploaded: ['content/shared.json', 'content/cc.hdr'],
+    });
+
+    expect(plan.counts).toEqual({ files: 4, objects: 3, toUpload: 1, skipped: 2 });
+    expect(renderPlanText(plan)).toBe(
+      [
+        '# 4 files, 3 objects, 2 already uploaded, 1 to upload',
+        '# skipped (already uploaded): content/shared.json (2 paths: catalog.json, half/catalog.json)',
+        '# skipped (already uploaded): content/cc.hdr (1 paths: env.hdr)',
+        'wrangler r2 object put demo-bucket/content/bb.glb --file public/content/rotunda.glb' +
+          ` --content-type model/gltf+binary --cache-control "${CACHE_CONTROL}"`,
         '',
       ].join('\n'),
     );
