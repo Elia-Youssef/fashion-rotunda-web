@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { resolve } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   APPLIED_OUTPUT_I,
@@ -12,20 +12,28 @@ import {
   HEAD_FRAMES,
   LOOP_FRAMES,
   MEASURED_LOUDNESS,
+  MS_FRAMES,
   SAMPLE_RATE,
+  SEAM_FRAMES,
   TRACK_IDS,
+  TRIMMED_FRAMES,
   cleanupScriptedModules,
   contentMusic,
   ffmpegExe,
   ffprobeExe,
   fileCalls,
+  installScriptedModules,
   loudnessReport,
+  loopPcm,
   loopWav,
   m4aFile,
   normWav,
   oggFile,
   resetScenario,
   runMusicPipeline,
+  sampleAt,
+  scriptedSpawnSync,
+  scenario,
   sourceWav,
   spawnCalls,
   trimWav,
@@ -307,5 +315,251 @@ describe('parseLoudnessJson', () => {
   it('skips a block that lacks the measurement and reads the next', () => {
     const stderr = `{ "stage": "pass 1" }\nnoise\n${JSON.stringify(MEASURED_LOUDNESS)}`;
     expect(parseLoudnessJson(stderr)).toEqual({ ...MEASURED_LOUDNESS });
+  });
+});
+
+// The decisions the pinned tool arguments alone cannot see: which arm of a guard fired, which
+// channel a reported number came from, how large a buffer or window a step of the proof really
+// spans, and which exact strings ride into the second loudness pass. Each test scripts one
+// scenario that separates the real decision from its nearest plausible mistake.
+
+// A frame near the two-thirds point of the head window: inside the certified window, outside a
+// half-size one, and clear of the wrap-adjacent steps that every window size still sees.
+const WITNESS_FRAME = 4001;
+// The wrap is reached by a ramp this long, adding or removing RAMP_SPAN by the last frame, so the
+// boundary step is large while every step inside the ramp stays far below the sine's own maximum.
+const RAMP_FRAMES = 100;
+const RAMP_SPAN = 0.5;
+
+function overrideSample(pcm: Buffer, frame: number, channel: number, value: number): void {
+  pcm.writeFloatLE(value, frame * 8 + channel * 4);
+}
+
+/** The healthy loop with one channel's wrap reached by a quiet ramp instead of the sine's own step. */
+function rampedWrapPcm(channel: number, direction: 1 | -1): Buffer {
+  const pcm = loopPcm();
+  for (let i = 0; i < RAMP_FRAMES; i += 1) {
+    const frame = LOOP_FRAMES - RAMP_FRAMES + i;
+    overrideSample(
+      pcm,
+      frame,
+      channel,
+      sampleAt(frame) + (direction * ((i + 1) * RAMP_SPAN)) / RAMP_FRAMES,
+    );
+  }
+  return pcm;
+}
+
+/** The loudest step a one-frame spike at `frame` adds to both of its neighbouring steps. */
+function spikeSteps(frame: number): number {
+  return Math.max(
+    Math.abs(sampleAt(frame + 1) - sampleAt(frame) - 1),
+    Math.abs(sampleAt(frame) + 1 - sampleAt(frame - 1)),
+  );
+}
+
+/** The reference of a ramped channel: the sine's own maximum plus the ramp's per-frame share. */
+function rampedChannelReference(): number {
+  let max = BOUNDARY_STEP;
+  for (let frame = LOOP_FRAMES - RAMP_FRAMES - 1; frame < LOOP_FRAMES - 1; frame += 1) {
+    max = Math.max(max, Math.abs(sampleAt(frame + 1) - sampleAt(frame) + RAMP_SPAN / RAMP_FRAMES));
+  }
+  return max;
+}
+
+/** Runs the script once with the spawn options recorded beside the scripted tool responses. */
+async function runMusicPipelineRecordingSpawnOptions() {
+  const recorded: Array<{ exe: string; args: string[]; options: unknown }> = [];
+  installScriptedModules();
+  vi.doMock('node:child_process', async (importOriginal) => {
+    const original = (await importOriginal()) as Record<string, unknown>;
+    return {
+      ...original,
+      spawnSync: (exe: string, args: string[], options: unknown) => {
+        recorded.push({ exe, args, options });
+        return scriptedSpawnSync(exe, args);
+      },
+    };
+  });
+  vi.spyOn(console, 'log').mockImplementation(() => undefined);
+  vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  vi.spyOn(process, 'exit').mockImplementation(((code?: number | string | null) => {
+    throw new Error(`process exit ${String(code)}`);
+  }) as typeof process.exit);
+  vi.resetModules();
+  let thrown: unknown;
+  try {
+    // @ts-expect-error The pipeline script has no typed exports; these tests exercise its top-level side effects.
+    await import('../../pipeline/audio/music.mjs');
+  } catch (caught) {
+    thrown = caught;
+  }
+  return { thrown, recorded };
+}
+
+describe('music pipeline guarded decisions', () => {
+  beforeEach(resetScenario);
+  afterEach(cleanupScriptedModules);
+
+  it('rejects a duration ffprobe cannot parse as a number at all', async () => {
+    scenario.probeDuration = 'n/a';
+    const guarded = await runMusicPipeline();
+    expect(guarded.exitCodes).toEqual([1]);
+    expect(guarded.errors).toEqual([
+      `music: probe ${sourceWav('01')}: duration is not a positive number`,
+    ]);
+    expect(spawnCalls).toHaveLength(1);
+  });
+
+  it('rejects a frame count of zero before the loop arithmetic runs', async () => {
+    scenario.probeFrames = `time_base=1/${SAMPLE_RATE}\nduration_ts=0`;
+    const guarded = await runMusicPipeline();
+    expect(guarded.exitCodes).toEqual([1]);
+    expect(guarded.errors).toEqual([
+      `music: frames ${trimWav('01')}: duration_ts is not a positive whole number of frames`,
+    ]);
+    expect(spawnCalls).toHaveLength(3);
+  });
+
+  it('reads the frame probe fields by key whatever order ffprobe prints', async () => {
+    scenario.probeFrames = `duration_ts=${TRIMMED_FRAMES}\ntime_base=1/${SAMPLE_RATE}`;
+    const guarded = await runMusicPipeline();
+    expect(guarded.thrown).toBeUndefined();
+    expect(guarded.exitCodes).toEqual([]);
+    const manifest = JSON.parse(fileCalls.write[0].text) as { tracks: Array<{ duration: number }> };
+    expect(manifest.tracks[0].duration).toBe(DURATION);
+  });
+
+  it('rejects a cut that leaves exactly the crossfade with no tail', async () => {
+    const exactlyHeadAndFade = HEAD_FRAMES + CROSSFADE_FRAMES;
+    scenario.probeFrames = `time_base=1/${SAMPLE_RATE}\nduration_ts=${exactlyHeadAndFade}`;
+    const guarded = await runMusicPipeline();
+    expect(guarded.exitCodes).toEqual([1]);
+    expect(guarded.errors).toEqual([
+      `music: loop music-01: ${exactlyHeadAndFade} frames leaves no tail to crossfade into the head`,
+    ]);
+    expect(spawnCalls).toHaveLength(3);
+  });
+
+  it('rejects a second loudness pass that prints no measured block', async () => {
+    scenario.loudnessPass2 = 'pass 2 wrote nothing usable';
+    const guarded = await runMusicPipeline();
+    expect(guarded.exitCodes).toEqual([1]);
+    expect(guarded.errors).toEqual([
+      `music: loudness pass 2 ${loopWav('01')}: no measured JSON block on stderr`,
+      'pass 2 wrote nothing usable',
+    ]);
+    expect(spawnCalls).toHaveLength(6);
+  });
+
+  it('passes the measured loudness strings through without reformatting', async () => {
+    scenario.loudnessPass1 = loudnessReport({
+      input_i: '-15.340',
+      input_tp: '-0.870',
+      input_lra: '8.410',
+      input_thresh: '-26.130',
+      target_offset: '0.310',
+    });
+    const guarded = await runMusicPipeline();
+    expect(guarded.thrown).toBeUndefined();
+    const applied = spawnCalls.find((call) => call.args.some((arg) => arg.includes('measured_I=')));
+    expect(applied?.args).toContain(
+      `loudnorm=I=${TARGET_LUFS}:TP=${TRUE_PEAK_DB}:LRA=${LOUDNESS_RANGE}` +
+        ':measured_I=-15.340:measured_TP=-0.870:measured_LRA=8.410' +
+        ':measured_thresh=-26.130:offset=0.310:linear=true:print_format=json',
+    );
+  });
+
+  it('decodes the seam proof with a buffer that fits the whole loop', async () => {
+    const { thrown, recorded } = await runMusicPipelineRecordingSpawnOptions();
+    expect(thrown).toBeUndefined();
+    expect(recorded).toHaveLength(TRACK_IDS.length * CALLS_PER_TRACK);
+    const decodes = recorded.filter((call) => call.args.includes('f32le'));
+    expect(decodes).toHaveLength(TRACK_IDS.length);
+    for (const call of decodes) {
+      expect(call.options).toEqual({ encoding: 'buffer', maxBuffer: 512 * 1024 * 1024 });
+    }
+  });
+
+  it('rejects a decode up to a window short of the loop', async () => {
+    scenario.pcm = loopPcm(LOOP_FRAMES - MS_FRAMES);
+    const guarded = await runMusicPipeline();
+    expect(guarded.exitCodes).toEqual([1]);
+    expect(guarded.errors).toEqual([
+      `music: seam decode ${normWav('01')}: ${LOOP_FRAMES - MS_FRAMES} frames is shorter than the ` +
+        `${LOOP_FRAMES}-frame loop`,
+    ]);
+    expect(spawnCalls).toHaveLength(9);
+  });
+
+  it('rejects a wrap that steps down, not just up', async () => {
+    scenario.pcm = rampedWrapPcm(0, -1);
+    const guarded = await runMusicPipeline();
+    expect(guarded.exitCodes).toEqual([1]);
+    const boundary = Math.abs(sampleAt(LOOP_FRAMES - 1) - RAMP_SPAN - sampleAt(0));
+    expect(guarded.errors).toEqual([
+      `music: seam check music-01 channel 0: boundary step ${boundary.toFixed(4)}` +
+        ` exceeds 1.5x reference ${rampedChannelReference().toFixed(4)}`,
+    ]);
+    expect(spawnCalls).toHaveLength(9);
+  });
+
+  it('counts a falling step in the reference as loudly as a rising one', async () => {
+    const pcm = rampedWrapPcm(1, 1);
+    // Channel 1 drops one unit inside the head window and holds that level to the window's edge,
+    // so the only large step the windows can see is a falling one; the recovery outside the
+    // window is never measured.
+    for (let frame = WITNESS_FRAME; frame < SEAM_FRAMES; frame += 1) {
+      overrideSample(pcm, frame, 1, sampleAt(frame) - 1);
+    }
+    scenario.pcm = pcm;
+    const guarded = await runMusicPipeline();
+    expect(guarded.thrown).toBeUndefined();
+    const manifest = JSON.parse(fileCalls.write[0].text) as {
+      tracks: Array<{ seam: { boundaryStep: number; reference: number } }>;
+    };
+    const drop = Math.abs(sampleAt(WITNESS_FRAME) - 1 - sampleAt(WITNESS_FRAME - 1));
+    expect(manifest.tracks[0].seam.reference).toBe(Math.round(drop * 10000) / 10000);
+    expect(manifest.tracks[0].seam.boundaryStep).toBe(
+      Math.round(Math.abs(sampleAt(LOOP_FRAMES - 1) + RAMP_SPAN - sampleAt(0)) * 10000) / 10000,
+    );
+  });
+
+  it('judges each channel of the seam against its own reference', async () => {
+    const pcm = rampedWrapPcm(1, 1);
+    overrideSample(pcm, WITNESS_FRAME, 0, sampleAt(WITNESS_FRAME) + 1);
+    scenario.pcm = pcm;
+    const guarded = await runMusicPipeline();
+    expect(guarded.exitCodes).toEqual([1]);
+    const boundary = Math.abs(sampleAt(LOOP_FRAMES - 1) + RAMP_SPAN - sampleAt(0));
+    expect(guarded.errors).toEqual([
+      `music: seam check music-01 channel 1: boundary step ${boundary.toFixed(4)}` +
+        ` exceeds 1.5x reference ${rampedChannelReference().toFixed(4)}`,
+    ]);
+  });
+
+  it('spans both full seam windows and reports the worse channel', async () => {
+    const pcm = rampedWrapPcm(0, 1);
+    // One spike in each window, both on channel 0: the head spike at the two-thirds point, the
+    // tail spike the same distance from the wrap. A window shrunk on either side loses its spike,
+    // the boundary ramp survives in every window size, and the certification flips to a rejection.
+    overrideSample(pcm, WITNESS_FRAME, 0, sampleAt(WITNESS_FRAME) + 1);
+    overrideSample(pcm, LOOP_FRAMES - WITNESS_FRAME, 0, sampleAt(LOOP_FRAMES - WITNESS_FRAME) + 1);
+    scenario.pcm = pcm;
+    const guarded = await runMusicPipeline();
+    expect(guarded.thrown).toBeUndefined();
+    const manifest = JSON.parse(fileCalls.write[0].text) as {
+      tracks: Array<{ seam: { boundaryStep: number; reference: number } }>;
+    };
+    const boundary = Math.abs(sampleAt(LOOP_FRAMES - 1) + RAMP_SPAN - sampleAt(0));
+    const spike = Math.max(spikeSteps(WITNESS_FRAME), spikeSteps(LOOP_FRAMES - WITNESS_FRAME));
+    expect(manifest.tracks[0].seam).toEqual({
+      boundaryStep: Math.round(boundary * 10000) / 10000,
+      reference: Math.round(spike * 10000) / 10000,
+    });
+    // Numbers of this size only certify when both windows still span their full 0.1 s and the
+    // reported figures come from channel 0, the louder channel.
+    expect(manifest.tracks[0].seam.boundaryStep).toBeGreaterThan(0.4);
+    expect(manifest.tracks[0].seam.reference).toBeGreaterThan(1);
   });
 });
