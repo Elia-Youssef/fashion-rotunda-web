@@ -1,5 +1,4 @@
 {
-  "generated": "2026-10-16T09:29:00Z",
   "sets": {
     "full": {
       "files": {
@@ -644,7 +643,7 @@
           "largestNonFloorTexture": 2048
         },
         "looks/zoot-suit.glb": {
-          "bytes": 3876696,
+          "bytes": 3876748,
           "triangles": 155453,
           "meshes": 3,
           "nodes": 6,
@@ -1094,7 +1093,7 @@
         }
       },
       "totals": {
-        "bytes": 26348599,
+        "bytes": 26348651,
         "gpuBytes": 97493202,
         "triangles": 1518558
       }
@@ -1742,7 +1741,7 @@
           "largestNonFloorTexture": 512
         },
         "looks/zoot-suit.glb": {
-          "bytes": 1100404,
+          "bytes": 1100456,
           "triangles": 119993,
           "meshes": 3,
           "nodes": 6,
@@ -2192,7 +2191,7 @@
         }
       },
       "totals": {
-        "bytes": 10085939,
+        "bytes": 10085991,
         "gpuBytes": 10264739,
         "triangles": 857093
       }
