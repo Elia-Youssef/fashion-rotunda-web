@@ -1,13 +1,9 @@
 import { expect, test } from './support/fixtures';
 import { backendPath } from './support/backend';
 import { openShowroom } from './support/showroom';
-import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
+import { LOOP_STATE_POLL_MS, waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 
 const SCENE_READY_TIMEOUT = 60_000;
-
-// The turntable publishes its yaw from rendered frames (mount.ts writeYaw inside update), so every
-// progress check polls the published yaw past an earlier reading instead of sampling once.
-const YAW_POLL_TIMEOUT_MS = 5_000;
 
 // The loop wakes for WAKE_MS, 4 s (src/main.ts), after any input. The wake-window case demands its
 // progress after that expiry, so the test polls the loopState wake field until the timer disarms;
@@ -72,26 +68,38 @@ test('a drag across the canvas orbits the camera', async ({ page, request }) => 
 
 test('the turntable turns the look and the loop settles once it stops', async ({ page, request }) => {
   const { canvas } = await openShowroom(page, request, '/?e2e=1');
+  await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
 
-  const readYaw = async (): Promise<number> => Number((await canvas.getAttribute('data-yaw')) ?? '0');
-  // The e2e handle mounts after archvizCamera, so an early read reports the window as open rather
-  // than passing before the field exists.
+  const readFrame = () => page.evaluate(() => ({
+    frames: window.archvizE2E!.loopState().frames,
+    yaw: window.archvizE2E!.turntableState().yaw,
+  }));
+  type Frame = Awaited<ReturnType<typeof readFrame>>;
+  const progressFrames = 2;
+  // mountCamera caps each update at 100 ms, so 20 deg/s is at most 0.035 rad per slow frame.
+  // Wall time cannot promise 0.1 rad or even a new frame. Wait for two completed frames (the
+  // first loop dt can be zero), then assert actual scene yaw independently of frame delivery.
+  // Delivery uses the scene-ready budget because both waits include rendering on a loaded GPU.
+  const advancingFrame = async (before: Frame): Promise<Frame> => {
+    const delivered = await page.waitForFunction(({ frames, count }) => {
+      const state = window.archvizE2E!.loopState();
+      return state.frames >= frames + count;
+    }, { frames: before.frames, count: progressFrames }, {
+      polling: LOOP_STATE_POLL_MS, timeout: SCENE_READY_TIMEOUT,
+    });
+    await delivered.dispose();
+    const after = await readFrame();
+    expect(after.yaw, 'the look turns across completed frames').toBeGreaterThan(before.yaw);
+    return after;
+  };
+  const readYaw = async (): Promise<number> => (await readFrame()).yaw;
   const readWakeOpen = async (): Promise<boolean> =>
-    page.evaluate(() => window.archvizE2E?.loopState().wakeOpen ?? true);
+    page.evaluate(() => window.archvizE2E!.loopState().wakeOpen);
 
-  await page.evaluate(() => {
-    window.archvizCamera?.turntable.toggle();
-  });
-  await expect.poll(readYaw, { timeout: YAW_POLL_TIMEOUT_MS }).toBeGreaterThan(0.1);
-  const first = await readYaw();
-  // Prerequisite: a rendered frame publishing a yaw past `first`, since the yaw advances only in update.
-  await expect
-    .poll(readYaw, {
-      timeout: YAW_POLL_TIMEOUT_MS,
-      message: 'the yaw keeps advancing while the turntable runs',
-    })
-    .toBeGreaterThan(first);
-  const second = await readYaw();
+  const before = await readFrame();
+  await page.evaluate(() => window.archvizCamera!.turntable.toggle());
+  const first = await advancingFrame(before);
+  await advancingFrame(first);
 
   // One hover, no button, which the orbit ignores and main.ts's wake() answers by arming its
   // four-second window. Without an input the window is never armed after the load and the poll
@@ -113,28 +121,14 @@ test('the turntable turns the look and the loop settles once it stops', async ({
       message: 'the wake window never closed',
     })
     .toBe(false);
-  // Prerequisite: a rendered frame after expiry publishing a yaw past the pre-window `second`.
-  await expect
-    .poll(readYaw, {
-      timeout: YAW_POLL_TIMEOUT_MS,
-      message: 'the yaw advanced past the wake window',
-    })
-    .toBeGreaterThan(second);
-  const late = await readYaw();
-  // Prerequisite: a rendered frame publishing a yaw past `late`.
-  await expect
-    .poll(readYaw, {
-      timeout: YAW_POLL_TIMEOUT_MS,
-      message: 'and is still advancing after it',
-    })
-    .toBeGreaterThan(late);
+  // Capture after expiry so both observed frame intervals belong to the turntable's hold.
+  const expired = await readFrame();
+  const late = await advancingFrame(expired);
+  await advancingFrame(late);
 
-  await page.evaluate(() => {
-    window.archvizCamera?.turntable.toggle();
-  });
-  // The turntable publishes its yaw from rendered frames (see the file-top comment), so owner
-  // confirmed idle proves no frame is due: the held reading below is final and the second read
-  // must not differ.
+  await page.evaluate(() => window.archvizCamera!.turntable.toggle());
+  // Owner-confirmed idle proves no frame is due: the held scene yaw below is final and the
+  // second read must not differ.
   await waitForLoopIdle(page);
   const stopped = await readYaw();
   expect(await readYaw(), 'the look holds where the turntable stopped').toBe(stopped);

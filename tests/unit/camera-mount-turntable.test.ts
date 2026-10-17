@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { canvas, countAnimating, make, pointer } from '../support/camera-mount';
+import { createLoop } from '../../src/loop/loop';
 
 // The turntable and the animation hold: yaw publication, the moving report, and the loop's
 // setAnimating contract while the turntable runs and stops and through an orbit glide.
@@ -150,6 +151,92 @@ describe('mountCamera', () => {
     const calls = showroom.setLookYaw.mock.calls;
     expect(calls.length).toBeGreaterThanOrEqual(1);
     expect(calls[calls.length - 1][0]).toBeCloseTo(20 * DEG * 0.1, 9);
+  });
+
+  it.each([
+    { initialYaw: 0, frameCap: null },
+    { initialYaw: 1, frameCap: null },
+    { initialYaw: 0, frameCap: 30 },
+    { initialYaw: 1, frameCap: 30 },
+  ])('advances yaw on delayed frames from $initialYaw with cap $frameCap', ({ initialYaw, frameCap }) => {
+    vi.useFakeTimers();
+    // The RAF double delivers no frame in the old five-second yaw window, then slow and
+    // irregular callbacks. A 30 ms callback also exercises the 30 fps cap's skipped tick.
+    const delays = [6000, 50, 2000, 30, 2500, 6000, 1200];
+    const normalFrameMs = 1000 / 60;
+    const render = vi.fn((dtMs: number) => current.update(dtMs));
+    const liveLoop = createLoop({
+      render,
+      frameCap,
+      diagnostics: true,
+      now: () => Date.now(),
+      raf: (callback) => window.setTimeout(() => callback(Date.now()), delays.shift() ?? normalFrameMs),
+      caf: (id) => window.clearTimeout(id),
+    });
+    const { showroom, mount: current } = make({ loop: liveLoop, search: '?attract=0' });
+    let wakeOpen = true;
+    try {
+      current.turntable.setYaw(initialYaw);
+      liveLoop.start();
+      current.turntable.start();
+      // The input window expires before any frame arrives. Motion retains ownership, just as
+      // the main loop's four-second wake callback requires.
+      window.setTimeout(() => {
+        wakeOpen = false;
+        if (!current.moving) liveLoop.setAnimating(false);
+      }, 4000);
+      vi.advanceTimersByTime(5000);
+      expect(wakeOpen).toBe(false);
+      expect(render).not.toHaveBeenCalled();
+      expect(current.turntable.yaw).toBe(initialYaw);
+      expect(liveLoop.diagnostics?.()).toMatchObject({ animating: true, scheduled: true });
+
+      vi.advanceTimersByTime(1000);
+      expect(render).toHaveBeenCalledExactlyOnceWith(0);
+      expect(current.turntable.yaw).toBe(initialYaw);
+      vi.advanceTimersByTime(50);
+      expect(showroom.lookYaw).toBeCloseTo(initialYaw + DEG, 12);
+      vi.advanceTimersByTime(2000);
+      // Only 0.052 rad after 8.05 seconds: a healthy bounded update cannot satisfy a
+      // wall-time threshold of 0.1 rad. Two completed positive-dt frames do prove progress.
+      expect(render).toHaveBeenCalledTimes(3);
+      expect(showroom.lookYaw).toBeCloseTo(initialYaw + 3 * DEG, 12);
+      const before = showroom.lookYaw;
+      vi.advanceTimersByTime(30);
+      expect(render).toHaveBeenCalledTimes(frameCap === null ? 4 : 3);
+      vi.advanceTimersByTime(2500);
+      expect(render).toHaveBeenCalledTimes(frameCap === null ? 5 : 4);
+      expect(showroom.lookYaw).toBeCloseTo(initialYaw + (frameCap === null ? 5.6 : 5) * DEG, 12);
+      expect(showroom.lookYaw).toBeGreaterThan(before);
+      expect(canvas.dataset.yaw).toBe(showroom.lookYaw.toFixed(3));
+      expect(liveLoop.diagnostics?.()).toMatchObject({ animating: true, scheduled: true });
+
+      // A later RAF gap also leaves a previously advancing yaw unchanged for five seconds.
+      // Frame delivery and yaw advancement must be separate checks for this case too.
+      const held = showroom.lookYaw;
+      const framesBeforeGap = render.mock.calls.length;
+      vi.advanceTimersByTime(5000);
+      expect(render).toHaveBeenCalledTimes(framesBeforeGap);
+      expect(showroom.lookYaw).toBe(held);
+      expect(liveLoop.diagnostics?.()).toMatchObject({ animating: true, scheduled: true });
+      vi.advanceTimersByTime(1000 + 1200);
+      expect(render).toHaveBeenCalledTimes(framesBeforeGap + 2);
+      expect(showroom.lookYaw).toBeGreaterThan(held);
+      expect(canvas.dataset.yaw).toBe(showroom.lookYaw.toFixed(3));
+
+      current.turntable.stop();
+      const stopped = showroom.lookYaw;
+      // One cap interval plus the next RAF opportunity also covers integer timer rounding.
+      const stopDeadlineMs = (frameCap === null ? 0 : 1000 / frameCap) + normalFrameMs;
+      vi.advanceTimersByTime(stopDeadlineMs);
+      expect(liveLoop.diagnostics?.()).toMatchObject({ animating: false, scheduled: false });
+      vi.advanceTimersByTime(6000);
+      expect(showroom.lookYaw).toBe(stopped);
+    } finally {
+      current.dispose();
+      liveLoop.stop();
+      vi.useRealTimers();
+    }
   });
 
   it('a drag through the canvas keeps the loop animating until the glide settles', () => {

@@ -1,6 +1,6 @@
 import { expect, test } from './support/fixtures';
-import { openShowroom, readCatalog } from './support/showroom';
-import { waitForLoopIdle } from './support/ready';
+import { openShowroom, readCatalog, SHOWROOM_OPEN_TIMEOUT } from './support/showroom';
+import { LOOP_STATE_POLL_MS, waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import type { Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 
@@ -11,9 +11,6 @@ import { PNG } from 'pngjs';
 // pixels back, so a project that silently fell back would measure the wrong renderer.
 
 const SWITCH_TIMEOUT_MS = 30_000;
-// The turntable publishes its yaw from rendered frames (mount.ts writeYaw inside update), so the
-// restored deep link's progress is polled past an earlier reading, never sampled after a fixed gap.
-const YAW_POLL_TIMEOUT_MS = 5_000;
 // The address bar is written by history.replaceState behind the share mount's throttle (at most
 // 4 Hz, src/share/mount.ts), so after an asserted switch the URL lands within one throttle window;
 // 5 s is generous headroom for a loaded machine, not time the write normally takes.
@@ -65,19 +62,27 @@ test('restores look, variant, camera pose, yaw and turntable from deep link', as
   await expect(canvas).toHaveAttribute('data-look', third.id, { timeout: SWITCH_TIMEOUT_MS });
   await expect(canvas).toHaveAttribute('data-variant', 'dark', { timeout: SWITCH_TIMEOUT_MS });
 
-  // Turntable should be running and yaw advancing
-  const readYaw = async (): Promise<number> =>
-    Number((await canvas.getAttribute('data-yaw')) ?? '0');
-  await expect.poll(readYaw, { timeout: YAW_POLL_TIMEOUT_MS }).toBeGreaterThan(1.0);
-  const firstYaw = await readYaw();
-  // Prerequisite: a rendered frame publishing a yaw past `firstYaw`, since the yaw advances only
-  // in the frame loop's update, never on the clock.
-  await expect
-    .poll(readYaw, {
-      timeout: YAW_POLL_TIMEOUT_MS,
-      message: 'the turntable yaw is advancing',
-    })
-    .toBeGreaterThan(firstYaw);
+  await waitForSceneInitialization(page, SHOWROOM_OPEN_TIMEOUT);
+  const before = await page.evaluate(() => ({
+    frames: window.archvizE2E!.loopState().frames,
+    yaw: window.archvizE2E!.turntableState().yaw,
+    running: window.archvizCamera!.turntable.running,
+  }));
+  expect(before.running, 'the deep link starts the turntable').toBe(true);
+  expect(before.yaw, 'the deep link restores its initial yaw').toBeGreaterThanOrEqual(1);
+  // Updates are bounded at 100 ms, so progress belongs to rendered frames, not a wall-time
+  // interval. Two completed frames cover a possible first dt of zero. Frame delivery shares
+  // the scene-opening budget; the separate yaw assertion still fails if delivered frames stall it.
+  const progressFrames = 2;
+  const delivered = await page.waitForFunction(({ frames, count }) => {
+    const state = window.archvizE2E!.loopState();
+    return state.frames >= frames + count;
+  }, { frames: before.frames, count: progressFrames }, {
+    polling: LOOP_STATE_POLL_MS, timeout: SHOWROOM_OPEN_TIMEOUT,
+  });
+  await delivered.dispose();
+  const after = await page.evaluate(() => window.archvizE2E!.turntableState());
+  expect(after.yaw, 'the restored look turns across completed frames').toBeGreaterThan(before.yaw);
 
   // Camera orbit position should match the clamped pose within 0.01 metres
   const pos = await page.evaluate((): [number, number, number] | null => {
