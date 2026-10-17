@@ -33,7 +33,7 @@ describe('share UI component', () => {
     handle.dispose();
   });
 
-  it('inserts directly after .product-card when present', () => {
+  it('appends after existing content without reordering siblings of the product card', () => {
     const card = document.createElement('div');
     card.className = 'product-card';
     root.appendChild(card);
@@ -44,8 +44,9 @@ describe('share UI component', () => {
 
     const handle = mountShare(root, actions);
     const share = root.querySelector('.share');
-    expect(card.nextElementSibling).toBe(share);
-    expect(share?.nextElementSibling).toBe(following);
+    expect(card.nextElementSibling).toBe(following);
+    expect(following.nextElementSibling).toBe(share);
+    expect(root.lastElementChild).toBe(share);
     handle.dispose();
   });
 

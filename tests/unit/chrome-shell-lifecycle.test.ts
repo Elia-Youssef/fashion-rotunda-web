@@ -93,6 +93,8 @@ describe('dispose', () => {
     expect(document.getElementById('shell-light-toggle')).toBeNull();
     expect(document.querySelector('.shell-pill--look')).toBeNull();
     expect(document.querySelectorAll('.shell-sheet__chrome')).toHaveLength(0);
+    expect(document.querySelectorAll('.shell-sheet__content')).toHaveLength(0);
+    expect(document.getElementById('shell-light-panel')?.parentElement?.id).toBe('shell-light-row');
     expect(document.getElementById('shell-card')?.hidden).toBe(false);
     expect(document.getElementById('shell-light-panel')?.hidden).toBe(false);
     expect(document.getElementById('looks')?.hidden).toBe(false);

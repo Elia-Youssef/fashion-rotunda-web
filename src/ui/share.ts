@@ -2,6 +2,7 @@
 // Pure DOM manipulation with styling in share.css; holds no scene knowledge.
 
 import './share.css';
+import { sheetContentRoot } from './shell';
 
 export interface ShareActions {
   copyLink(): Promise<void>;
@@ -14,7 +15,6 @@ export interface ShareHandle {
   dispose(): void;
 }
 
-const PRODUCT_CARD_SELECTOR = '.product-card';
 const NOTIFICATION_DURATION_MS = 2000;
 
 export function mountShare(root: HTMLElement, actions: ShareActions): ShareHandle {
@@ -49,12 +49,7 @@ export function mountShare(root: HTMLElement, actions: ShareActions): ShareHandl
 
   container.append(actionsRow, fallbackInput, status);
 
-  const productCard = root.querySelector(PRODUCT_CARD_SELECTOR);
-  if (productCard !== null && productCard.parentElement === root) {
-    productCard.insertAdjacentElement('afterend', container);
-  } else {
-    root.appendChild(container);
-  }
+  sheetContentRoot(root).appendChild(container);
 
   let notifyTimer: number | null = null;
   let disposed = false;

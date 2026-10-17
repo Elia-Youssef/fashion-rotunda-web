@@ -5,6 +5,7 @@
 
 import './product-card.css';
 import { afterFirstFrame } from '../proof/marks';
+import { sheetContentRoot } from './shell';
 
 import type { CatalogLook } from '../catalog/catalog';
 
@@ -124,7 +125,7 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
   card.appendChild(swatches);
 
   // The card leads the side panel, ahead of the share block, so it is prepended rather than appended.
-  root.prepend(card);
+  sheetContentRoot(root).prepend(card);
 
   // Fixed controls live for the card; swatch listeners live for one rendered look.
   const listeners = new AbortController();

@@ -53,6 +53,11 @@
   z-index: var(--z-chrome);
 }
 
+/* Keep the content slot's children in the sheet's existing block or flex layout. */
+.shell-sheet__content {
+  display: contents;
+}
+
 /* The sheet furniture: one wrapper per sheet, holding the handle bar and the close button. It
    only exists below the tablet width, where the card and the light panel are sheets at all. */
 .shell-sheet__chrome {

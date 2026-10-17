@@ -65,6 +65,11 @@ function requireRoot(doc: Document, id: string, what: string): HTMLElement {
   return element;
 }
 
+/** Components append to the sheet's content slot, or directly to a standalone root. */
+export function sheetContentRoot(root: HTMLElement): HTMLElement {
+  return root.querySelector<HTMLElement>(':scope > .shell-sheet__content') ?? root;
+}
+
 export function mountShell(doc: Document): ShellHandle {
   const roots: ShellRoots = {
     header: requireRoot(doc, 'shell-header', 'page header'),
@@ -119,7 +124,7 @@ export function mountShell(doc: Document): ShellHandle {
     },
     { signal },
   );
-  roots.stage.appendChild(lookPill);
+  roots.stage.insertBefore(lookPill, row);
 
   /** The handle bar and close button of one sheet, wrapped so the shell can hide both together. */
   function sheetChrome(sheet: HTMLElement, close: () => void): HTMLElement {
@@ -141,7 +146,10 @@ export function mountShell(doc: Document): ShellHandle {
     button.append(glyph);
     button.addEventListener('click', close, { signal });
     chrome.append(handle, button);
-    sheet.appendChild(chrome);
+    const content = doc.createElement('div');
+    content.className = 'shell-sheet__content';
+    content.append(...sheet.childNodes);
+    sheet.append(chrome, content);
     return chrome;
   }
 
@@ -277,11 +285,10 @@ export function mountShell(doc: Document): ShellHandle {
     cardSheetOpen = open;
     apply();
     if (open && wasClosed) {
-      // Close follows the product and share controls in the card sheet's DOM and Tab order.
-      // It is positioned at the top of the sheet. Focusing a product action
-      // can scroll a short card underneath its absolute close affordance, which strands Escape's
-      // pointer equivalent outside the safe rectangle. Keeping the cursor at Close preserves a
-      // modal starting point without moving the card's internal scroll position.
+      // Close leads the sheet's DOM and Tab order at its top-right corner. Focusing a product
+      // action can scroll a short card underneath the absolute close affordance, stranding
+      // Escape's pointer equivalent outside the safe rectangle. Starting at Close keeps that
+      // control in view without moving the card's internal scroll position.
       focusCardSheetClose();
     }
   }
@@ -416,6 +423,12 @@ export function mountShell(doc: Document): ShellHandle {
       lookPill.remove();
       cardChrome.remove();
       lightChrome.remove();
+      for (const sheet of [roots.card, row]) {
+        const content = sheetContentRoot(sheet);
+        if (content !== sheet) {
+          content.replaceWith(...content.childNodes);
+        }
+      }
       delete row.dataset['open'];
       delete roots.stage.dataset['sheet'];
       doc.body.removeAttribute('data-shell-sheet-open');

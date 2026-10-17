@@ -414,8 +414,8 @@ body #shell-stage .shell-pill--look {
 
 /* The closed row spans the stage's width so the pill can centre in it; only the pill itself
    takes pointer events back from the pass-through bar. The sheet chrome must stay transparent
-   to hits even though it is also a direct child. */
-#shell-light-row > .shell-light-toggle {
+   to hits while the controls live in the content slot. */
+#shell-light-row > .shell-sheet__content > .shell-light-toggle {
   pointer-events: auto;
 }
 
@@ -700,8 +700,8 @@ footer .proof-panel__measure {
     box-shadow: none;
   }
 
-  #shell-light-row > .shell-light-toggle,
-  #shell-light-row > #shell-light-panel {
+  #shell-light-row > .shell-sheet__content > .shell-light-toggle,
+  #shell-light-row > .shell-sheet__content > #shell-light-panel {
     pointer-events: auto;
   }
 
@@ -864,7 +864,7 @@ footer .proof-panel__measure {
     box-shadow: none;
   }
 
-  #shell-light-row > .shell-light-toggle {
+  #shell-light-row > .shell-sheet__content > .shell-light-toggle {
     pointer-events: auto;
   }
 
