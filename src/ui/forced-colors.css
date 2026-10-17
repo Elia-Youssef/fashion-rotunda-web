@@ -1,0 +1,34 @@
+@media (forced-colors: active) {
+  /* Double borders retain selection when shadows and colour differences disappear.
+     Two focus-ring widths leave room for both strokes without replacing the focus outline. */
+  .catalog-strip__button[aria-current='true'],
+  .product-card__swatch[aria-checked='true'],
+  .product-card__action[aria-pressed='true'],
+  .product-card__action[aria-expanded='true'],
+  .archviz-mode-button[aria-pressed='true'] {
+    border: calc(2 * var(--focus-ring)) double Highlight;
+  }
+
+  /* Keep the visible lobby opaque; the reveal states still own their fade to zero. */
+  .entry-lobby:is([data-state='idle'], [data-state='loading'], [data-state='ready-hidden'],
+    [data-state='error']) .entry-lobby__scrim {
+    background: Canvas;
+    opacity: 1;
+  }
+
+  /* Vendor pseudo-elements must stay in separate rules: an unknown one invalidates a selector list. */
+  .entry-lobby__progress-bar::-webkit-progress-value {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+
+  .entry-lobby__progress-bar::-moz-progress-bar {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+
+  #shell-header h1 {
+    background: Canvas;
+    color: CanvasText;
+  }
+}

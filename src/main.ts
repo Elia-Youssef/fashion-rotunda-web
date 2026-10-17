@@ -52,6 +52,7 @@ import { SceneRevealCoordinator } from './ui/scene-reveal';
 import type { ReadinessPredicates } from './ui/scene-reveal';
 import { createStartupFailureRouting, showStartupNotice } from './ui/startup-failure';
 import type { StartupFailureRouting } from './ui/startup-failure';
+import './ui/forced-colors.css';
 
 /** What the scene is made of, as the e2e suite reads it. Material names are three.js type strings. */
 interface SceneDescription {
