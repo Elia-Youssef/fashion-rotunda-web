@@ -5,8 +5,8 @@
 // import is skySourceFromSearch from lighting/sky.
 // Gate precedence, the music preference switch and focus handling live in entry-lobby/gate,
 // entry-lobby/music-switch and entry-lobby/focus-trap. This facade keeps their public contract.
-// The markup builder lives in entry-lobby/markup; the progress tracker in entry-lobby/progress
-// and the gate decision are re-exported here. Page code imports the lobby through this module alone.
+// The markup builder lives in entry-lobby/markup and the progress tracker in entry-lobby/progress.
+// The gate decision is re-exported here. Page code imports the lobby through this module alone.
 
 import './entry-lobby.css';
 
@@ -30,7 +30,6 @@ export type LobbyState =
   | 'error'
   | 'disposed';
 
-export { trackFirstFrameProgress };
 export type { ProgressReading };
 export { lobbyWanted } from './entry-lobby/gate';
 

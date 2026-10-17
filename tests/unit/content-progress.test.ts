@@ -20,7 +20,7 @@ it.each([false, true])('tracks resolved remote scene URLs including the shared H
   vi.stubGlobal('__CONTENT_ORIGIN__', origin);
   vi.stubGlobal('__CONTENT_MANIFEST__', manifest);
   vi.resetModules();
-  const { trackFirstFrameProgress } = await import('../../src/ui/entry-lobby');
+  const { trackFirstFrameProgress } = await import('../../src/ui/entry-lobby/progress');
   const urls = new Map(manifest.files.map((entry) => [entry.path, entry.url]));
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);

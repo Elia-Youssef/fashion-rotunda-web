@@ -26,7 +26,6 @@ describe('entry lobby public surface', () => {
       'LOBBY_READY_MESSAGE',
       'lobbyWanted',
       'mountEntryLobby',
-      'trackFirstFrameProgress',
     ]);
   });
 });

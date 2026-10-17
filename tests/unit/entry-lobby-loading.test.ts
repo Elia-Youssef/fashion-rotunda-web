@@ -5,8 +5,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadContentSet, chooseLook } from '../../src/catalog/bootstrap';
 import { parseCatalog } from '../../src/catalog/catalog';
-import { APPROVED_FACTS, LOBBY_READY_MESSAGE, trackFirstFrameProgress } from '../../src/ui/entry-lobby';
+import { APPROVED_FACTS, LOBBY_READY_MESSAGE } from '../../src/ui/entry-lobby';
 import type { ProgressReading } from '../../src/ui/entry-lobby';
+import { trackFirstFrameProgress } from '../../src/ui/entry-lobby/progress';
 import { installLobbyHarness, mountLobby } from '../support/entry-lobby';
 
 // What the loading surface tells the visitor: the truthful progress readout, the one fact
