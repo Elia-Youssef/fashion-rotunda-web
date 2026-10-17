@@ -1,8 +1,7 @@
 import { expect, test } from './support/fixtures';
-import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
+import { SCENE_READY_TIMEOUT, waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import { waitForTooltipInstallation } from './support/a11y-mount';
 import {
-  SCENE_READY_TIMEOUT,
   STUDIO_LIGHTS,
   VIEWPORTS,
   assertHitAndSafe,

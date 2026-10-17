@@ -2,9 +2,6 @@ import { expect } from './fixtures';
 import type { Browser, BrowserContext, Locator, Page } from '@playwright/test';
 import { SAFE_AREA } from './safe-area';
 
-
-export const SCENE_READY_TIMEOUT = 60_000;
-
 // The polls behind expectRigAndUrl and expectDefaultRigWithoutUrl: after a light control
 // changes, the serialized rig must reach both places the test reads, the rigState() test handle
 // and the page URL's rig parameter. The runtime read lands within an event-loop turn, but the

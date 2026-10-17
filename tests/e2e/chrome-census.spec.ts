@@ -1,6 +1,7 @@
 import { expect, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
 import { openShowroom } from './support/showroom';
+import { boxesIntersect, type Box } from './support/geometry';
 
 // The reachability census: at each of the three shell viewports, with the sheets opened
 // where they exist, every census control is visible, sized for a touch (44 by 44 CSS px on the
@@ -38,22 +39,6 @@ function census(): CensusControl[] {
     ['badge', '.badge', 'both'],
   ];
   return entries.map(([name, selector, phase]) => ({ name, selector, phase }));
-}
-
-interface Box {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-function boxesIntersect(a: Box, b: Box): boolean {
-  return (
-    a.x < b.x + b.width &&
-    b.x < a.x + a.width &&
-    a.y < b.y + b.height &&
-    b.y < a.y + a.height
-  );
 }
 
 async function readBox(page: Page, control: CensusControl): Promise<Box | null> {

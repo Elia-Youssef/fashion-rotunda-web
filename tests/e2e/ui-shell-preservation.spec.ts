@@ -1,5 +1,5 @@
 import { expect, test } from './support/fixtures';
-import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
+import { SCENE_READY_TIMEOUT, waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import { assertRendererPreserved, nextProofReading } from './support/preservation';
 import { openShowroom } from './support/showroom';
 import type { Page } from '@playwright/test';
@@ -10,7 +10,6 @@ import type { Page } from '@playwright/test';
 // the runtime handles and the canvas, none of which the backend changes, so both projects run it
 // against the backend their project promises.
 
-const SCENE_READY_TIMEOUT = 60_000;
 // The demand loop draws only when something invalidates it, and the two disclosure interactions
 // change the canvas box, which the element ResizeObserver invalidates (src/main.ts); the frame is
 // owed at once, so 5 s is raf-scheduling headroom on a loaded machine, not wait time.

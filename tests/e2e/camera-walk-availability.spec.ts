@@ -2,9 +2,7 @@ import { expect, expectConsoleError, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
 import { backendPath } from './support/backend';
 import { openShowroom } from './support/showroom';
-import { waitForLoopIdle } from './support/ready';
-
-const SCENE_READY_TIMEOUT = 60_000;
+import { SCENE_READY_TIMEOUT, waitForLoopIdle } from './support/ready';
 
 test('a failed Walk uses exactly one live region for its failure notice', async ({ page, request }) => {
   let fail!: () => void;

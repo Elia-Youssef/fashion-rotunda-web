@@ -1,9 +1,7 @@
 import { expect, test } from './support/fixtures';
 import { backendPath } from './support/backend';
 import { openShowroom } from './support/showroom';
-import { LOOP_STATE_POLL_MS, waitForLoopIdle, waitForSceneInitialization } from './support/ready';
-
-const SCENE_READY_TIMEOUT = 60_000;
+import { LOOP_STATE_POLL_MS, SCENE_READY_TIMEOUT, waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 
 // The loop wakes for WAKE_MS, 4 s (src/main.ts), after any input. The wake-window case demands its
 // progress after that expiry, so the test polls the loopState wake field until the timer disarms;

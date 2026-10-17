@@ -1,6 +1,14 @@
 import { expect } from './fixtures';
 import type { Page } from '@playwright/test';
 
+// The one scene-ready budget. data-scene reaches ready only after navigation, content decode
+// (about 35 MB on the unoptimized content set), shader compilation, the initialization draw,
+// the High tier's startup benchmark and the reveal hold, and the software-rendered webgl2
+// workers can stall a page for seconds at a time, so the boot wait must be generous; 60 s
+// stays inside the 90 s per-test default with time left for the test's own assertions. The
+// waits poll a published state; they never sleep.
+export const SCENE_READY_TIMEOUT = 60_000;
+
 /** The final hook is installed after shader compilation and the initialization draw. */
 export async function waitForSceneInitialization(page: Page, timeout: number): Promise<void> {
   // Wait for a complete final-hook read before taking baselines or sending fixture operations.
@@ -14,8 +22,8 @@ export async function waitForSceneInitialization(page: Page, timeout: number): P
 
 // Numeric polling keeps diagnostics observable even when animation-frame delivery is stalled.
 export const LOOP_STATE_POLL_MS = 100;
-// Initialization/compilation can take as long as the existing scene readiness gate.
-const LOOP_IDLE_TIMEOUT_MS = 60_000;
+// Initialization/compilation can take as long as the scene-ready budget above.
+const LOOP_IDLE_TIMEOUT_MS = SCENE_READY_TIMEOUT;
 // Matches the existing input-to-drawn-frame handshake budget.
 const LOOP_FRESH_FRAME_TIMEOUT_MS = 5_000;
 // The quiet observation: after the requested frame the idle loop must draw nothing new, and only

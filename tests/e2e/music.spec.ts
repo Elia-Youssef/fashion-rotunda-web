@@ -2,14 +2,13 @@ import { browserReports, expect, expectConsoleError, test } from './support/fixt
 import type { Page } from '@playwright/test';
 import { backendPath } from './support/backend';
 import { openShowroom } from './support/showroom';
+import { SCENE_READY_TIMEOUT } from './support/ready';
 
 // The music switch in the header on both backends. Both projects default to headless and muted
 // output; the WebGPU project also explicitly supplies --mute-audio. A Playwright click is a trusted
 // gesture, which unlocks the AudioContext even while browser output is muted.
 
 const PLAYING_TIMEOUT = 15_000;
-// The content set is about 35 MB before the scene is ready, the same wait the smoke suite uses.
-const SCENE_READY_TIMEOUT = 60_000;
 // The audio-clock polls wait for the loop position itself, so the budget covers fetch, decode and
 // start, the same wait as becoming playing, and never assumes wall time equals play time.
 const PROGRESS_TIMEOUT = 15_000;

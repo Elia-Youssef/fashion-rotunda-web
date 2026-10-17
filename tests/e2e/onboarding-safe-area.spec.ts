@@ -1,27 +1,12 @@
 import { expect, test } from './support/fixtures';
 import { openShowroom } from './support/showroom';
 import { SAFE_AREA, installSafeArea } from './support/safe-area';
+import { SCENE_READY_TIMEOUT } from './support/ready';
+import { boxesIntersect } from './support/geometry';
 
-const SCENE_READY_TIMEOUT = 60_000;
 // Onboarding mounts with the a11y module after the ready attribute is published, so the card
 // waits for the scene-initialization budget instead of the assertion default.
 const A11Y_MOUNT_TIMEOUT = SCENE_READY_TIMEOUT;
-
-interface Box {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-function boxesIntersect(a: Box, b: Box): boolean {
-  return (
-    a.x < b.x + b.width &&
-    b.x < a.x + a.width &&
-    a.y < b.y + b.height &&
-    b.y < a.y + a.height
-  );
-}
 
 for (const viewport of [
   { width: 390, height: 844 },

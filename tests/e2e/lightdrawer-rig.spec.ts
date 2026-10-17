@@ -1,9 +1,8 @@
 import { expect, test } from './support/fixtures';
-import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
+import { SCENE_READY_TIMEOUT, waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import { nextProofReading, stableDrawCalls } from './support/preservation';
 import { openShowroom } from './support/showroom';
 import {
-  SCENE_READY_TIMEOUT,
   STUDIO_LIGHTS,
   setNativeInput,
   expectRigAndUrl,

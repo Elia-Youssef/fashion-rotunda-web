@@ -25,9 +25,9 @@ test('builds no basis transcoder copy into dist/assets', async () => {
 });
 
 test('fetches the transcoder from content, never from the bundle', async ({ page, request }) => {
-  // The opening waits past data-scene ready, the frame that draws the look, by which point the
-  // room's KTX2 textures are transcoded, and its chrome waits after ready request no
-  // basis_transcoder file, so the resource timing buffer holds exactly the page's own fetches.
+  // The opening waits until the frame that draws the look, by which point the room's KTX2
+  // textures are transcoded, and after it the page fetches no further transcoder file, so the
+  // resource timing buffer holds exactly the page's own two transcoder fetches.
   await openShowroom(page, request, '/?gate=off&e2e=1&music=off&attract=0');
 
   const transcoderRequests = await page.evaluate(() =>

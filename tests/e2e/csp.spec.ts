@@ -2,7 +2,7 @@ import { expect, test, browserReports } from './support/fixtures';
 import { PNG } from 'pngjs';
 import { CONTENT_SECURITY_POLICY } from '../../src/content-security-policy';
 import { backendPath, projectBackend } from './support/backend';
-import { waitForSceneInitialization } from './support/ready';
+import { SCENE_READY_TIMEOUT, waitForSceneInitialization } from './support/ready';
 
 interface PolicyViolation {
   directive: string;
@@ -18,7 +18,6 @@ declare global {
 }
 
 // Content initialization and a subsequent GLB decode use the existing scene/switch budgets.
-const SCENE_READY_TIMEOUT = 60_000;
 const LOOK_SWITCH_TIMEOUT = 30_000;
 // Fetching and decoding music uses the music suite's own start budget.
 const MUSIC_START_TIMEOUT = 15_000;

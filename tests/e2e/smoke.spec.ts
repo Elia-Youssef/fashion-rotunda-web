@@ -1,6 +1,7 @@
 import { backendPath, projectBackend, requireWebGPU } from './support/backend';
 import { expect, test, browserReports } from './support/fixtures';
 import { canvasStats } from './support/pixels';
+import { SCENE_READY_TIMEOUT } from './support/ready';
 
 // This suite relies on three facts of the page: canvas#scene carries data-backend once the renderer
 // has initialised, one console line starts with the prefix below for a session that asked for
@@ -9,10 +10,7 @@ import { canvasStats } from './support/pixels';
 const BACKEND_ATTRIBUTE = 'data-backend';
 const BACKEND_LOG_PREFIX = '[archviz] renderer backend:';
 const BACKEND_ATTRIBUTE_TIMEOUT = 30_000;
-// The scene attribute reaches 'ready' on the first frame that has the look on the plinth. The
-// unoptimized content set is about 35 MB for the rotunda and the first look together, so the wait
-// is generous; it is a wait on a state, not a sleep.
-const SCENE_READY_TIMEOUT = 60_000;
+// The scene attribute reaches 'ready' on the first frame that has the look on the plinth.
 
 interface CalibrationDraws {
   provisionalHigh: boolean;

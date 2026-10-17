@@ -1,8 +1,12 @@
 import { expect, test } from './support/fixtures';
 import { openShowroom } from './support/showroom';
-import { LOOP_STATE_POLL_MS, waitForLoopIdle, waitForSceneInitialization } from './support/ready';
+import {
+  LOOP_STATE_POLL_MS,
+  SCENE_READY_TIMEOUT,
+  waitForLoopIdle,
+  waitForSceneInitialization,
+} from './support/ready';
 
-const SCENE_READY_TIMEOUT = 60_000;
 // Input owes a scheduled render; allow delayed RAF delivery, as in other frame handshakes.
 const INPUT_FRAME_TIMEOUT = 5_000;
 

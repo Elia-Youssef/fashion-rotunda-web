@@ -15,7 +15,10 @@ const SCENE_PATH = '/?gate=off&e2e=1&proof=1&music=off&attract=0&tier=mid';
 const VIEWPORT = { width: 1440, height: 900 } as const;
 // A different CSS box retires the old graph and allocates both glass copies at the reduced scale.
 const REBUILD_VIEWPORT = { width: 1400, height: 875 } as const;
-// Keep the slow-load allowance; phase waits depend on drawn frames rather than elapsed recovery time.
+// Four times the shared scene-ready budget in support/ready: this case keeps the slow-load
+// allowance its reproducing sequence was written with, a full boot plus a shrink, a graph rebuild
+// and a growth past the rebuilt allocation, and its phase waits depend on drawn frames rather
+// than elapsed recovery time.
 const SCENE_READY_TIMEOUT_MS = 240_000;
 const FRAME_TIMEOUT_MS = 15_000;
 // Four light changes exercise both scene draws repeatedly after the full-scale buffer is applied.

@@ -4,6 +4,8 @@ import { waitForTooltipInstallation } from './support/a11y-mount';
 import { backendPath, projectBackend } from './support/backend';
 import { openShowroom } from './support/showroom';
 import { SAFE_AREA, installSafeArea } from './support/safe-area';
+import { SCENE_READY_TIMEOUT } from './support/ready';
+import { boxesIntersect } from './support/geometry';
 
 // Onboarding, tooltips and accessibility pass.
 // Tests the first-visit onboarding card, Skip dismissal, the DOM tab walk order,
@@ -12,7 +14,6 @@ import { SAFE_AREA, installSafeArea } from './support/safe-area';
 // The checks are backend independent, so both projects run them; each page is pinned to its
 // project's backend through the canvas data-backend attribute before any DOM reading.
 
-const SCENE_READY_TIMEOUT = 60_000;
 const SWITCH_TIMEOUT = 30_000;
 // The a11y module mounts after the ready attribute is published (after compilation and the first
 // drawn frame), so its waits use the scene-initialization budget instead of the assertion default.
@@ -32,18 +33,6 @@ const REVEAL_TIMEOUT_MS = 60_000;
 // The longest run in the documented order is the thumbnail strip, seven looks plus the controls
 // around it. Twelve presses cover it; an unbounded loop would hang instead of failing.
 const MAX_TAB_PRESSES = 12;
-
-function boxesIntersect(
-  a: { x: number; y: number; width: number; height: number },
-  b: { x: number; y: number; width: number; height: number },
-): boolean {
-  return (
-    a.x < b.x + b.width &&
-    b.x < a.x + a.width &&
-    a.y < b.y + b.height &&
-    b.y < a.y + a.height
-  );
-}
 
 async function focusMatches(page: Page, selector: string): Promise<boolean> {
   return page.evaluate((sel) => document.activeElement?.matches(sel) === true, selector);

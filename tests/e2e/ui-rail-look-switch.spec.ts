@@ -1,10 +1,9 @@
 import { expect, test } from './support/fixtures';
-import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
+import { SCENE_READY_TIMEOUT, waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import { openShowroom } from './support/showroom';
 import { holdFirstRequest } from './support/held-request';
 import { RAIL_PATH } from './support/catalogue-rail';
 
-const SCENE_READY_TIMEOUT = 60_000;
 const SWITCH_TIMEOUT = 30_000;
 // The click marks its own button busy synchronously in selectLook (strip.setBusy before the look
 // fetch starts, src/ui/chrome.ts), so the wait covers only the click dispatch itself; 5 s is

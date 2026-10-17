@@ -1,5 +1,5 @@
 import { expect, test } from './support/fixtures';
-import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
+import { SCENE_READY_TIMEOUT, waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 import type { Locator, Page } from '@playwright/test';
 import { PNG } from 'pngjs';
 import { canvasStats } from './support/pixels';
@@ -13,7 +13,6 @@ import { canvasStats } from './support/pixels';
 // On this backend the tier decision is always mid (decide.ts lines 54-56), so the aa slice is TRAA
 // and the ao slice is GTAO, deterministically.
 
-const SCENE_READY_TIMEOUT = 60_000;
 /**
  * data-post is written by the same frame loop that turned data-scene ready, not seconds later: the
  * pinned ?webgl=1 makes the backend webgl2 on both projects, so decideTier returns mid (decide.ts

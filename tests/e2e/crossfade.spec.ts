@@ -1,5 +1,5 @@
 import { expect, test } from './support/fixtures';
-import { waitForSceneInitialization } from './support/ready';
+import { SCENE_READY_TIMEOUT, waitForSceneInitialization } from './support/ready';
 import { CROSSFADE_MS, MAX_FADE_STEP_MS } from '../../src/scene/crossfade';
 import { openShowroom } from './support/showroom';
 import { holdFirstRequest } from './support/held-request';
@@ -10,7 +10,6 @@ import { holdFirstRequest } from './support/held-request';
 // promises through the canvas data-backend attribute before any read, and waits on past the
 // first frame to the mounted strip and card.
 
-const SCENE_READY_TIMEOUT = 60_000;
 /**
  * The fade begins only after the incoming look has loaded and parsed, and the headless projects
  * render through a slow enough path (and share this machine with other test runs) that the

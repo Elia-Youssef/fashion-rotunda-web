@@ -3,6 +3,7 @@ import { expect, test } from './support/fixtures';
 import type { Page } from '@playwright/test';
 import { ResizeHandshake } from './support/resize-handshake';
 import { BEFORE_RESIZE, RESIZE_VIEWPORT, STALE_BUFFER } from './support/resize-snapshots';
+import { SCENE_READY_TIMEOUT } from './support/ready';
 
 // The bidirectional frame-time governor on native WebGPU. The deterministic
 // harness behind `?e2e=1` (window.archvizE2E.governor) is the only thing this spec drives: it
@@ -13,7 +14,6 @@ import { BEFORE_RESIZE, RESIZE_VIEWPORT, STALE_BUFFER } from './support/resize-s
 // The synthetic clock advances only when samples are injected; the governor's diagnostics are
 // reported against the last observed sample, so every reading below is deterministic.
 
-const SCENE_READY_TIMEOUT = 60_000;
 const POLL_TIMEOUT = 15_000;
 /** The high tier's frame budget and the comfortable threshold derived from it. */
 const BUDGET_MS = 16.7;

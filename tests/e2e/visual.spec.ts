@@ -1,10 +1,9 @@
 // Renderer-only WebGL 2 visual baselines at the catalogue proof pose.
 
 import { expect, test, browserReports, settleBrowserReports } from './support/fixtures';
-import { waitForLoopIdle } from './support/ready';
+import { SCENE_READY_TIMEOUT, waitForLoopIdle } from './support/ready';
 import type { Locator, Page } from '@playwright/test';
 
-const SCENE_READY_TIMEOUT = 60_000;
 const SWITCH_TIMEOUT = 30_000;
 const TEST_TIMEOUT = 180_000;
 const MAX_STABILIZATION_ORBITS = 8;
