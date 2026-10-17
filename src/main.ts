@@ -51,6 +51,8 @@ import { FULL_POSTER_URL, PHONE_POSTER_URL } from './ui/entry-lobby/markup';
 import { SceneRevealCoordinator } from './ui/scene-reveal';
 import type { ReadinessPredicates } from './ui/scene-reveal';
 import { createStartupFailureRouting, showStartupNotice } from './ui/startup-failure';
+// Browser specs import startup-failure for its sentence; their loader cannot parse CSS.
+import './ui/startup-failure.css';
 import type { StartupFailureRouting } from './ui/startup-failure';
 import './ui/forced-colors.css';
 

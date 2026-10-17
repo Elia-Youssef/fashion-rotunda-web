@@ -21,8 +21,9 @@
   justify-content: center;
 }
 
+/* The [hidden] selector outranks the flex layout rule. */
 .archviz-joystick[hidden] {
-  display: none !important;
+  display: none;
 }
 
 .archviz-joystick-base {

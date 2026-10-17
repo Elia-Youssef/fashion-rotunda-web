@@ -202,7 +202,7 @@ describe('showStartupNotice', () => {
   it('reads title, message, then Reload in document order', () => {
     showStartupNotice(document.body, () => undefined);
 
-    // The notice is a plain grid with no order overrides (entry-lobby.css), so the
+    // The notice is a plain grid with no order overrides (startup-failure.css), so the
     // document order is the order a visitor and a screen reader meet it in.
     const notice = document.body.querySelector<HTMLElement>('.startup-notice')!;
     expect([...notice.children].map((child) => child.className)).toEqual([

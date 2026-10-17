@@ -32,22 +32,14 @@
      floor, so the ring carries a light line inside a dark one. */
   --focus-contrast: rgb(10 12 14 / 0.85);
   --scrim: rgb(10 12 14 / 0.88);
-  --danger: #d98282;
   /* Brand tokens from brand-tokens.json */
   --brand-bg-deepest: #0a0c0e;
-  --brand-surface-raised: #14171a;
-  --brand-surface-overlay: #1a1e23;
-  --brand-surface-chrome: rgba(16, 18, 20, 0.7);
-  --brand-image-veil: rgba(10, 12, 14, 0.72);
-  --brand-image-veil-loading: rgba(10, 12, 14, 0.82);
-  --brand-image-veil-error: rgba(10, 12, 14, 0.86);
   --brand-text-primary: #f0efeb;
   --brand-text-secondary: #9aa2ab;
   --brand-text-disabled: #8a9096;
   --brand-accent-architectural: #d0d4d8;
   --brand-accent-brass: #c8a97e;
   --brand-accent-brass-hover: #dfc096;
-  --brand-deep-bronze: #645037;
   --brand-error: #d98282;
   --brand-focus: #ffffff;
   --brand-transition-black: #000000;
@@ -93,7 +85,6 @@
   --lobby-header-min-height-landscape: 2.75rem;
   --type-eyebrow: 0.75rem;
   --type-eyebrow-sm: 0.6875rem;
-  --type-eyebrow-xs: 0.625rem;
   --type-desc: 0.875rem;
   --type-desc-sm: 0.8125rem;
   --type-desc-xs: 0.78rem;
@@ -107,7 +98,6 @@
   --type-telemetry-sm: 0.5625rem;
   --type-fact-heading: 0.6875rem;
   --type-fact-heading-sm: 0.625rem;
-  --type-fact-text: 0.8125rem;
   --type-fact-text-sm: 0.75rem;
   --type-loading-title: 0.9375rem;
   --type-error-title: 1rem;
@@ -149,7 +139,6 @@
      and proof ceilings carry a dvh share so a short landscape screen shrinks them instead of
      crowding the scene out from under the chrome. */
   --header-height: 3.5rem;
-  --rail-width: 5rem;
   /* The desktop rail shows every look at once. Its column runs from --rail-top down to the bottom
      reserve, which keeps it clear of the light launcher and of the fine-pointer light bar (116px
      over a 16px inset). A taller bar (coarse pointer, larger root font) still cannot meet the rail:
@@ -204,16 +193,13 @@
   /* When a phone sheet is open, its bottom edge clears the compact badge/Measure strip instead
      of painting over the controls. The two touch rows are also enough room when proof is absent. */
   --sheet-footer-reserve: calc(2 * var(--control-height) + 6 * var(--space-2));
-  --size-thumb: 3.25rem;
   --size-media: 4rem;
   --size-value: 4.5rem;
-  --progress-width: 16rem;
   /* Motion. */
   --dur-fast: 120ms;
   --dur-base: 200ms;
   --dur-slow: 400ms;
   --dur-cover-black: 250ms;
-  --dur-black-hold: 200ms;
   --dur-scene-reveal: 600ms;
   --dur-scene-reveal-e2e-sample-delay: -150ms;
   --ease-architectural: cubic-bezier(0.16, 1, 0.3, 1);
@@ -230,7 +216,6 @@
   --font-mono: ui-monospace, monospace;
   --type-sm: 0.75rem;
   --type-md: 0.9rem;
-  --type-lg: 1.25rem;
   /* Elevation. */
   --shadow-raised: 0 var(--space-1) var(--space-3) rgb(0 0 0 / 0.5);
   --shadow-overlay: 0 var(--space-1) var(--space-4) rgb(0 0 0 / 0.6);
@@ -246,7 +231,6 @@
     --dur-base: 0ms;
     --dur-slow: 0ms;
     --dur-cover-black: 0ms;
-    --dur-black-hold: 0ms;
     --dur-scene-reveal: 0ms;
     --dur-scene-reveal-e2e-sample-delay: 0ms;
   }

@@ -42,7 +42,8 @@ const FROZEN_SHEET_HASHES: Readonly<Record<string, string>> = {
   // each thumbnail a matching scroll margin.
   'ui/catalog-strip.css': '61cb0e0985cc9b54e333d4671cd389981ac4e05eada7c03aa1934d1e813fe02e',
   // 2026-10-12: the Source link uses the existing muted text and focus tokens.
-  'ui/product-card.css': '4586de02d5b823d001d9e0aa4d10e02056b992bc90e797bba52657d293613659',
+  // 2026-10-17: the hidden swatch selector wins by specificity without an important declaration.
+  'ui/product-card.css': '89d51030780bce0a606a3c1dacbc5738e8659b886ed499317fcbae310bb2a1fd',
   'ui/share.css': 'dc7722407941d032ebab9b78b426eae29ccb5e083fc215046956042c7a104cca',
   // 2026-10-14: the panel's three exact matches became the --border, --text-muted and --text
   // tokens; the literals left in it are near misses that share no token value, so the sheet
@@ -50,7 +51,8 @@ const FROZEN_SHEET_HASHES: Readonly<Record<string, string>> = {
   'proof/panel.css': '10a5eba8b2f4f27464da307d5ddb9bc194f2dd26f530974a434854f82e7dcc16',
   // Fixed-size touch controls with translucent fills, white borders and shadows of their own;
   // no token matches those values. Frozen bytes keep them from drifting.
-  'camera/joystick.css': 'f4770d13697af60904f86b3d169e2b9034de09c3824bbe1148ed46e7b99851f9',
+  // 2026-10-17: the hidden joystick selector wins by specificity without an important declaration.
+  'camera/joystick.css': 'eb66d99a8c508f6e83ef35aba0f12ffa7c771dc7c32d0e2ad7379dc876ee9609',
   // 2026-10-15: reserve all Walk labels through intrinsic layout without adding
   // colour, font or length literals; freeze the resulting layout rules too.
   // 2026-10-16: the notice box rule also styles the failed look-switch notice (.look-status),
