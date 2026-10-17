@@ -138,6 +138,14 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
   canvas.tabIndex = 0;
 
   let holding = false;
+  let attractWake: ReturnType<typeof setTimeout> | null = null;
+
+  function clearAttractWake(): void {
+    if (attractWake === null) return;
+    clearTimeout(attractWake);
+    attractWake = null;
+  }
+
   let appliedYaw = showroom.lookYaw;
   let publishedYaw = '';
   let publishedYawValue = Number.NaN;
@@ -167,6 +175,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
   }
 
   function hold(): void {
+    clearAttractWake();
     loop.setAnimating(true);
     if (holding) {
       return;
@@ -275,6 +284,10 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     enabled: attractEnabled,
     reducedMotion: prefersReducedMotion(),
     now: clock,
+    onWaitChange: () => {
+      clearAttractWake();
+      scheduleAttractWake();
+    },
   });
 
   // The pose and fov the tour last placed: a hold re-reports the same reading on every tick,
@@ -453,6 +466,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
     const current: ModeRequest = { mode, promise, resolve, reject };
     request = current;
+    clearAttractWake();
     notifyState();
     if (mode === 'orbit' || walkLoader.state === 'ready') beginBlend(current, interrupted);
     else {
@@ -495,6 +509,25 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     );
   }
 
+  // A sleeping render loop cannot tick the idle clock. Owe one frame at its deadline;
+  // update() hands continuous frames to the tour once it starts. Other camera motion owns
+  // its own frames, so only a still orbit camera needs this timeout.
+  function scheduleAttractWake(): void {
+    const remaining = attract.msUntilStart();
+    if (
+      disposed || currentMode !== 'orbit' || request !== null || activeBlend !== null ||
+      turntable.running || orbit.moving || remaining === null
+    ) {
+      clearAttractWake();
+      return;
+    }
+    if (attractWake !== null) return;
+    attractWake = setTimeout(() => {
+      attractWake = null;
+      loop.invalidate();
+    }, remaining);
+  }
+
   const unlistenMotion = onReducedMotionChange((reduced) => {
     attract.setReducedMotion(reduced);
     attractPoseApplied = false;
@@ -502,6 +535,8 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     if (!isMoving()) release();
     loop.invalidate();
   });
+
+  scheduleAttractWake();
 
   return {
     orbit,
@@ -606,6 +641,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
       if (!orbitMoving && !walkMoving && !turntable.running && !attract.running) {
         release();
       }
+      scheduleAttractWake();
     },
 
     get moving(): boolean {
@@ -615,6 +651,7 @@ export function mountCamera(options: CameraMountOptions): CameraMount {
     dispose(): void {
       if (disposed) return;
       disposed = true;
+      clearAttractWake();
       unlistenMotion();
       cancelPreload();
       request?.resolve();

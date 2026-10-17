@@ -20,6 +20,8 @@ export interface AttractOptions {
   enabled: boolean; // false by default on touch; ?attract=1|0 overrides
   reducedMotion: boolean; // prevents the tour independently of its enabled setting
   now?: () => number;
+  /** The idle deadline or its eligibility changed outside a tick. */
+  onWaitChange?: () => void;
 }
 
 export interface AttractReading {
@@ -34,6 +36,8 @@ export interface AttractHandle {
   setEnabled(on: boolean): void;
   setReducedMotion(reduced: boolean): void;
   noteInput(): void; // any input: stops a running tour, restarts the idle clock
+  /** Remaining idle wait, or null when no tour can start or a tour already owns the camera. */
+  msUntilStart(): number | null;
   /**
    * Called every frame while running or waiting; returns the pose to show, or null to leave the
    * camera. The reading is owned by the handle and rewritten by the next tick, so a caller
@@ -101,6 +105,7 @@ export function createAttract(options: AttractOptions): AttractHandle {
       if (!on && isRunning) {
         stop();
       }
+      options.onWaitChange?.();
     },
 
     setReducedMotion(reduced: boolean): void {
@@ -108,10 +113,17 @@ export function createAttract(options: AttractOptions): AttractHandle {
       isReducedMotion = reduced;
       // A preference change ends the old tour; returning to normal motion starts a fresh idle wait.
       stop();
+      options.onWaitChange?.();
     },
 
     noteInput(): void {
       stop();
+      options.onWaitChange?.();
+    },
+
+    msUntilStart(): number | null {
+      if (!isEnabled || isReducedMotion || views.length === 0 || isRunning) return null;
+      return Math.max(0, idleMs - (now() - lastInputTime));
     },
 
     tick(): AttractReading | null {

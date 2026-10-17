@@ -1,7 +1,7 @@
 import { expect, test } from './support/fixtures';
 import { backendPath } from './support/backend';
 import { openShowroom } from './support/showroom';
-import { waitForLoopIdle } from './support/ready';
+import { waitForLoopIdle, waitForSceneInitialization } from './support/ready';
 
 const SCENE_READY_TIMEOUT = 60_000;
 
@@ -28,13 +28,19 @@ const TOUR_MIN_MOVED_M = 0.25;
 /** Covers the 500 ms idle start, the eased 940 ms to the minimum travel, and slow-machine slack. */
 const TOUR_MOVE_TIMEOUT_MS = 15_000;
 
-// The idle tour arms after ATTRACT_IDLE_MS (500 ms under ?attractIdle=500) without input and
+// The short cancellation case uses 500 ms to keep its input checks quick; the separate sleeping-loop
+// case waits 6 s, past the 4 s input wake window. The idle tour arms after the configured delay and
 // publishes data-attract from a rendered frame's update (src/camera/mount.ts), so the wait covers
 // the idle delay plus that first publishing frame; 5 s leaves the rest to slow machines.
 const ATTRACT_START_TIMEOUT_MS = 5_000;
 
 // Only delivery of a latched event observation is polled, never the transient stopped-tour state.
 const ATTRACT_INPUT_TIMEOUT_MS = 5_000;
+
+// Longer than main.ts's 4 s wake window; input after startup anchors the full idle wait.
+const SLEEPING_TOUR_IDLE_MS = 6_000;
+// Covers the full idle wait plus the eased travel and the same slow-machine margin as the short case.
+const SLEEPING_TOUR_TIMEOUT_MS = SLEEPING_TOUR_IDLE_MS + TOUR_MOVE_TIMEOUT_MS;
 
 // Camera and turntable through the real page: a drag orbits the inspection camera, the turntable turns the
 // look while it runs, and the loop goes back to sleep once both are still. Reads and the toggle go
@@ -136,6 +142,39 @@ test('the turntable turns the look and the loop settles once it stops', async ({
   await waitForLoopIdle(page);
   const stopped = await readYaw();
   expect(await readYaw(), 'the look holds where the turntable stopped').toBe(stopped);
+});
+
+test('the idle tour wakes the sleeping loop after the input wake window', async ({ page, request }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const { canvas } = await openShowroom(
+    page, request, `/?e2e=1&attract=1&attractIdle=${SLEEPING_TOUR_IDLE_MS}`,
+  );
+  await waitForSceneInitialization(page, SCENE_READY_TIMEOUT);
+  // Window input resets the tour's clock and opens main.ts's wake window without moving the orbit.
+  const start = await page.evaluate(() => {
+    window.dispatchEvent(new Event('pointermove'));
+    return { at: performance.now(), position: window.archvizCamera!.orbit.position };
+  });
+  expect(await page.evaluate(() => window.archvizE2E!.loopState().wakeOpen)).toBe(true);
+  await expect.poll(
+    () => page.evaluate(() => window.archvizE2E!.loopState().wakeOpen),
+    { timeout: WAKE_WINDOW_EXPIRY_TIMEOUT_MS },
+  ).toBe(false);
+  await waitForLoopIdle(page);
+  await expect(canvas).toHaveAttribute('data-attract', '1', { timeout: SLEEPING_TOUR_TIMEOUT_MS });
+  const startedAt = await page.evaluate(() => performance.now());
+  expect(startedAt - start.at, 'the tour waited the full idle delay after input')
+    .toBeGreaterThanOrEqual(SLEEPING_TOUR_IDLE_MS);
+  await expect.poll(async () => {
+    const position = await page.evaluate(() => window.archvizCamera!.orbit.position);
+    return Math.hypot(
+      position[0] - start.position[0], position[1] - start.position[1], position[2] - start.position[2],
+    );
+  }, {
+    message: 'the tour woke the loop and moved the camera after the wake window',
+    timeout: TOUR_MOVE_TIMEOUT_MS,
+    intervals: [250],
+  }).toBeGreaterThanOrEqual(TOUR_MIN_MOVED_M);
 });
 
 test('attract loop tours presets when idle and cancels on input', async ({ page }) => {

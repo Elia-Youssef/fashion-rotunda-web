@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { canvas, countAnimating, make, pointer } from '../support/camera-mount';
 import { attractIdleMsFromSearch } from '../../src/camera/mount';
 import type { OrbitHandle } from '../../src/camera/orbit';
+import type { CameraMountOptions } from '../../src/camera/mount';
 
 // The idle attract tour: the attractIdle delay parsing, the placement of held poses while the
 // tour runs, and the placement that must happen on the first tick after a restart.
@@ -21,6 +22,231 @@ function motionPreference(matches: boolean) {
     },
   };
 }
+
+const SLEEPING_TOUR_IDLE_MS = 6_000;
+const INPUT_WAKE_WINDOW_MS = 4_000;
+
+/** No update is delivered unless the camera owes a frame or holds continuous animation. */
+function sleepingCamera(options: Partial<CameraMountOptions> = {}) {
+  vi.useFakeTimers();
+  let invalidated = false;
+  let animating = false;
+  const loop = {
+    invalidate: vi.fn(() => { invalidated = true; }),
+    setAnimating: vi.fn((on: boolean) => { animating = on; }),
+  };
+  const result = make({
+    now: () => performance.now(),
+    search: `?attract=1&attractIdle=${SLEEPING_TOUR_IDLE_MS}`,
+    views: {
+      proof: { position: [0, 1.7, 4.2], target: [0, 1, 0], fov: 40 },
+      entrance: { position: [0, 2.2, 6.2], target: [0, 1, 0], fov: 52 },
+    },
+    ...options,
+    loop,
+  });
+  const update = vi.spyOn(result.mount, 'update');
+  function frame(dtMs = 0): void {
+    if (!invalidated && !animating) return;
+    invalidated = false;
+    result.mount.update(dtMs);
+  }
+  // Finish the unrelated walk preload and the initial camera placement frame.
+  vi.advanceTimersByTime(0);
+  frame();
+  update.mockClear();
+  loop.invalidate.mockClear();
+  return { ...result, loop, update, frame };
+}
+
+describe('idle tour wake scheduling', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('wakes a sleeping loop after an idle delay longer than the input wake window', () => {
+    const { mount: current, camera, loop, update, frame } = sleepingCamera();
+    const initial = camera.position.toArray();
+    const timeout = vi.spyOn(globalThis, 'setTimeout');
+    expect(vi.getTimerCount()).toBe(1);
+    // Unrelated frames must keep the same deadline, without replacing or multiplying timers.
+    for (let i = 0; i < 3; i += 1) {
+      loop.invalidate();
+      frame();
+    }
+    expect(timeout).not.toHaveBeenCalled();
+    update.mockClear();
+    loop.invalidate.mockClear();
+    vi.advanceTimersByTime(INPUT_WAKE_WINDOW_MS);
+    frame();
+    vi.advanceTimersByTime(SLEEPING_TOUR_IDLE_MS - INPUT_WAKE_WINDOW_MS - 1);
+    frame();
+    expect(update).not.toHaveBeenCalled();
+    expect(loop.invalidate).not.toHaveBeenCalled();
+    expect(current.attract.running).toBe(false);
+    vi.advanceTimersByTime(1);
+    frame();
+    expect(update).toHaveBeenCalledOnce();
+    expect(current.attract.running).toBe(true);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(1_500);
+    frame();
+    expect(Math.hypot(
+      camera.position.x - initial[0], camera.position.y - initial[1], camera.position.z - initial[2],
+    )).toBeGreaterThan(0.25);
+    current.dispose();
+    timeout.mockRestore();
+  });
+
+  it.each(['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'])(
+    'moves the sleeping deadline when %s restarts the idle clock', (event) => {
+      const { mount: current, loop, frame } = sleepingCamera();
+      vi.advanceTimersByTime(INPUT_WAKE_WINDOW_MS);
+      window.dispatchEvent(new Event(event));
+      expect(vi.getTimerCount()).toBe(1);
+      vi.advanceTimersByTime(SLEEPING_TOUR_IDLE_MS - INPUT_WAKE_WINDOW_MS);
+      frame();
+      expect(loop.invalidate).not.toHaveBeenCalled();
+      expect(current.attract.running).toBe(false);
+      vi.advanceTimersByTime(INPUT_WAKE_WINDOW_MS - 1);
+      frame();
+      expect(current.attract.running).toBe(false);
+      vi.advanceTimersByTime(1);
+      frame();
+      expect(current.attract.running).toBe(true);
+      current.dispose();
+    },
+  );
+
+  it.each(['disabled', 'reduced motion', 'empty views'])(
+    'arms no idle timeout with %s', (condition) => {
+      motionPreference(condition === 'reduced motion');
+      const { mount: current, update, frame } = sleepingCamera({
+        search: `?attract=${condition === 'disabled' ? 0 : 1}&attractIdle=${SLEEPING_TOUR_IDLE_MS}`,
+        ...(condition === 'empty views' ? { views: {} } : {}),
+      });
+      expect(vi.getTimerCount()).toBe(0);
+      vi.advanceTimersByTime(SLEEPING_TOUR_IDLE_MS * 2);
+      frame();
+      expect(update).not.toHaveBeenCalled();
+      expect(current.attract.running).toBe(false);
+      current.dispose();
+    },
+  );
+
+  it('clears the wait under reduced motion and re-arms a fresh wait when motion returns', () => {
+    const motion = motionPreference(false);
+    const { mount: current, frame } = sleepingCamera();
+    vi.advanceTimersByTime(INPUT_WAKE_WINDOW_MS);
+    motion.change(true);
+    expect(vi.getTimerCount()).toBe(0);
+    frame();
+    vi.advanceTimersByTime(SLEEPING_TOUR_IDLE_MS * 2);
+    frame();
+    expect(current.attract.running).toBe(false);
+    motion.change(false);
+    expect(vi.getTimerCount()).toBe(1);
+    frame();
+    vi.advanceTimersByTime(SLEEPING_TOUR_IDLE_MS - 1);
+    frame();
+    expect(current.attract.running).toBe(false);
+    vi.advanceTimersByTime(1);
+    frame();
+    expect(current.attract.running).toBe(true);
+    current.dispose();
+  });
+
+  it('clears a disabled wait and wakes on enable even when its deadline has passed', () => {
+    const { mount: current, frame } = sleepingCamera();
+    current.attract.setEnabled(false);
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(SLEEPING_TOUR_IDLE_MS * 2);
+    frame();
+    expect(current.attract.running).toBe(false);
+    current.attract.setEnabled(true);
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(0);
+    frame();
+    expect(current.attract.running).toBe(true);
+    current.dispose();
+  });
+
+  it('clears the timeout on dispose and never wakes the disposed loop', () => {
+    const { mount: current, loop, frame } = sleepingCamera();
+    expect(vi.getTimerCount()).toBe(1);
+    current.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(SLEEPING_TOUR_IDLE_MS * 2);
+    frame();
+    expect(loop.invalidate).not.toHaveBeenCalled();
+    current.attract.noteInput();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('clears the wait during turntable and orbit motion and re-arms when they settle', async () => {
+    const { mount: current, frame } = sleepingCamera();
+    current.turntable.start();
+    expect(vi.getTimerCount()).toBe(0);
+    current.turntable.stop();
+    frame();
+    expect(vi.getTimerCount()).toBe(1);
+    const glide = current.presets.goTo('entrance', 100);
+    expect(vi.getTimerCount()).toBe(0);
+    frame(100);
+    await glide;
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(SLEEPING_TOUR_IDLE_MS);
+    frame();
+    expect(current.attract.running).toBe(true);
+    current.dispose();
+  });
+
+  it('clears the wait for a mode request and walk mode, then re-arms on return to orbit', async () => {
+    const { mount: current, frame } = sleepingCamera();
+    const walk = current.setMode('walk');
+    expect(vi.getTimerCount()).toBe(0);
+    for (let i = 0; i < 20; i += 1) frame(100);
+    await walk;
+    expect(current.mode).toBe('walk');
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(SLEEPING_TOUR_IDLE_MS * 2);
+    frame();
+    expect(current.attract.running).toBe(false);
+    const orbit = current.setMode('orbit');
+    expect(vi.getTimerCount()).toBe(0);
+    for (let i = 0; i < 20; i += 1) frame(100);
+    await orbit;
+    expect(current.mode).toBe('orbit');
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(SLEEPING_TOUR_IDLE_MS);
+    frame();
+    expect(current.attract.running).toBe(true);
+    current.dispose();
+  });
+
+  it('clears the wait while Walk loads and re-arms when the request is cancelled', async () => {
+    const { mount: current, update, frame } = sleepingCamera({
+      createWalkLoader: () => ({
+        state: 'loading', session: null,
+        ensureReady: () => new Promise<null>(() => {}),
+        cancel: () => {},
+        onStateChange: () => () => {},
+        dispose: () => {},
+      }),
+    });
+    const walk = current.setMode('walk');
+    expect(current.pendingMode).toBe('walk');
+    expect(vi.getTimerCount()).toBe(0);
+    vi.advanceTimersByTime(SLEEPING_TOUR_IDLE_MS * 2);
+    frame();
+    expect(update).not.toHaveBeenCalled();
+    await current.setMode('orbit');
+    await walk;
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(SLEEPING_TOUR_IDLE_MS);
+    frame();
+    expect(current.attract.running).toBe(true);
+    current.dispose();
+  });
+});
 
 describe('mountCamera', () => {
   it.each([false, true])('prevents an explicitly enabled tour under reduced motion (touch=%s)', (isTouch) => {

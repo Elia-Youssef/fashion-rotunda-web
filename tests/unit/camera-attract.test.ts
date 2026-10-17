@@ -21,6 +21,36 @@ const VIEWS: NamedView[] = [
 ];
 
 describe('attract loop state machine', () => {
+  it('reports the remaining idle wait only while a tour can start', () => {
+    let clock = 7_000;
+    const options = {
+      views: VIEWS, idleMs: 6_000, holdMs: 4_000, moveMs: 3_000,
+      enabled: true, reducedMotion: false, now: () => clock,
+    };
+    const attract = createAttract(options);
+    expect(attract.msUntilStart()).toBe(6_000);
+    clock += 4_000;
+    expect(attract.msUntilStart()).toBe(2_000);
+    attract.noteInput();
+    expect(attract.msUntilStart()).toBe(6_000);
+    clock += 7_000;
+    expect(attract.msUntilStart()).toBe(0);
+    expect(attract.running).toBe(false);
+    attract.tick();
+    expect(attract.msUntilStart()).toBeNull();
+    attract.noteInput();
+    attract.setEnabled(false);
+    expect(attract.msUntilStart()).toBeNull();
+    attract.setEnabled(true);
+    expect(attract.msUntilStart()).toBe(6_000);
+    attract.setReducedMotion(true);
+    expect(attract.msUntilStart()).toBeNull();
+    clock += 7_000;
+    attract.setReducedMotion(false);
+    expect(attract.msUntilStart()).toBe(6_000);
+    expect(createAttract({ ...options, views: [] }).msUntilStart()).toBeNull();
+  });
+
   it('exports expected timing constants', () => {
     expect(ATTRACT_IDLE_MS).toBe(60_000);
     expect(ATTRACT_HOLD_MS).toBe(4_000);
