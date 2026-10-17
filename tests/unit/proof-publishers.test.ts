@@ -108,4 +108,46 @@ describe('proof publishers', () => {
     finish();
     await Promise.resolve();
   });
+
+  it('serializes the history of the first live record whatever its version', () => {
+    const dataset: DOMStringMap = {};
+    const publish = createGovernorPublisher(dataset);
+    const events: GovernorDiagnostics['events'] = [{
+      direction: 'down', from: 'full', to: 'no-ssr', p95Ms: 20, budgetMs: 16.7,
+      atMs: 100, reason: 'over budget',
+    }];
+    publish(diagnostics({ historyVersion: 0, events }));
+    expect(dataset['governorLog']).toBe(JSON.stringify(events));
+  });
+
+  it('writes each dataset attribute only when its value changes', () => {
+    const target: DOMStringMap = {};
+    const get = vi.fn((object: DOMStringMap, key: string) => object[key]);
+    const set = vi.fn((object: DOMStringMap, key: string, value: string) => {
+      object[key] = value;
+      return true;
+    });
+    const dataset = new Proxy(target, { get, set });
+    const publishGovernor = createGovernorPublisher(dataset);
+    const publishPost = createPostStatePublisher(dataset, publishGovernor);
+    const events: GovernorDiagnostics['events'] = [{
+      direction: 'down', from: 'full', to: 'no-ssr', p95Ms: 20, budgetMs: 16.7,
+      atMs: 100, reason: 'over budget',
+    }];
+    const live = diagnostics({ historyVersion: 3, events });
+    const features: PostChain['features'] = {
+      ao: true, traa: false, msaa: false, ssgi: 'off', ssr: false,
+      bloom: false, lut: true, vignette: false, dof: 'off',
+    };
+    publishPost(features, live);
+    // The same record and a fresh record of equal content: no attribute is rewritten.
+    publishPost(features, live);
+    publishPost({ ...features }, live);
+    publishGovernor(null);
+    publishGovernor(null);
+    publishPost(null, null);
+    publishPost(null, null);
+    const keys = set.mock.calls.map((call) => call[1]);
+    expect(keys).toEqual(['post', 'governor', 'governorLog', 'governor', 'governorLog', 'post']);
+  });
 });

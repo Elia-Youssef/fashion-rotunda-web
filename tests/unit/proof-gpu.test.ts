@@ -163,4 +163,18 @@ describe('createGpuTimes', () => {
     gpu.push(9);
     expect(gpu.p50()).toBe(9);
   });
+
+  it('treats a windowSize below one as a one-sample window', () => {
+    const zero = createGpuTimes(0);
+    zero.push(5);
+    expect(zero.available).toBe(true);
+    expect(zero.p50()).toBe(5);
+    zero.push(9);
+    expect(zero.p50()).toBe(9);
+    expect(zero.p95()).toBe(9);
+    const negative = createGpuTimes(-3);
+    negative.push(2);
+    expect(negative.available).toBe(true);
+    expect(negative.p95()).toBe(2);
+  });
 });
