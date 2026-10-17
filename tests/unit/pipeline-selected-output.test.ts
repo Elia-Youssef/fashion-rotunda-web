@@ -30,6 +30,50 @@ describe('one look regeneration', () => {
       .toThrow('Unrelated');
   });
 
+  it('requires each set entry independently before updating a manifest', () => {
+    const entry = { bytes: 10, triangles: 20, gpuBytes: 30 };
+    const fullOnly = {
+      sets: { full: { files: { 'a.glb': entry }, totals: {} }, half: { files: {}, totals: {} } }, errors: [],
+    };
+    expect(() => updateSelectedManifest(fullOnly, 'a.glb', { full: entry, half: entry }, [])).toThrow('requires existing');
+    const halfOnly = {
+      sets: { full: { files: {}, totals: {} }, half: { files: { 'a.glb': entry }, totals: {} } }, errors: [],
+    };
+    expect(() => updateSelectedManifest(halfOnly, 'a.glb', { full: entry, half: entry }, [])).toThrow('requires existing');
+  });
+
+  it('replaces the selected entry and recomputes totals in both sets', () => {
+    const old = { bytes: 10, triangles: 20, gpuBytes: 30 };
+    const rebuilt = { bytes: 15, triangles: 25, gpuBytes: 35 };
+    const before = { sets: {
+      full: { files: { 'a.glb': old, 'b.glb': old }, totals: {} },
+      half: { files: { 'a.glb': old, 'b.glb': old }, totals: {} },
+    }, errors: [] };
+    const next = updateSelectedManifest(before, 'a.glb', { full: rebuilt, half: rebuilt }, []);
+    expect(next.sets.full.files['a.glb']).toEqual(rebuilt);
+    expect(next.sets.half.files['a.glb']).toEqual(rebuilt);
+    expect(next.sets.full.totals).toEqual({ bytes: 25, triangles: 45, gpuBytes: 65 });
+    expect(next.sets.half.totals).toEqual({ bytes: 25, triangles: 45, gpuBytes: 65 });
+  });
+
+  it('records the fresh texture errors in place of the replaced ones', () => {
+    const entry = { bytes: 10, triangles: 20, gpuBytes: 30 };
+    const before = { sets: {
+      full: { files: { 'a.glb': entry }, totals: {} },
+      half: { files: { 'a.glb': entry }, totals: {} },
+    }, errors: [{ file: 'a.glb', message: 'stale' }, { file: 'b.glb', message: 'keep' }] };
+    const next = updateSelectedManifest(before, 'a.glb', { full: entry, half: entry }, [
+      { file: 'a.glb', message: 'fresh' },
+    ]);
+    expect(next.errors).toEqual([{ file: 'b.glb', message: 'keep' }, { file: 'a.glb', message: 'fresh' }]);
+  });
+
+  it('fails closed when the candidate catalogue lacks the selected look', () => {
+    const before = { views: { proof: 'keep' }, looks: [{ id: 'mondrian-dress', name: 'old' }] };
+    const candidate = { looks: [{ id: 'other', name: 'replace' }] };
+    expect(() => updateSelectedCatalog(before, candidate, 'mondrian-dress')).toThrow('one existing');
+  });
+
   it('changes only selected catalogue metadata and fails closed on missing identities', () => {
     const before = { views: { proof: 'keep' }, looks: [{ id: 'mondrian-dress', name: 'old' }, { id: 'other', name: 'keep' }] };
     const candidate = { looks: [{ id: 'mondrian-dress', name: 'new' }, { id: 'other', name: 'replace' }] };

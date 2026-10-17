@@ -14,6 +14,11 @@ describe('KHR_materials_specular optimizer policy', () => {
     })).toBe(false);
   });
 
+  it('treats absent inputs as the exact glTF defaults', () => {
+    expect(shouldPreserveSpecular()).toBe(false);
+    expect(shouldPreserveSpecular({})).toBe(false);
+  });
+
   it.each([0.2, 0.25, 0.4, 0.55, 0.6])('preserves the authored non-default factor %s', (factor) => {
     expect(shouldPreserveSpecular({ factor })).toBe(true);
   });
