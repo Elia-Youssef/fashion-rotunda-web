@@ -99,7 +99,7 @@ describe('error pane is announced once on every error path', () => {
     return order;
   }
 
-  it.each([false, true])('gives the load failure the same alert as the unsupported path (hydration=%s)',
+  it.each([false, true])('gives the load failure the alert role and its message (hydration=%s)',
     (withPreExistingDOM) => {
       const { lobby, element } = mountLobby({ withPreExistingDOM });
       element.querySelector<HTMLButtonElement>('#lobby-load-btn')!.click();

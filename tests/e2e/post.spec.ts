@@ -333,7 +333,7 @@ test('diagnostic SSGI remains full resolution while the pointer drags on WebGPU'
     .toBe(true);
 });
 
-test('finishing pass reaches the screen on webgl2 on max and is absent on off', async ({ page }) => {
+test('data-post carries the finishing pass on webgl2 max and drops it on off', async ({ page }) => {
   await page.goto('/?webgl=1&gate=off&post=max');
   const canvas = page.locator('canvas#scene');
   await expect(canvas).toHaveAttribute('data-scene', 'ready', { timeout: SCENE_READY_TIMEOUT });

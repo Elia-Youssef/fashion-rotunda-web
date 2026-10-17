@@ -113,7 +113,7 @@ describe('createWalkthrough', () => {
     expect(handle.pitch).toBeCloseTo(-maxPitch, 5);
   });
 
-  it('exits pointer lock and unbinds on disable', () => {
+  it('flips enabled off on disable', () => {
     const { handle } = make();
     handle.enable();
     expect(handle.enabled).toBe(true);
