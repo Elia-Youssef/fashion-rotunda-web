@@ -11,9 +11,9 @@ export const BLEND_MS = 700;
 
 /**
  * Standard cubic ease in-out curve.
- * Monotonic on [0, 1], starting and ending with zero acceleration.
+ * Monotonic on [0, 1], starting and ending with zero velocity.
  */
-function easeInOutCubic(t: number): number {
+export function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 

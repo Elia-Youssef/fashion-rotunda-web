@@ -93,7 +93,7 @@ export function mountJoystick(
   }
 
   base.addEventListener('pointerdown', onPointerDown);
-  base.addEventListener('pointermove', onPointerMove);
+  base.addEventListener('pointermove', onPointerMove, { passive: true });
   base.addEventListener('pointerup', onPointerUp);
   base.addEventListener('pointercancel', onPointerUp);
 

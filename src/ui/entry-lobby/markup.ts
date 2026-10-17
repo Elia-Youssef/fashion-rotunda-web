@@ -24,7 +24,7 @@ export function buildLobbyMarkup(doc: Document): HTMLElement {
         <!-- A coarse-pointer ?tier= diagnostic override keeps the phone poster while loading another set. -->
         <picture>
           <source media="${TOUCH_POINTER_QUERY}" srcset="${PHONE_POSTER_URL}" />
-          <img src="${FULL_POSTER_URL}" alt="" class="entry-lobby__poster-img" />
+          <img src="${FULL_POSTER_URL}" width="3840" height="2160" alt="" class="entry-lobby__poster-img" />
         </picture>
       </div>
 

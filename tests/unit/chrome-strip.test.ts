@@ -132,6 +132,9 @@ describe('mountCatalogStrip', () => {
       // The hidden label is the name; an empty alt keeps the thumbnail decorative so a screen
       // reader does not read the look name twice.
       expect(image?.alt).toBe('');
+      expect(image?.width).toBe(512);
+      expect(image?.height).toBe(512);
+      expect(image?.decoding).toBe('async');
       const label = buttonFor(look.id).querySelector('.catalog-strip__label');
       expect(label?.textContent).toBe(look.name);
     }

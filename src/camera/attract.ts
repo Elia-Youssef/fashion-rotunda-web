@@ -2,7 +2,7 @@
 // Any user input stops the tour immediately and restarts the idle clock.
 // Reduced motion prevents the tour and stops it immediately. Disabled by default on touch.
 
-import { copyPose } from './blend';
+import { copyPose, easeInOutCubic } from './blend';
 import type { Pose } from './blend';
 
 // Wait a minute so the idle tour does not interrupt inspection.
@@ -56,7 +56,7 @@ export interface AttractHandle {
 
 function easeProgress(elapsedMs: number, durationMs: number): number {
   const t = durationMs > 0 ? Math.min(1, Math.max(0, elapsedMs / durationMs)) : 1;
-  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  return easeInOutCubic(t);
 }
 
 export function createAttract(options: AttractOptions): AttractHandle {

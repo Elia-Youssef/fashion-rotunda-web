@@ -92,6 +92,10 @@ export function mountCatalogStrip(
     const url = options.thumbnailUrl(look);
     if (url !== '') {
       const image = document.createElement('img');
+      // The shipped thumbnails are square; CSS owns the displayed size.
+      image.width = 512;
+      image.height = 512;
+      image.decoding = 'async';
       image.className = 'catalog-strip__thumb';
       image.addEventListener('error', () => {
         image.replaceWith(emptyThumbnail());

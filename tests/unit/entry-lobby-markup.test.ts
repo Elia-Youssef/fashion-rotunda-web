@@ -101,7 +101,7 @@ const BUILT_LOBBY_MARKUP = `<div id="entry-lobby" class="entry-lobby" role="dial
         <!-- A coarse-pointer ?tier= diagnostic override keeps the phone poster while loading another set. -->
         <picture>
           <source media="(pointer: coarse)" srcset="/poster/hero-phone.jpg">
-          <img src="/poster/hero.jpg" alt="" class="entry-lobby__poster-img">
+          <img src="/poster/hero.jpg" width="3840" height="2160" alt="" class="entry-lobby__poster-img">
         </picture>
       </div>
 
@@ -208,7 +208,7 @@ const MOUNTED_LOBBY_MARKUP = `<div id="entry-lobby" class="entry-lobby" role="di
         <!-- A coarse-pointer ?tier= diagnostic override keeps the phone poster while loading another set. -->
         <picture>
           <source media="(pointer: coarse)" srcset="/poster/hero-phone.jpg">
-          <img src="/poster/hero.jpg" alt="" class="entry-lobby__poster-img">
+          <img src="/poster/hero.jpg" width="3840" height="2160" alt="" class="entry-lobby__poster-img">
         </picture>
       </div>
 

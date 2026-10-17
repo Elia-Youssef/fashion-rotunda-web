@@ -203,7 +203,7 @@ export function createWalkthrough(options: WalkthroughOptions): WalkthroughHandl
 
     if (isTouch) {
       element.addEventListener('pointerdown', onPointerDown);
-      element.addEventListener('pointermove', onPointerMove);
+      element.addEventListener('pointermove', onPointerMove, { passive: true });
       element.addEventListener('pointerup', onPointerUp);
       element.addEventListener('pointercancel', onPointerUp);
     }

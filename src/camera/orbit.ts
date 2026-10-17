@@ -10,6 +10,7 @@ import { MathUtils, Spherical, Vector3 } from 'three/webgpu';
 import type { PerspectiveCamera } from 'three/webgpu';
 import { prefersReducedMotion } from '../ui/announce';
 import { capturePointer, releasePointer } from './pointer-capture';
+import { easeInOutCubic } from './blend';
 
 export interface OrbitLimits {
   minDistance: number; // metres from the target
@@ -89,6 +90,9 @@ const STILL_EPSILON = 1e-4;
 const KEY_ROTATE = Math.PI / 60;
 /** Ten centimetres per keydown, including the browser's held-key repeats. */
 const KEY_PAN_METRES = 0.1;
+/** Keep perspective projection away from the singular views at 0 and 180 degrees. */
+const MIN_FOV_DEG = 1;
+const MAX_FOV_DEG = 179;
 /**
  * A release this long after the last pointer move is a release from rest: the hand held the
  * subject still and then let go, so there is no velocity to carry and the armed glide is dropped.
@@ -209,7 +213,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
   }
 
   function clampFov(fov: number): number {
-    return MathUtils.clamp(fov, 1, 179);
+    return MathUtils.clamp(fov, MIN_FOV_DEG, MAX_FOV_DEG);
   }
 
   function applyFov(fov: number): void {
@@ -473,7 +477,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
   }
 
   element.addEventListener('pointerdown', onPointerDown);
-  element.addEventListener('pointermove', onPointerMove);
+  element.addEventListener('pointermove', onPointerMove, { passive: true });
   element.addEventListener('pointerup', onPointerUp);
   // A cancelled pointer (the browser took the gesture over) ends the drag exactly like a release.
   element.addEventListener('pointercancel', onPointerUp);
@@ -487,7 +491,7 @@ export function createOrbit(options: OrbitOptions): OrbitHandle {
         if (dtMs > 0) {
           activeGlide.elapsedMs += dtMs;
           const t = Math.min(1, activeGlide.elapsedMs / activeGlide.durationMs);
-          const eased = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+          const eased = easeInOutCubic(t);
           const curPos = glidePosition.lerpVectors(activeGlide.startPos, activeGlide.destPos, eased);
           const curTarget = glideTarget.lerpVectors(activeGlide.startTarget, activeGlide.destTarget, eased);
           target.copy(curTarget);

@@ -178,7 +178,7 @@ export function installTooltips(root: HTMLElement): TooltipHandle {
     tooltip.scrollTop = 0;
     tooltip.hidden = false;
     updatePosition(anchor);
-    document.addEventListener('pointermove', onPointerMove);
+    document.addEventListener('pointermove', onPointerMove, { passive: true });
   }
 
   function hide(): void {

@@ -18,6 +18,9 @@ describe('mountProductCard', () => {
       const image = root.querySelector<HTMLImageElement>('.product-card__thumb');
       expect(image?.hidden).toBe(false);
       expect(image?.getAttribute('src')).toBe(`/content/${look.thumbnail}`);
+      expect(image?.width).toBe(512);
+      expect(image?.height).toBe(512);
+      expect(image?.decoding).toBe('async');
       expect(empty?.hidden).toBe(true);
       image?.dispatchEvent(new Event('error'));
       expect(image?.hidden).toBe(true);

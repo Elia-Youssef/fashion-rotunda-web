@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { BLEND_MS, blendPoseInto } from '../../src/camera/blend';
+import { BLEND_MS, blendPoseInto, easeInOutCubic } from '../../src/camera/blend';
 import type { Pose } from '../../src/camera/blend';
 import golden from '../fixtures/camera-pose-golden.json';
 
@@ -18,6 +18,14 @@ const POSE_B: Pose = {
   position: [0, 1.65, 5.5],
   target: [0, 1.65, 4.5],
 };
+
+describe('easeInOutCubic', () => {
+  it.each([[0, 0], [0.25, 0.0625], [0.5, 0.5], [0.75, 0.9375], [1, 1]])(
+    'maps progress %s to %s', (progress, expected) => {
+      expect(easeInOutCubic(progress)).toBe(expected);
+    },
+  );
+});
 
 /** The fixture stores plain arrays; the blend functions take fixed-length tuples. */
 function asPose(raw: { position: number[]; target: number[] }): Pose {

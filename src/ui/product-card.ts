@@ -254,6 +254,10 @@ export function mountProductCard(root: HTMLElement, options: ProductCardOptions)
     thumbnailAssignment = new AbortController();
     // Each look owns its image, so a queued error from the old URL cannot reach the new look.
     const image = document.createElement('img');
+    // The shipped thumbnails are square; CSS owns the displayed size.
+    image.width = 512;
+    image.height = 512;
+    image.decoding = 'async';
     image.className = 'product-card__thumb';
     thumb.replaceWith(image);
     thumb = image;
