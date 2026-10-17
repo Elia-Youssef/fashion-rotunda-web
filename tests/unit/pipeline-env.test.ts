@@ -152,4 +152,26 @@ describe('environment conversion CLI', () => {
     expect(mocks.statSync).not.toHaveBeenCalled();
     expect(mocks.rmSync).toHaveBeenCalledExactlyOnceWith(temporary, { force: true });
   });
+
+  it('reads past comment lines to the resolution line and publishes a valid long-header HDR', async () => {
+    // Radiance files may carry comment lines between the format line and the resolution line, so
+    // the 4096-byte header window must reach across them.
+    mocks.readFileSync.mockReturnValue(
+      Buffer.from(`#?RADIANCE\n# ${'x'.repeat(200)}\n\n-Y 512 +X 1024\n`),
+    );
+
+    await runCli();
+
+    expect(mocks.readFileSync).toHaveBeenCalledExactlyOnceWith(temporary);
+    expect(mocks.copyFileSync).toHaveBeenCalledExactlyOnceWith(temporary, output);
+  });
+
+  it('publishes an HDR whose resolution line separates its numbers with runs of whitespace', async () => {
+    mocks.readFileSync.mockReturnValue(Buffer.from('#?RADIANCE\n\n-Y 512   +X  1024\n'));
+
+    await runCli();
+
+    expect(mocks.readFileSync).toHaveBeenCalledExactlyOnceWith(temporary);
+    expect(mocks.copyFileSync).toHaveBeenCalledExactlyOnceWith(temporary, output);
+  });
 });
