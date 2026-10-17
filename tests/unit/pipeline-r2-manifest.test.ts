@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildR2Manifest,
+  DEFAULT_ORIGIN,
   manifestText,
   normalizeOrigin,
 } from '../../pipeline/r2/lib/manifest.mjs';
@@ -64,6 +65,15 @@ describe('walkContentFiles', () => {
 });
 
 describe('objectKeyFor and contentTypeFor', () => {
+  it.each([
+    ['env/sky.hdr', 'image/vnd.radiance'],
+    ['catalog.json', 'application/json'],
+    ['music/track.m4a', 'audio/mp4'],
+    ['basis/basis_transcoder.wasm', 'application/wasm'],
+  ])('pins the content type for %s', (path, contentType) => {
+    expect(contentTypeFor(path)).toBe(contentType);
+  });
+
   it('addresses ordinary content by hash and lowercased extension', () => {
     expect(objectKeyFor('looks/a.GLB', SHA256_OF_ABC)).toBe(`content/${SHA256_OF_ABC}.glb`);
     expect(contentTypeFor('looks/a.GLB')).toBe('model/gltf+binary');
@@ -104,6 +114,10 @@ describe('exclusionReasonFor', () => {
 });
 
 describe('normalizeOrigin', () => {
+  it('pins the default origin placeholder', () => {
+    expect(DEFAULT_ORIGIN).toBe('https://content.example.invalid');
+  });
+
   it('strips trailing slashes and rejects anything but http(s) URLs', () => {
     expect(normalizeOrigin('https://content.example.invalid/')).toBe(
       'https://content.example.invalid',

@@ -7,6 +7,7 @@ import { buildR2Manifest } from '../../pipeline/r2/lib/manifest.mjs';
 import type { R2Manifest } from '../../pipeline/r2/lib/manifest.mjs';
 import {
   CACHE_CONTROL,
+  DEFAULT_BUCKET,
   parseUploadedList,
   planUploads,
   renderPlanText,
@@ -75,6 +76,10 @@ describe('parseUploadedList', () => {
 });
 
 describe('planUploads', () => {
+  it('pins the default bucket', () => {
+    expect(DEFAULT_BUCKET).toBe('fashion-rotunda-content');
+  });
+
   it('prints one wrangler put per object with type and the immutable cache rule', () => {
     const manifest = manifestOf([
       { path: 'looks/one.glb', key: 'content/aa.glb', contentType: 'model/gltf+binary' },

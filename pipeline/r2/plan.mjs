@@ -19,18 +19,23 @@ function valueOf(args, name) {
   return at >= 0 && at + 1 < args.length ? args[at + 1] : undefined;
 }
 
+function readInput(path, label, parse) {
+  try {
+    return parse(readFileSync(path, 'utf8'));
+  } catch (error) {
+    throw new Error(`${label} could not be read at ${path}: ${error.message}`, { cause: error });
+  }
+}
+
 const args = process.argv.slice(2);
 const manifestPath = resolve(valueOf(args, '--manifest') ?? resolve(workDir, 'r2', 'manifest.json'));
 const bucket = valueOf(args, '--bucket') ?? process.env.FR_R2_BUCKET ?? DEFAULT_BUCKET;
 const uploadedPath = valueOf(args, '--uploaded');
 const fileBase = valueOf(args, '--content-dir') ?? DEFAULT_FILE_BASE;
 
-let manifest;
-try {
-  manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-} catch (error) {
-  throw new Error(`the manifest could not be read at ${manifestPath}: ${error.message}`, { cause: error });
-}
-const uploaded = uploadedPath === undefined ? [] : parseUploadedList(readFileSync(resolve(uploadedPath), 'utf8'));
+const manifest = readInput(manifestPath, 'the manifest', JSON.parse);
+const uploaded = uploadedPath === undefined
+  ? []
+  : readInput(resolve(uploadedPath), 'the uploaded list', parseUploadedList);
 
 console.log(renderPlanText(planUploads(manifest, { bucket, uploaded, fileBase })));
