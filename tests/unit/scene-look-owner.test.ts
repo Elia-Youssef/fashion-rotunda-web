@@ -204,4 +204,109 @@ describe('createLookOwner', () => {
     expect(spies.texture).toHaveBeenCalledTimes(1);
     expect(warn).toHaveBeenCalledTimes(1);
   });
+
+  it('wraps a thrown value that is not an Error, keeping its text', () => {
+    const { root, spies } = fixture();
+    const thrown: unknown = 'a plain failure';
+    spies.geometries[0].mockImplementation(() => {
+      throw thrown;
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const owner = createLookOwner();
+    owner.collect(root);
+
+    const errors = owner.retire();
+
+    expect(errors.map((error) => error.message)).toEqual(['a plain failure']);
+    // The releases after the throwing one still ran.
+    expect(spies.geometries[1]).toHaveBeenCalledTimes(1);
+    expect(spies.materials[0]).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('stays silent while every release succeeds', () => {
+    const { root } = fixture();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const owner = createLookOwner();
+    owner.collect(root);
+    owner.retire();
+    // Every later arrival also releases cleanly; none of this may warn.
+    owner.register(new MeshStandardMaterial({ name: 'late-clean' }));
+    owner.collect(root);
+    owner.retire();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it('registers and releases every material of a mesh that wears an array', () => {
+    const texture = new Texture();
+    const shell = new MeshStandardMaterial({ name: 'shell', map: texture });
+    const lining = new MeshStandardMaterial({ name: 'lining' });
+    const mesh = new Mesh(new BoxGeometry(), [shell, lining]);
+    const root = new Group();
+    root.add(mesh);
+    const spies = {
+      geometry: vi.spyOn(mesh.geometry, 'dispose'),
+      shell: vi.spyOn(shell, 'dispose'),
+      lining: vi.spyOn(lining, 'dispose'),
+      texture: vi.spyOn(texture, 'dispose'),
+    };
+    const owner = createLookOwner();
+    owner.collect(root);
+    expect(owner.materials.has(shell)).toBe(true);
+    expect(owner.materials.has(lining)).toBe(true);
+
+    owner.retire();
+
+    expect(spies.geometry).toHaveBeenCalledTimes(1);
+    expect(spies.shell).toHaveBeenCalledTimes(1);
+    expect(spies.lining).toHaveBeenCalledTimes(1);
+    expect(spies.texture).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a release failure from a collect that follows retirement', () => {
+    const owner = createLookOwner();
+    owner.retire();
+    // A subtree the look never registered before: only fresh resources reach a release.
+    const thrown = new Error('late collect failed');
+    const failing = new MeshStandardMaterial({ name: 'failing' });
+    vi.spyOn(failing, 'dispose').mockImplementation(() => {
+      throw thrown;
+    });
+    const lateRoot = new Group();
+    lateRoot.add(new Mesh(new BoxGeometry(), failing));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    owner.collect(lateRoot);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[1]).toEqual([thrown]);
+  });
+
+  it('publishes no materials after a collect that follows retirement', () => {
+    const { root } = fixture();
+    const owner = createLookOwner();
+    owner.collect(root);
+    expect(owner.materials.size).toBe(2);
+    owner.retire();
+
+    owner.collect(root);
+
+    expect(owner.materials.size).toBe(0);
+  });
+
+  it('reports a release failure from a registration that follows retirement', () => {
+    const owner = createLookOwner();
+    owner.retire();
+    const thrown = new Error('late registration failed');
+    const late = new MeshStandardMaterial({ name: 'late-throwing' });
+    vi.spyOn(late, 'dispose').mockImplementation(() => {
+      throw thrown;
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    owner.register(late);
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[1]).toEqual([thrown]);
+  });
 });
