@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Accessor, Document, NodeIO, Primitive as GltfPrimitive } from '@gltf-transform/core';
 import type { Mesh, Primitive } from '@gltf-transform/core';
 import { ALL_EXTENSIONS, EXTMeshGPUInstancing } from '@gltf-transform/extensions';
@@ -88,6 +89,66 @@ function signatures(primitive: Primitive): string[] {
 function expectedTriangles(triangles: number[][]): string[] {
   return triangles.map((values) => [0, 3, 6].map((offset) => values.slice(offset, offset + 3).join(','))
     .sort().join('|')).sort();
+}
+
+// Disconnected flat triangles 0.001 apart: the simplifier can merge neighbours
+// at almost no error, so a field over the triangle cap does reach the cap.
+function triangleField(document: Document, name: string, count: number): Mesh {
+  const buffer = document.getRoot().listBuffers()[0] ?? document.createBuffer();
+  const positions = new Float32Array(count * 9);
+  const indices = new Uint32Array(count * 3);
+  for (let index = 0; index < count; index += 1) {
+    const x = index * 0.001;
+    positions.set([x, 0, 0, x + 0.0004, 0, 0, x, 0.5, 0], index * 9);
+    indices.set([index * 3, index * 3 + 1, index * 3 + 2], index * 3);
+  }
+  const position = document.createAccessor().setType('VEC3').setBuffer(buffer).setArray(positions);
+  const corners = document.createAccessor().setType('SCALAR').setBuffer(buffer).setArray(indices);
+  return document.createMesh(name).addPrimitive(
+    document.createPrimitive().setAttribute('POSITION', position).setIndices(corners),
+  );
+}
+
+// Closed tetrahedra cannot lose a triangle under any error bound, because every
+// edge collapse would need a non-manifold result. One welded cube of 2 m edge
+// can, at a cost of about half its edge: above the real relative error bound of
+// the whole fixture (about 0.15 m), below a loosened one. Together they hold
+// 8000 triangles, so the plinth puts the mesh one triangle over the cap.
+function rigidPileWithCube(document: Document, name: string, tetras: number): Mesh {
+  const buffer = document.getRoot().listBuffers()[0] ?? document.createBuffer();
+  const positions = new Float32Array((tetras * 4 + 8) * 3);
+  const indices = new Uint32Array((tetras * 4 + 12) * 3);
+  let vertex = 0;
+  let next = 0;
+  for (let index = 0; index < tetras; index += 1) {
+    const x = 0.1 + (index % 45) * 0.05;
+    const z = 0.1 + Math.floor(index / 45) * 0.05;
+    positions.set([x, 0, z, x + 0.3, 0, z, x, 0, z + 0.3, x * 0.7, 0.6, z * 0.7], vertex * 3);
+    indices.set([vertex, vertex + 1, vertex + 2, vertex, vertex + 1, vertex + 3,
+      vertex, vertex + 2, vertex + 3, vertex + 1, vertex + 2, vertex + 3], next);
+    next += 12;
+    vertex += 4;
+  }
+  const cubeCorners = [0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1];
+  const cubeFaces = [
+    [0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4],
+    [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7],
+  ];
+  const base = vertex;
+  for (let corner = 0; corner < 8; corner += 1) {
+    positions.set([3 + cubeCorners[corner * 3] * 2, cubeCorners[corner * 3 + 1] * 2,
+      3 + cubeCorners[corner * 3 + 2] * 2], (base + corner) * 3);
+  }
+  for (const face of cubeFaces) {
+    indices.set([base + face[0], base + face[1], base + face[2],
+      base + face[0], base + face[2], base + face[3]], next);
+    next += 6;
+  }
+  const position = document.createAccessor().setType('VEC3').setBuffer(buffer).setArray(positions);
+  const corners = document.createAccessor().setType('SCALAR').setBuffer(buffer).setArray(indices);
+  return document.createMesh(name).addPrimitive(
+    document.createPrimitive().setAttribute('POSITION', position).setIndices(corners),
+  );
 }
 
 async function output() {
@@ -268,5 +329,97 @@ describe('writeCollision', () => {
     expect(await snapshot(sandbox)).toEqual(before);
     expect(fs.writeFileSync).not.toHaveBeenCalled();
     expect(fs.mkdirSync).not.toHaveBeenCalled();
+  });
+
+  it('defaults the output directory to the content directory', async () => {
+    paths.out = resolve(sandbox, 'content-output');
+    paths.content = paths.out;
+    await mkdir(paths.out);
+    await inputs(scene(['Wall']));
+
+    const result = await writeCollision();
+    expect(result.triangles).toBe(2);
+    const full = await readFile(resolve(paths.out, 'collision.glb'));
+    expect(await readFile(resolve(paths.out, 'half', 'collision.glb'))).toEqual(full);
+  });
+
+  it('prefers the rotunda and plinth beside the output over the content copies', async () => {
+    await inputs(scene(['Wall']));
+    await io.write(resolve(paths.content, 'rotunda.glb'), scene(['DecoyWall', 'DecoyWall']));
+    await io.write(resolve(paths.content, 'plinth.glb'), scene(['DecoyPlinth', 'DecoyPlinth']));
+
+    const result = await writeCollision(paths.out);
+    expect(result.triangles).toBe(2);
+    const { primitive } = await output();
+    expect(signatures(primitive)).toEqual(expectedTriangles([TRIANGLE, TRIANGLE]));
+  });
+
+  it('keeps nodes that hold a camera instead of a mesh', async () => {
+    const rotunda = scene(['Wall']);
+    const camera = rotunda.createCamera('Showcase');
+    rotunda.getRoot().getDefaultScene()!.addChild(rotunda.createNode('Cam').setCamera(camera));
+    await inputs(rotunda);
+
+    await expect(writeCollision(paths.out)).resolves.toMatchObject({ triangles: 2 });
+  });
+
+  it('leaves a mesh under the triangle cap unsimplified', async () => {
+    const rotunda = new Document();
+    rotunda.getRoot().setDefaultScene(rotunda.createScene().addChild(
+      rotunda.createNode().setMesh(triangleField(rotunda, 'Walls', 2700)),
+    ));
+    await inputs(rotunda);
+
+    const result = await writeCollision(paths.out);
+    expect(result.triangles).toBe(2701);
+  });
+
+  it('simplifies a mesh over the triangle cap down to the cap', async () => {
+    const rotunda = new Document();
+    rotunda.getRoot().setDefaultScene(rotunda.createScene().addChild(
+      rotunda.createNode().setMesh(triangleField(rotunda, 'Walls', 8001)),
+    ));
+    await inputs(rotunda);
+
+    const result = await writeCollision(paths.out);
+    expect(result.triangles).toBeLessThanOrEqual(8000);
+  });
+
+  it('keeps every triangle when reaching the cap would exceed the error bound', async () => {
+    const rotunda = new Document();
+    rotunda.getRoot().setDefaultScene(rotunda.createScene().addChild(
+      rotunda.createNode().setMesh(rigidPileWithCube(rotunda, 'Walls', 1997)),
+    ));
+    await inputs(rotunda);
+
+    const result = await writeCollision(paths.out);
+    expect(result.triangles).toBeGreaterThan(8000);
+    const { primitive } = await output();
+    const positions = primitive.getAttribute('POSITION')!;
+    let maxY = -Infinity;
+    for (let vertex = 0; vertex < positions.getCount(); vertex += 1) {
+      maxY = Math.max(maxY, positions.getElement(vertex, [] as number[])[1]);
+    }
+    expect(maxY).toBeCloseTo(2, 3);
+  });
+
+  it('writes into the content directory when run from the command line without --out', async () => {
+    paths.out = resolve(sandbox, 'cli-output');
+    paths.content = paths.out;
+    await mkdir(paths.out);
+    await inputs(scene(['Wall']));
+    const modulePath = fileURLToPath(new URL('../../pipeline/gltf/collision.mjs', import.meta.url));
+    const argv = process.argv;
+
+    try {
+      process.argv = [argv[0], modulePath];
+      vi.resetModules();
+      // @ts-expect-error The standalone JavaScript builder has no TypeScript declaration.
+      await import('../../pipeline/gltf/collision.mjs');
+    } finally {
+      process.argv = argv;
+    }
+    const full = await readFile(resolve(paths.out, 'collision.glb'));
+    expect(await readFile(resolve(paths.out, 'half', 'collision.glb'))).toEqual(full);
   });
 });
