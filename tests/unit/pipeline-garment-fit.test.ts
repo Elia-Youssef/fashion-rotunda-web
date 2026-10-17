@@ -5,7 +5,8 @@ import { cloneDocument } from '@gltf-transform/functions';
 import { BoxGeometry, BufferGeometry, Float32BufferAttribute, Matrix4, Vector3 } from 'three';
 import { describe, expect, it } from 'vitest';
 import { applyLookFit, fitCoveredSurface, validateFitOutput } from '../../pipeline/gltf/lib/garment-fit.mjs';
-import { combinedSurface, createCoverage, measureSurface, surfaceParts, surfaceTopology } from '../../pipeline/gltf/lib/garment-coverage.mjs';
+import { writeFittedParts } from '../../pipeline/gltf/lib/garment-attributes.mjs';
+import { combinedSurface, CONTACT_TOLERANCE, createCoverage, FIT_MARGIN, measureSurface, surfaceParts, surfaceTopology } from '../../pipeline/gltf/lib/garment-coverage.mjs';
 
 function part(geometry: BufferGeometry) {
   const p = geometry.getAttribute('position');
@@ -76,6 +77,110 @@ function invalidGarmentDocument(kind: 'points' | 'skinned' | 'morph' | 'bare') {
   group.addChild(node);
   scene.addChild(group);
   return doc;
+}
+
+/**
+ * A pyramid whose only penetrating sample is its apex, listed first in every side face: the
+ * apex pokes five centimetres past the shell while its base stays deep inside.
+ */
+function pyramid() {
+  const g = new BufferGeometry();
+  const base = [[0.5, -0.15, -0.15], [0.5, 0.15, -0.15], [0.5, 0.15, 0.15], [0.5, -0.15, 0.15]];
+  g.setAttribute('position', new Float32BufferAttribute([1.05, 0, 0, ...base.flat()], 3));
+  g.setIndex([0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1, 1, 3, 2, 1, 4, 3]);
+  return g;
+}
+
+/**
+ * The same pyramid sunk five centimetres into the shell wall, so its apex, edge midpoints,
+ * centroid and base all penetrate at different depths on every side face.
+ */
+function sunkenPyramid() {
+  const g = new BufferGeometry();
+  const base = [[1.002, -0.15, -0.15], [1.002, 0.15, -0.15], [1.002, 0.15, 0.15], [1.002, -0.15, 0.15]];
+  g.setAttribute('position', new Float32BufferAttribute([1.05, 0, 0, ...base.flat()], 3));
+  g.setIndex([0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 1, 1, 3, 2, 1, 4, 3]);
+  return g;
+}
+
+/**
+ * A box whose top near corner belongs only to the second triangle of each of its three
+ * incident faces, so a sampler that skips alternate triangles never lists that corner.
+ */
+function lopsidedBox() {
+  const g = new BufferGeometry();
+  g.setAttribute('position', new Float32BufferAttribute([
+    -1.1,-0.8,-0.6, 1.1,-0.8,-0.6, 1.1,0.8,-0.6, -1.1,0.8,-0.6,
+    -1.1,-0.8,0.6, 1.1,-0.8,0.6, 1.1,0.8,0.6, -1.1,0.8,0.6,
+  ], 3));
+  g.setIndex([
+    5,1,2, 5,2,6,
+    2,3,7, 2,7,6,
+    7,4,5, 7,5,6,
+    0,4,7, 0,7,3,
+    0,1,5, 0,5,4,
+    1,0,3, 1,3,2,
+  ]);
+  return g;
+}
+
+/** A document whose garment and mannequin groups hold one static indexed primitive each. */
+function partsDocument(garment: BufferGeometry, bodies: BufferGeometry[]) {
+  const doc = new Document(), scene = doc.createScene(), buffer = doc.createBuffer();
+  const add = (name: string, geometry: BufferGeometry, withNormals: boolean) => {
+    const primitive = doc.createPrimitive().setAttribute('POSITION', doc.createAccessor().setBuffer(buffer)
+      .setType('VEC3').setArray(new Float32Array(geometry.getAttribute('position').array)));
+    if (withNormals) {
+      primitive.setAttribute('NORMAL', doc.createAccessor().setBuffer(buffer).setType('VEC3')
+        .setArray(new Float32Array(geometry.getAttribute('normal')!.array)));
+    }
+    primitive.setIndices(doc.createAccessor().setBuffer(buffer).setType('SCALAR')
+      .setArray(new Uint32Array(geometry.getIndex()!.array)));
+    const group = doc.createNode(name);
+    group.addChild(doc.createNode().setMesh(doc.createMesh().addPrimitive(primitive)));
+    scene.addChild(group);
+  };
+  add('garment', garment, false);
+  for (const geometry of bodies) add('mannequin', geometry, true);
+  return doc;
+}
+
+function contactDocument() {
+  return partsDocument(shell(), [body()]);
+}
+
+/** A garment of two crossing squares over a mannequin whose vertices probe no square. */
+function selfIntersectingDocument() {
+  const doc = new Document(), scene = doc.createScene(), buffer = doc.createBuffer();
+  const square = (points: number[]) => {
+    const primitive = doc.createPrimitive().setAttribute('POSITION', doc.createAccessor().setBuffer(buffer)
+      .setType('VEC3').setArray(new Float32Array(points)));
+    primitive.setIndices(doc.createAccessor().setBuffer(buffer).setType('SCALAR')
+      .setArray(new Uint32Array([0, 1, 2, 0, 2, 3])));
+    return primitive;
+  };
+  const mesh = doc.createMesh();
+  mesh.addPrimitive(square([-0.5, 0, -0.5, 0.5, 0, -0.5, 0.5, 0, 0.5, -0.5, 0, 0.5]));
+  mesh.addPrimitive(square([-0.5, -0.5, 0, 0.5, -0.5, 0, 0.5, 0.5, 0, -0.5, 0.5, 0]));
+  const garment = doc.createNode('garment');
+  garment.addChild(doc.createNode().setMesh(mesh));
+  scene.addChild(garment);
+  scene.addChild(mannequinGroup(doc, buffer));
+  return doc;
+}
+
+function mannequinGroup(doc: Document, buffer: ReturnType<Document['createBuffer']>) {
+  const geometry = body();
+  const primitive = doc.createPrimitive();
+  for (const [field, attribute] of [['POSITION', 'position'], ['NORMAL', 'normal']] as const) {
+    primitive.setAttribute(field, doc.createAccessor().setBuffer(buffer).setType('VEC3')
+      .setArray(new Float32Array(geometry.getAttribute(attribute)!.array)));
+  }
+  primitive.setIndices(doc.createAccessor().setBuffer(buffer).setType('SCALAR')
+    .setArray(new Uint32Array(geometry.getIndex()!.array)));
+  const group = doc.createNode('mannequin');
+  group.addChild(doc.createNode().setMesh(doc.createMesh().addPrimitive(primitive)));
+  return group;
 }
 
 describe('covered surface fitting', () => {
@@ -217,5 +322,135 @@ describe('covered surface fitting refusals', () => {
   it('skips serialized validation for a look the fit policy did not touch', () => {
     const fit = applyLookFit(new Document(), 'unaffected');
     expect(validateFitOutput(new Document(), fit)).toEqual({ checked: false });
+  });
+});
+
+describe('covered surface fitting defaults', () => {
+  it('fits the garment outward when the caller names no method and leaves the body exact', () => {
+    const garment = [part(shell())], mannequin = [part(body())];
+    const before = mannequin[0].points.map((p) => p.toArray());
+    const result = fitCoveredSurface(garment, mannequin);
+    expect(mannequin[0].points.map((p) => p.toArray())).toEqual(before);
+    expect(result.movedVertices).toBeGreaterThan(0);
+    const fitted = createCoverage(combinedSurface(garment), combinedSurface(mannequin));
+    expect(measureSurface(mannequin, fitted).outsideSamples).toBe(0);
+  });
+
+  it('corrects the deepest sample by at least its depth plus the fit margin', () => {
+    const garment = [part(shell())], mannequin = [part(body())];
+    const measured = measureSurface(mannequin, createCoverage(combinedSurface(garment), combinedSurface(mannequin)));
+    const deepest = Math.max(...measured.penetrations.map((sample) => sample.depthMm));
+    const result = fitCoveredSurface(garment, mannequin, 'garment-outward');
+    expect(result.maxDisplacementMm).toBeGreaterThanOrEqual(deepest + FIT_MARGIN * 1000 - 0.001);
+    expect(result.history[0].maxDepthMm).toBeCloseTo(deepest, 6);
+    expect(result.history.at(-1)!.maxDepthMm).toBe(0);
+    // Every vertex receives its greatest proposal at once, so this fixture resolves in an
+    // initial measurement plus three correction rounds; smaller proposals need a fourth.
+    expect(result.history).toHaveLength(4);
+  });
+
+  it('proposes no correction while every sample stays within the contact tolerance', () => {
+    const garment = [part(shell())], mannequin = [part(new BoxGeometry(2.0001, 1.6, 1.2))];
+    const result = fitCoveredSurface(garment, mannequin, 'body-inward');
+    expect(result.movedVertices).toBe(0);
+    expect(result.maxDisplacementMm).toBe(0);
+  });
+
+  it('leaves every penetrating corner clear of the shell by the fit margin', () => {
+    const garment = [part(shell())], mannequin = [part(body())];
+    const before = createCoverage(combinedSurface(garment), combinedSurface(mannequin));
+    const penetrating = mannequin[0].points
+      .filter((point) => (before.query(point)?.depth ?? 0) > CONTACT_TOLERANCE);
+    expect(penetrating.length).toBeGreaterThan(0);
+    fitCoveredSurface(garment, mannequin, 'body-inward');
+    const after = createCoverage(combinedSurface(garment), combinedSurface(mannequin));
+    for (const point of penetrating) {
+      expect(after.query(point)!.depth).toBeLessThanOrEqual(-FIT_MARGIN + 0.000000001);
+    }
+  });
+
+  it('corrects every corner of a penetrating face by the deepest correction available to it', () => {
+    const garment = [part(shell())], sunk = [part(sunkenPyramid())];
+    const before = sunk[0].points.map((p) => p.clone());
+    const measured = measureSurface(sunk, createCoverage(combinedSurface(garment), combinedSurface(sunk)));
+    const deepest = Math.max(...measured.penetrations.map((sample) => sample.depthMm));
+    const result = fitCoveredSurface(garment, sunk, 'body-inward');
+    expect(result.history).toHaveLength(2);
+    for (const [i, point] of sunk[0].points.entries()) {
+      expect(point.distanceTo(before[i]) * 1000).toBeGreaterThanOrEqual(deepest + FIT_MARGIN * 1000 - 0.001);
+    }
+    const cleared = createCoverage(combinedSurface(garment), combinedSurface(sunk));
+    expect(measureSurface(sunk, cleared).outsideSamples).toBe(0);
+  });
+});
+
+describe('covered surface fitting coverage and budget', () => {
+  it('spends the full documented pass budget before refusing a fit that cannot converge', () => {
+    let message: string | null = null;
+    try {
+      fitCoveredSurface([part(pinchedTube())], [part(body())], 'body-inward');
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message?.startsWith('Garment fit did not converge')).toBe(true);
+    const history = JSON.parse(message!.replace('Garment fit did not converge: ', '')) as { pass: number }[];
+    // The refusal records the initial measurement plus the 64 advancing passes.
+    expect(history).toHaveLength(65);
+    expect(history[0].pass).toBe(0);
+    expect(history[64].pass).toBe(64);
+  });
+
+  it('weighs every sample of a triangle, first corner included, when proposing corrections', () => {
+    const garment = [part(shell())], spike = [part(pyramid())];
+    const result = fitCoveredSurface(garment, spike, 'body-inward');
+    expect(result.movedVertices).toBeGreaterThan(0);
+    const cleared = createCoverage(combinedSurface(garment), combinedSurface(spike));
+    expect(measureSurface(spike, cleared).outsideSamples).toBe(0);
+  });
+
+  it('samples every body triangle so a corner no other triangle lists still clears the shell', () => {
+    const garment = [part(shell())], lopsided = [part(lopsidedBox())];
+    fitCoveredSurface(garment, lopsided, 'body-inward');
+    const cleared = createCoverage(combinedSurface(garment), combinedSurface(lopsided));
+    expect(measureSurface(lopsided, cleared).outsideSamples).toBe(0);
+  });
+
+  it('maps a hit face that lives in a later garment part through the face walk', () => {
+    const garment = [part(new BoxGeometry(0.2, 0.2, 0.2).translate(0, 10, 0)), part(shell())];
+    const mannequin = [part(body())];
+    const result = fitCoveredSurface(garment, mannequin, 'garment-outward');
+    expect(result.movedVertices).toBeGreaterThan(0);
+    const cleared = createCoverage(combinedSurface(garment), combinedSurface(mannequin));
+    expect(measureSurface(mannequin, cleared).outsideSamples).toBe(0);
+  });
+});
+
+describe('serialized fit validation', () => {
+  it('returns the contact measurement fields for a fitted policy look', () => {
+    const doc = contactDocument();
+    const fit = applyLookFit(doc, 'mondrian-dress');
+    expect(fit).toMatchObject({ applied: true, method: 'contact-clearance' });
+    const validated = validateFitOutput(doc, fit);
+    expect(validated).toMatchObject({ checked: true, outsideVertices: 0 });
+    expect(validated).toHaveProperty('uniqueVertices');
+  }, 20_000);
+
+  it('refuses a serialized garment that intersects itself before measuring contacts', () => {
+    const fit = applyLookFit(contactDocument(), 'mondrian-dress');
+    expect(() => validateFitOutput(selfIntersectingDocument(), fit)).toThrow('Garment self-intersection');
+  }, 20_000);
+
+  it('validates a covered-surface fit against the coverage policy the fit was given', () => {
+    const doc = partsDocument(shell(),
+      [new BoxGeometry(1.2, 1.6, 1.2), new BoxGeometry(0.4, 0.4, 0.4).translate(1, 0, 0)]);
+    const garmentParts = surfaceParts(doc, 'garment'), bodyParts = surfaceParts(doc, 'mannequin');
+    const originals = bodyParts.map((bodyPart) =>
+      Float32Array.from(bodyPart.primitive.getAttribute('POSITION')!.getArray()!));
+    const fit = { applied: true as const, method: 'body-inward' as const,
+      ...fitCoveredSurface(garmentParts, bodyParts, 'body-inward', { includeIntersectingIntervals: true }) };
+    writeFittedParts(bodyParts);
+    expect(validateFitOutput(doc, fit)).toMatchObject({ checked: true, outsideSamples: 0 });
+    bodyParts.forEach((bodyPart, i) => bodyPart.primitive.getAttribute('POSITION')!.setArray(originals[i]));
+    expect(() => validateFitOutput(doc, fit)).toThrow('Serialized garment fit failed');
   });
 });
