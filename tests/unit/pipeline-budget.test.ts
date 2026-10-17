@@ -271,6 +271,156 @@ describe('budgetRows', () => {
   });
 });
 
+function staticFile(bytes: number, triangles: number, drawCalls: number, textures: ReturnType<typeof texture>[]) {
+  return fileEntry({ bytes, triangles, meshes: 1, nodes: 1, materials: 1, drawCalls, textures });
+}
+
+function lookFile(entry: { bytes: number; triangles: number; drawCalls: number; textures: ReturnType<typeof texture>[] }) {
+  return fileEntry({
+    bytes: entry.bytes,
+    triangles: entry.triangles,
+    meshes: 2,
+    nodes: 4,
+    materials: 4,
+    drawCalls: entry.drawCalls,
+    textures: entry.textures,
+  });
+}
+
+// Manifests the shipped sets never produce, but a partial optimize run or a hand edit can. The
+// usual fixtures leave these contracts unobservable: their looks never tie, the heaviest look is
+// heaviest by every measure at once, and every named file is present.
+describe('budgetRows on partial, tied and single-look manifests', () => {
+  it('reads a manifest without the rotunda and plinth as zeros instead of failing', () => {
+    const only = lookFile({ bytes: 1 * MB, triangles: 5000, drawCalls: 3, textures: [texture(512, 'ktx2-etc1s', 10)] });
+    const { rows } = budgetRows('full', { 'looks/only-look.glb': only }, 'looks/only-look.glb', null);
+    const row = (key: string) => rows.find((entry) => entry.key === key)!;
+    expect(row('sceneTriangles').actual).toBe(0);
+    expect(row('trianglesInView').actual).toBe(5000);
+    expect(row('drawCalls').actual).toBe(3);
+    expect(row('gpuTextureBytes').actual).toBe(only.gpuBytes);
+    expect(row('firstFrameBytes').actual).toBe(1 * MB);
+  });
+
+  it('reports a named environment that is not among the files as absent', () => {
+    const { info } = budgetRows('full', files(), 'looks/wallis-dress.glb', 'env/not-in-the-set.hdr');
+    expect(info.environmentFile).toBeNull();
+    expect(info.environmentBytes).toBe(0);
+  });
+
+  it('measures a set with no looks without failing and names no heaviest look', () => {
+    const base = files();
+    const lookless = {
+      'env/school-field-cloudy-1k.hdr': base['env/school-field-cloudy-1k.hdr']!,
+      'rotunda.glb': base['rotunda.glb']!,
+      'plinth.glb': base['plinth.glb']!,
+    };
+    const { rows, info } = budgetRows('full', lookless, 'looks/absent.glb', null);
+    const row = (key: string) => rows.find((entry) => entry.key === key)!;
+    expect(row('lookTriangles').actual).toBe(0);
+    expect(row('trianglesInView').actual).toBe(base['rotunda.glb']!.triangles + base['plinth.glb']!.triangles);
+    expect(row('furtherLookBytes').actual).toBe(0);
+    expect(info.heaviestLookByGpu).toBeNull();
+    expect(info.heaviestLookByTriangles).toBeNull();
+    const text = formatBudgetTable('full', rows, info);
+    expect(text).toContain('heaviest look by GPU bytes -, by triangles -');
+    expect(text).not.toContain('none');
+  });
+
+  it('names the lexicographically first look when two looks tie, whatever the key order', () => {
+    const tied = lookFile({ bytes: 2 * MB, triangles: 90000, drawCalls: 2, textures: [texture(1024, 'ktx2-etc1s', 10)] });
+    const base = files();
+    const { info } = budgetRows(
+      'full',
+      {
+        'rotunda.glb': base['rotunda.glb']!,
+        'plinth.glb': base['plinth.glb']!,
+        'looks/zz-tied.glb': tied,
+        'looks/aa-tied.glb': tied,
+      },
+      'looks/aa-tied.glb',
+      null,
+    );
+    expect(info.heaviestLookByTriangles).toBe('looks/aa-tied.glb');
+    expect(info.heaviestLookByGpu).toBe('looks/aa-tied.glb');
+  });
+
+  it('ranks the heaviest look by triangles and GPU bytes, not by disk size or draw calls', () => {
+    const base = files();
+    const diskHeavy = lookFile({ bytes: 9 * MB, triangles: 10000, drawCalls: 9, textures: [texture(512, 'ktx2-etc1s', 10)] });
+    const gpuHeavy = lookFile({ bytes: 1 * MB, triangles: 120000, drawCalls: 1, textures: [texture(2048, 'ktx2-uastc', 10)] });
+    const { rows, info } = budgetRows(
+      'full',
+      {
+        'rotunda.glb': base['rotunda.glb']!,
+        'plinth.glb': base['plinth.glb']!,
+        'looks/disk-heavy.glb': diskHeavy,
+        'looks/gpu-heavy.glb': gpuHeavy,
+      },
+      'looks/gpu-heavy.glb',
+      null,
+    );
+    const row = (key: string) => rows.find((entry) => entry.key === key)!;
+    expect(row('lookTriangles').actual).toBe(120000);
+    expect(info.heaviestLookByTriangles).toBe('looks/gpu-heavy.glb');
+    expect(info.heaviestLookByGpu).toBe('looks/gpu-heavy.glb');
+    expect(row('gpuTextureBytes').actual)
+      .toBe(base['rotunda.glb']!.gpuBytes + base['plinth.glb']!.gpuBytes + gpuHeavy.gpuBytes);
+  });
+
+  it('measures the largest texture over every file, including looks that are not resident', () => {
+    const residentLook = lookFile({
+      bytes: 2 * MB,
+      triangles: 30000,
+      drawCalls: 2,
+      textures: [texture(1024, 'ktx2-uastc', 10), texture(1024, 'ktx2-uastc', 10), texture(1024, 'ktx2-uastc', 10)],
+    });
+    const wideLook = lookFile({ bytes: 1 * MB, triangles: 5000, drawCalls: 2, textures: [texture(2048, 'ktx2-etc1s', 10)] });
+    const { rows, info } = budgetRows(
+      'full',
+      {
+        'rotunda.glb': staticFile(3 * MB, 60000, 10, [texture(512, 'ktx2-etc1s', 10, true)]),
+        'plinth.glb': staticFile(1 * MB, 400, 1, [texture(256, 'ktx2-etc1s', 10)]),
+        'looks/gpu-heavy.glb': residentLook,
+        'looks/wide-but-light.glb': wideLook,
+      },
+      'looks/gpu-heavy.glb',
+      null,
+    );
+    const row = (key: string) => rows.find((entry) => entry.key === key)!;
+    expect(info.heaviestLookByGpu).toBe('looks/gpu-heavy.glb');
+    expect(row('largestTexture').actual).toBe(2048);
+    expect(row('largestNonFloorTexture').actual).toBe(2048);
+  });
+
+  it('excludes the first look from the further-look row and reads 0 with a single look', () => {
+    const base = files();
+    const first = lookFile({ bytes: 5 * MB, triangles: 60000, drawCalls: 2, textures: [texture(512, 'ktx2-etc1s', 10)] });
+    const mid = lookFile({ bytes: 3 * MB, triangles: 20000, drawCalls: 2, textures: [texture(512, 'ktx2-etc1s', 10)] });
+    const light = lookFile({ bytes: 1 * MB, triangles: 10000, drawCalls: 2, textures: [texture(2048, 'ktx2-uastc', 10)] });
+    const three = budgetRows(
+      'full',
+      {
+        'rotunda.glb': base['rotunda.glb']!,
+        'plinth.glb': base['plinth.glb']!,
+        'looks/first.glb': first,
+        'looks/mid.glb': mid,
+        'looks/light.glb': light,
+      },
+      'looks/first.glb',
+      null,
+    );
+    expect(three.rows.find((entry) => entry.key === 'furtherLookBytes')?.actual).toBe(3 * MB);
+    const single = budgetRows(
+      'full',
+      { 'rotunda.glb': base['rotunda.glb']!, 'plinth.glb': base['plinth.glb']!, 'looks/first.glb': first },
+      'looks/first.glb',
+      null,
+    );
+    expect(single.rows.find((entry) => entry.key === 'furtherLookBytes')?.actual).toBe(0);
+  });
+});
+
 describe('formatBudgetTable', () => {
   const { rows, info } = budgetRows(
     'full',
@@ -297,6 +447,10 @@ describe('formatBudgetTable', () => {
     expect(text).toContain('9.00 MB');
     expect(text).toContain('10.00 MB');
     expect(text).toContain('69546');
+  });
+
+  it('prints the desktop encoding caps for the full set, where they differ from the floor cap', () => {
+    expect(text).toContain('encoding caps 2048 px colour/data, 4096 px floor, 512 px mannequin, 1024/1024 px static/garment normals');
   });
 
   it('formats megabytes the way inspect.mjs does', () => {
