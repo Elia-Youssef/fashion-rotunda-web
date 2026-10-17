@@ -19,6 +19,18 @@ describe('lobby contrast accessibility contract', () => {
   });
 
   const minimumTextContrast = 4.5;
+
+  // The 2026-10-17 lobby header subtitle measurement sampled four viewports. The brightest
+  // backdrop was rgb(41,42,42) at 1280x720. The header sits over the shipped poster through
+  // the 0.72 veil, so the pure-white poster endpoint is not the backdrop the text encounters.
+  // This is already composited; remeasure if the poster, veil or header layout changes.
+  const brightestMeasuredHeaderBackdrop = [41, 42, 42, 1] as const;
+
+  it.each(['title', 'subtitle'])('%s header text reaches AA over the measured poster backdrop', (role) => {
+    const text = color(declaration(`.entry-lobby__${role}`, 'color'));
+    expect(contrast(text, [...brightestMeasuredHeaderBackdrop])).toBeGreaterThanOrEqual(minimumTextContrast);
+  });
+
   for (const [endpoint, poster] of [
     ['black', [0, 0, 0, 1]], ['white', [255, 255, 255, 1]],
   ] as const) {
