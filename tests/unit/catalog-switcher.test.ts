@@ -287,4 +287,107 @@ describe('createSwitcher', () => {
     expect(switcher.current).toBe('zoot-suit');
     expect(switcher.pending).toBeNull();
   });
+
+  it('hands a request started from onReady a switcher with nothing in flight', async () => {
+    const loads: Harness['loads'] = [];
+    const ready: Harness['ready'] = [];
+    const disposed: FakeLook[] = [];
+    let fromOnReady: Promise<void> | null = null;
+    const switcher = createSwitcher<FakeLook>({
+      load: (id, signal) => {
+        const entry = { id, signal, deferred: deferred<FakeLook>() };
+        loads.push(entry);
+        return entry.deferred.promise;
+      },
+      dispose: (loaded) => {
+        disposed.push(loaded);
+      },
+      onReady: (id, loaded) => {
+        ready.push({ id, loaded });
+        if (id === 'wallis-dress') {
+          // The presenter may chain the next look the moment one lands. That request must find
+          // the switcher already settled: the cleanup of the request that fired onReady would
+          // otherwise overwrite its cancellation and its deduplication promise.
+          fromOnReady = switcher.request('zoot-suit');
+        }
+      },
+    });
+
+    const first = switcher.request('wallis-dress');
+    const wallis: FakeLook = { id: 'wallis-dress' };
+    loads[0].deferred.resolve(wallis);
+    await first;
+    const chained = fromOnReady;
+    if (chained === null) {
+      throw new Error('onReady did not start its request');
+    }
+    expect(switcher.current).toBe('wallis-dress');
+    expect(switcher.pending).toBe('zoot-suit');
+
+    // Asking for the look on screen again must retire the chained request like any other.
+    await switcher.request('wallis-dress');
+    expect(loads[1].signal.aborted).toBe(true);
+    const late: FakeLook = { id: 'zoot-suit' };
+    loads[1].deferred.resolve(late);
+    await chained;
+    expect(ready).toEqual([{ id: 'wallis-dress', loaded: wallis }]);
+    expect(disposed).toEqual([late]);
+    expect(switcher.current).toBe('wallis-dress');
+    expect(switcher.pending).toBeNull();
+  });
+
+  it('answers a repeat asked after a load restarted itself with the run in flight', async () => {
+    const loads: Harness['loads'] = [];
+    const ready: Harness['ready'] = [];
+    const disposed: FakeLook[] = [];
+    let fromInsideLoad: Promise<void> | null = null;
+    const switcher = createSwitcher<FakeLook>({
+      load: (id, signal) => {
+        const entry = { id, signal, deferred: deferred<FakeLook>() };
+        loads.push(entry);
+        if (loads.length === 2) {
+          fromInsideLoad = switcher.request(id);
+        }
+        return entry.deferred.promise;
+      },
+      dispose: (loaded) => {
+        disposed.push(loaded);
+      },
+      onReady: (id, loaded) => {
+        ready.push({ id, loaded });
+      },
+    });
+
+    const first = switcher.request('wallis-dress');
+    const second = switcher.request('zoot-suit');
+    const restarted = fromInsideLoad;
+    if (restarted === null) {
+      throw new Error('the load did not repeat its request');
+    }
+    // The second load re-requested its own id and superseded itself; the run now in flight is
+    // the third one. A repeat from outside must wait for that run, not for the retired second,
+    // or it would resolve before any look arrived.
+    let repeatSettled = false;
+    const repeat = switcher.request('zoot-suit').then(() => {
+      repeatSettled = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(repeatSettled).toBe(false);
+
+    loads[1].deferred.resolve({ id: 'zoot-suit' });
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(repeatSettled).toBe(false);
+
+    const winner: FakeLook = { id: 'zoot-suit' };
+    loads[2].deferred.resolve(winner);
+    loads[0].deferred.resolve({ id: 'wallis-dress' });
+    await Promise.all([repeat, restarted, first, second]);
+    expect(repeatSettled).toBe(true);
+    expect(ready).toEqual([{ id: 'zoot-suit', loaded: winner }]);
+    expect(switcher.current).toBe('zoot-suit');
+  });
 });
