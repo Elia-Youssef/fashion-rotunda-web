@@ -194,14 +194,11 @@ describe('the token contract on the component stylesheets', () => {
     // these two pairs as inline styles; they are coordinates, not design tokens.
     const runtimePositioned = new Set(['tooltip-x', 'tooltip-y', 'onboarding-x', 'onboarding-y']);
     const used = new Set<string>();
-    // The camera sheets stay out of this one check: mode-switch.css keeps fallback-only
-    // references (var(--shadow-card, ...) renders its fallback), and naming those fallbacks as
-    // tokens is a product change. The proof panel uses only defined tokens and joins in.
+    // A fallback does not exempt a name: var(--x, fallback) still reads --x, so every sheet
+    // joins this check, the camera sheets' fallback-only references included.
     const sheets = [
       stripRootBlocks(pageCss),
-      ...componentSheets()
-        .filter((sheet) => !sheet.id.startsWith('camera/'))
-        .map((sheet) => stripComments(readFileSync(sheet.path, 'utf8'))),
+      ...componentSheets().map((sheet) => stripComments(readFileSync(sheet.path, 'utf8'))),
     ];
     for (const css of sheets) {
       for (const match of css.matchAll(/var\(--([\w-]+)/g)) {

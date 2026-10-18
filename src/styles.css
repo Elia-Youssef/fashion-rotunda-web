@@ -218,6 +218,7 @@
   --type-md: 0.9rem;
   /* Elevation. */
   --shadow-raised: 0 var(--space-1) var(--space-3) rgb(0 0 0 / 0.5);
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.3);
   --shadow-overlay: 0 var(--space-1) var(--space-4) rgb(0 0 0 / 0.6);
   --shadow-text: 0 var(--space-1) var(--space-2) rgb(0 0 0 / 0.55);
 }
