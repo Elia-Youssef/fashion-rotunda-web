@@ -217,8 +217,18 @@ describe('the token contract on the component stylesheets', () => {
     expect(blockAt, 'the reduced-motion media block exists').toBeGreaterThanOrEqual(0);
     const blockEnd = css.indexOf('}', blockAt);
     const block = css.slice(blockAt, blockEnd);
-    for (const token of ['--dur-fast', '--dur-base', '--dur-slow']) {
-      expect(block, `${token} collapses to 0ms`).toContain(`${token}: 0ms`);
+    // The duration tokens come from the sheet itself, not a hand list here: every --dur-*
+    // name the :root blocks define must collapse, so adding or retiring a duration token
+    // cannot leave this check stale.
+    const durationTokens = new Set<string>();
+    for (const rootBlock of rootBlocks(stripComments(css))) {
+      for (const match of rootBlock.matchAll(/--(dur-[\w-]+)\s*:/g)) {
+        durationTokens.add(match[1]);
+      }
+    }
+    expect(durationTokens.size, 'the sheet defines duration tokens').toBeGreaterThan(0);
+    for (const token of durationTokens) {
+      expect(block, `${token} collapses to 0ms`).toContain(`--${token}: 0ms`);
     }
     // "In one place": no other reduced-motion block may redefine the tokens.
     const redefinitions = css.match(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?--dur-/g) ?? [];

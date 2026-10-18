@@ -198,7 +198,6 @@
   /* Motion. */
   --dur-fast: 120ms;
   --dur-base: 200ms;
-  --dur-slow: 400ms;
   --dur-cover-black: 250ms;
   --dur-scene-reveal: 600ms;
   --dur-scene-reveal-e2e-sample-delay: -150ms;
@@ -230,7 +229,6 @@
   :root {
     --dur-fast: 0ms;
     --dur-base: 0ms;
-    --dur-slow: 0ms;
     --dur-cover-black: 0ms;
     --dur-scene-reveal: 0ms;
     --dur-scene-reveal-e2e-sample-delay: 0ms;

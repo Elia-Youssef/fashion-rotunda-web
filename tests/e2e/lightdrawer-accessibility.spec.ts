@@ -329,7 +329,6 @@ test.describe('simplified Light Control drawer and rig', () => {
         tokens: [
           root.getPropertyValue('--dur-fast').trim(),
           root.getPropertyValue('--dur-base').trim(),
-          root.getPropertyValue('--dur-slow').trim(),
         ],
         row: { transition: rowStyle.transitionDuration, animation: rowStyle.animationDuration },
         panel: { transition: panelStyle.transitionDuration, animation: panelStyle.animationDuration },
@@ -338,7 +337,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     // Browsers canonicalize a zero CSS custom-property duration inconsistently (the authored
     // reduced-motion override is `0ms`, while Chromium serializes it here as `0s`). Either
     // spelling proves the value is zero; a non-zero value would animate the phone sheet.
-    expect(motion.tokens).toEqual(['0s', '0s', '0s']);
+    expect(motion.tokens).toEqual(['0s', '0s']);
     for (const duration of [
       motion.row.transition,
       motion.row.animation,
