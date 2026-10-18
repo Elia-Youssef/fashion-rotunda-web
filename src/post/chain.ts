@@ -141,7 +141,7 @@ export interface PostChain {
   setSize(width: number, height: number): void;
   /** Full governor state for a CSS-box graph rebuild, or null when the governor is disabled. */
   readonly governorState: GovernorState | null;
-  /** Committed governor record for the proof panel and the canvas attributes; null when disabled. */
+  /** Borrowed live governor view; spread to retain a snapshot. Null when disabled. */
   readonly governorDiagnostics: GovernorDiagnostics | null;
   /** A runtime post failure has committed this chain to pass-through until the page reloads. */
   readonly fellBack: boolean;
@@ -461,6 +461,24 @@ export function createPostChain(options: PostChainOptions): PostChain {
   // false at construction time.
   let recoveryEligible = false;
   let deterministicSampling = options.deterministicSampling === true;
+  const readings = governor?.diagnostics();
+  // Forward the governor's live scalars while reporting the chain's current lifecycle gate.
+  // Both views are reused; consumers that retain values can explicitly take a snapshot.
+  const governorDiagnostics: GovernorDiagnostics | null = readings === undefined ? null : Object.freeze({
+    get historyVersion() { return readings.historyVersion; },
+    get level() { return readings.level; },
+    get recoveryEligible() { return recoveryEligible; },
+    get activity() { return readings.activity; },
+    get consecutiveOverBudget() { return readings.consecutiveOverBudget; },
+    get patience() { return readings.patience; },
+    get cooldownRemainingMs() { return readings.cooldownRemainingMs; },
+    get recoveryElapsedMs() { return readings.recoveryElapsedMs; },
+    get recoveryQualificationMs() { return readings.recoveryQualificationMs; },
+    get recoveryThresholdMs() { return readings.recoveryThresholdMs; },
+    get budgetMs() { return readings.budgetMs; },
+    get lastP95Ms() { return readings.lastP95Ms; },
+    get events() { return readings.events; },
+  });
 
   /**
    * The one gate behind the interface method, the construction option and the fallback path:
@@ -997,13 +1015,8 @@ export function createPostChain(options: PostChainOptions): PostChain {
       }
       // No explicit clock: the governor reports against its last observed sample, which is the
       // real performance.now() in production and the injected clock in the deterministic harness.
-      const diagnostics = governor.diagnostics();
-      return {
-        ...diagnostics,
-        // The proof bridge reports the chain's current combined gate, not the eligibility of a
-        // sample observed before a tab hide/loading transition.
-        recoveryEligible,
-      };
+      governor.diagnostics();
+      return governorDiagnostics;
     },
 
     get fellBack(): boolean {

@@ -5,6 +5,7 @@ import { createPostChain } from '../../src/post/chain';
 import type { PostChain, PostChainOptions } from '../../src/post/chain';
 import type { Backend } from '../../src/post/settings';
 import { TIERS } from '../../src/tiers/table';
+import { createGovernorPublisher } from '../../src/proof/publishers';
 
 // The features record the chain hands to the composition root, and the per-level settings the
 // chain derives for the governor. The record is chain-owned and reused until a published value
@@ -67,6 +68,79 @@ describe('post chain features record', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('reuses diagnostics across 1000 governed frames and publications', () => {
+    const counts: number[] = [];
+    for (let run = 0; run < 3; run += 1) {
+      const chain = createPostChain(fixture('webgpu', 'high', requestFrame));
+      const records = new Set<PostChain['governorDiagnostics']>();
+      const publish = createGovernorPublisher({});
+      for (let frame = 0; frame < 1000; frame += 1) {
+        vi.mocked(performance.now).mockReturnValue(100_000 + frame * 16);
+        chain.observeFrame(8);
+        const record = chain.governorDiagnostics;
+        records.add(record);
+        publish(record);
+      }
+      counts.push(records.size);
+      chain.dispose();
+    }
+    console.info('diagnostics identities per 1000 governed frames:', JSON.stringify(counts));
+    expect(counts).toEqual([1, 1, 1]);
+  });
+
+  it('publishes current diagnostics and immutable history after level and clock changes', () => {
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    const chain = createPostChain(fixture('webgpu', 'high', requestFrame));
+    const dataset: DOMStringMap = {};
+    const publish = createGovernorPublisher(dataset);
+    const initial = { ...chain.governorDiagnostics! };
+    publish(chain.governorDiagnostics);
+    expect(dataset['governor']).toBe('level=full;activity=observing;eligible=0;cooldown=0;' +
+      'patience=0/2;qualify=0/10000;p95=none;budget=16.7;threshold=13.36');
+    let observed;
+    for (let frame = 1; frame <= 120; frame += 1) {
+      observed = chain.governorHarness!.observe(40, frame * 100, false);
+    }
+    const expected = { ...observed! };
+    expect(chain.governorDiagnostics).toEqual(expected);
+    expect(expected.level).toBe('no-ssr');
+    expect(expected.events).toHaveLength(1);
+    expect(expected.historyVersion).not.toBe(initial.historyVersion);
+    publish(chain.governorDiagnostics);
+    expect(dataset['governor']).toBe('level=no-ssr;activity=cooldown;eligible=0;cooldown=10000;' +
+      'patience=0/2;qualify=0/10000;p95=40.0;budget=16.7;threshold=13.36');
+    expect(dataset['governorLog']).toBe(JSON.stringify(expected.events));
+    chain.setRecoveryEligible(true);
+    chain.governorHarness!.observe(8, 12_100, true);
+    const later = chain.governorHarness!.observe(8, 12_200, true);
+    expect(chain.governorDiagnostics).toEqual({ ...later! });
+    publish(chain.governorDiagnostics);
+    expect(dataset['governor']).toBe('level=no-ssr;activity=cooldown;eligible=1;cooldown=9800;' +
+      'patience=0/2;qualify=100/10000;p95=40.0;budget=16.7;threshold=13.36');
+    expect(dataset['governorLog']).toBe(JSON.stringify(expected.events));
+    expect(initial.level).toBe('full');
+    expect(initial.events).toEqual([]);
+    chain.dispose();
+  });
+
+  it('publishes recovery gate flips immediately without waiting for an observed frame', () => {
+    const chain = createPostChain(fixture('webgpu', 'high', requestFrame));
+    const dataset: DOMStringMap = {};
+    const publish = createGovernorPublisher(dataset);
+    for (const eligible of [true, false, true, false]) {
+      chain.setRecoveryEligible(eligible);
+      const current = chain.governorDiagnostics!;
+      expect(current.recoveryEligible).toBe(eligible);
+      expect(JSON.parse(JSON.stringify(current)).recoveryEligible).toBe(eligible);
+      publish(current);
+      expect(dataset['governor']).toBe('level=full;activity=observing;' +
+        `eligible=${eligible ? '1' : '0'};cooldown=0;patience=0/2;` +
+        'qualify=0/10000;p95=none;budget=16.7;threshold=13.36');
+      expect(dataset['governorLog']).toBe('[]');
+    }
+    chain.dispose();
   });
 
   it('reuses one record while nothing changes and pins the High rest content', () => {
