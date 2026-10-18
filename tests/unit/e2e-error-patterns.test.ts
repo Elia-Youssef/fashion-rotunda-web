@@ -27,7 +27,7 @@ function patterns(file: string): RegExp[] {
 }
 
 const loss = patterns('loss.spec.ts');
-const reveal = patterns('scene-reveal.spec.ts');
+const reveal = patterns('scene-reveal-gating.spec.ts');
 const declarations = [
   { name: 'backend device loss', pattern: loss[0]!,
     message: 'THREE.THREE.WebGPURenderer: WebGL Device Lost:\n\nMessage: Unknown reason',
