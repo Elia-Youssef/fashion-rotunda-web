@@ -196,7 +196,12 @@ export class SceneRevealCoordinator {
   }
 
   private ignoresFailure(): boolean {
-    return this.disposed || this.failed || this.currentState === 'revealed';
+    return this.isTerminal() || this.currentState === 'revealed';
+  }
+
+  /** Every asynchronous continuation must stop before touching a terminal outcome. */
+  private isTerminal(): boolean {
+    return this.disposed || this.failed;
   }
 
   private recordGeometry(): void {
@@ -331,7 +336,7 @@ export class SceneRevealCoordinator {
 
   /** Makes the screen black immediately and invalidates every frame sampled before the disruption. */
   private requestRestabilization(): void {
-    if (this.disposed || this.failed || !isTransitionState(this.currentState)) {
+    if (this.isTerminal() || !isTransitionState(this.currentState)) {
       return;
     }
     this.restartGeneration += 1;
@@ -343,10 +348,13 @@ export class SceneRevealCoordinator {
   }
 
   private async waitUntilVisible(): Promise<void> {
-    while (typeof document !== 'undefined' && document.hidden && !this.disposed && !this.failed) {
+    while (typeof document !== 'undefined' && document.hidden && !this.isTerminal()) {
       await new Promise<void>((resolve) => {
         this.visibilityResolver = resolve;
       });
+      if (this.isTerminal()) {
+        return;
+      }
     }
   }
 
@@ -382,9 +390,9 @@ export class SceneRevealCoordinator {
   private async wait(ms: number): Promise<void> {
     let remaining = ms;
     const step = 50;
-    while (remaining > 0 && !this.disposed && !this.failed) {
+    while (remaining > 0 && !this.isTerminal()) {
       await this.waitUntilVisible();
-      if (this.disposed || this.failed) {
+      if (this.isTerminal()) {
         return;
       }
       const currentWait = Math.min(remaining, step);
@@ -399,6 +407,9 @@ export class SceneRevealCoordinator {
         }, currentWait);
         this.activeTimers.push(timer);
       });
+      if (this.isTerminal()) {
+        return;
+      }
       if (typeof document === 'undefined' || !document.hidden) {
         remaining -= currentWait;
       }
@@ -406,7 +417,7 @@ export class SceneRevealCoordinator {
   }
 
   private async checkFrozenSeam(targetState: RevealState): Promise<void> {
-    if (this.frozenState === targetState && !this.disposed && !this.failed) {
+    if (this.frozenState === targetState && !this.isTerminal()) {
       await new Promise<void>((resolve) => {
         this.unfreezeResolver = resolve;
       });
@@ -426,9 +437,9 @@ export class SceneRevealCoordinator {
    * causes a complete restart under black rather than permitting a stale frame to escape.
    */
   private async stabilizeBehindBlack(reducedMotion: boolean): Promise<boolean> {
-    while (!this.disposed && !this.failed) {
+    while (!this.isTerminal()) {
       await this.waitUntilVisible();
-      if (this.disposed || this.failed) {
+      if (this.isTerminal()) {
         return false;
       }
 
@@ -441,14 +452,20 @@ export class SceneRevealCoordinator {
       // This frame occurs after black-hold was applied, so it commits the opaque black veil before
       // any later transparency change can expose the scene.
       await this.options.onFrameRequest();
+      if (this.isTerminal()) {
+        return false;
+      }
       if (generation !== this.restartGeneration || this.geometryChanged() || document.hidden) {
         this.requestRestabilization();
         continue;
       }
 
-      while (this.stableFrames < 2 && !this.disposed && !this.failed) {
+      while (this.stableFrames < 2 && !this.isTerminal()) {
         this.options.wakeRenderer();
         await this.options.onFrameRequest();
+        if (this.isTerminal()) {
+          return false;
+        }
         if (generation !== this.restartGeneration || this.geometryChanged() || document.hidden) {
           this.requestRestabilization();
           break;
@@ -462,6 +479,9 @@ export class SceneRevealCoordinator {
 
       if (!reducedMotion) {
         await this.wait(BLACK_HOLD_MIN_MS);
+        if (this.isTerminal()) {
+          return false;
+        }
       }
       if (generation !== this.restartGeneration || this.geometryChanged() || document.hidden) {
         this.requestRestabilization();
@@ -475,6 +495,9 @@ export class SceneRevealCoordinator {
 
       this.timestamps.holdEnd = performance.now();
       await this.checkFrozenSeam('black-hold');
+      if (this.isTerminal()) {
+        return false;
+      }
       if (generation !== this.restartGeneration || this.geometryChanged() || document.hidden) {
         this.requestRestabilization();
         continue;
@@ -490,7 +513,7 @@ export class SceneRevealCoordinator {
    * beneath an opaque black DOM veil.
    */
   public async execute(): Promise<void> {
-    if (this.disposed || this.failed) {
+    if (this.isTerminal()) {
       return;
     }
 
@@ -502,7 +525,7 @@ export class SceneRevealCoordinator {
       this.options.lobby?.prepareForReveal();
 
       await this.waitUntilVisible();
-      if (this.disposed || this.failed) {
+      if (this.isTerminal()) {
         return;
       }
 
@@ -512,13 +535,16 @@ export class SceneRevealCoordinator {
       }
 
       await this.checkFrozenSeam('ready-hidden');
-      if (this.disposed || this.failed) {
+      if (this.isTerminal()) {
         return;
       }
 
       const readyGeneration = this.restartGeneration;
       if (!reducedMotion) {
         await this.wait(READY_HIDDEN_HOLD_MS);
+        if (this.isTerminal()) {
+          return;
+        }
       }
 
       if (readyGeneration === this.restartGeneration && !document.hidden) {
@@ -528,14 +554,20 @@ export class SceneRevealCoordinator {
         this.options.lobby?.setCoverToBlack();
         if (!reducedMotion) {
           await this.wait(COVER_TO_BLACK_MS);
+          if (this.isTerminal()) {
+            return;
+          }
         }
         this.timestamps.coverEnd = performance.now();
         await this.checkFrozenSeam('cover-to-black');
+        if (this.isTerminal()) {
+          return;
+        }
       }
 
-      while (!this.disposed && !this.failed) {
+      while (!this.isTerminal()) {
         const stabilized = await this.stabilizeBehindBlack(reducedMotion);
-        if (!stabilized || this.disposed || this.failed) {
+        if (!stabilized || this.isTerminal()) {
           return;
         }
 
@@ -555,8 +587,14 @@ export class SceneRevealCoordinator {
         // mid-reveal capture observes a genuinely partial veil rather than a completed fade.
         // With no freeze configured this is an immediate no-op and production timing is unchanged.
         await this.checkFrozenSeam('revealing');
+        if (this.isTerminal()) {
+          return;
+        }
         if (!reducedMotion) {
           await this.wait(REVEAL_MS);
+          if (this.isTerminal()) {
+            return;
+          }
         }
         this.timestamps.revealEnd = performance.now();
 

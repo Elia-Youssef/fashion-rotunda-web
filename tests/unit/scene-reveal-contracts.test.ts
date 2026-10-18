@@ -194,6 +194,92 @@ describe('SceneRevealCoordinator contracts', () => {
     return { onFrameRequest: vi.fn().mockResolvedValue(undefined) };
   }
 
+  const terminalPoints = [
+    { name: 'initial visibility', hidden: true, elapsed: 0, frames: 0 },
+    { name: 'ready-hidden freeze', freeze: 'ready-hidden', elapsed: 0, frames: 0 },
+    { name: 'ready-hidden hold', elapsed: 0, frames: 0 },
+    { name: 'cover-to-black wait', elapsed: READY_HIDDEN_HOLD_MS, frames: 0 },
+    { name: 'cover-to-black freeze', freeze: 'cover-to-black',
+      elapsed: READY_HIDDEN_HOLD_MS + COVER_TO_BLACK_MS, frames: 0 },
+    { name: 'black commit frame', elapsed: READY_HIDDEN_HOLD_MS + COVER_TO_BLACK_MS, frames: 0 },
+    { name: 'first stable frame', elapsed: READY_HIDDEN_HOLD_MS + COVER_TO_BLACK_MS, frames: 1 },
+    { name: 'second stable frame', elapsed: READY_HIDDEN_HOLD_MS + COVER_TO_BLACK_MS, frames: 2 },
+    { name: 'black-hold wait', elapsed: READY_HIDDEN_HOLD_MS + COVER_TO_BLACK_MS, frames: 3 },
+    { name: 'black-hold visibility', hidden: true,
+      elapsed: READY_HIDDEN_HOLD_MS + COVER_TO_BLACK_MS, frames: 3 },
+    { name: 'black-hold freeze', freeze: 'black-hold',
+      elapsed: READY_HIDDEN_HOLD_MS + COVER_TO_BLACK_MS, frames: 3, hold: true },
+    { name: 'revealing freeze', freeze: 'revealing',
+      elapsed: READY_HIDDEN_HOLD_MS + COVER_TO_BLACK_MS, frames: 3, hold: true },
+    { name: 'reduced-motion revealing freeze', freeze: 'revealing', reducedMotion: true,
+      elapsed: 0, frames: 3, hold: true },
+    { name: 'reveal fade', elapsed: READY_HIDDEN_HOLD_MS + COVER_TO_BLACK_MS, frames: 3, hold: true },
+  ];
+
+  describe.each(['failure', 'dispose'] as const)('%s stops every continuation', (outcome) => {
+    it.each(terminalPoints)('preserves the terminal surface during $name', async (point) => {
+      if (point.reducedMotion) {
+        window.matchMedia = reducedMotionMedia();
+      }
+      if (point.hidden && point.elapsed === 0) {
+        setHidden(true);
+      }
+      const queue = manualFrames();
+      const onRevealing = vi.fn();
+      const onRevealed = vi.fn();
+      const coordinator = new SceneRevealCoordinator({
+        canvas, search: point.freeze ? `${E2E_GATE}&freeze=${point.freeze}` : '',
+        lobby, predicates: createPredicates(), wakeRenderer: vi.fn(),
+        onFrameRequest: queue.onFrameRequest, onRevealing, onRevealed,
+      });
+      const run = coordinator.execute();
+      await vi.advanceTimersByTimeAsync(point.elapsed);
+      for (let frame = 0; frame < point.frames; frame += 1) {
+        await completeOneFrame(queue);
+      }
+      if (point.hold) {
+        await vi.advanceTimersByTimeAsync(point.reducedMotion ? 0 : BLACK_HOLD_MIN_MS);
+        expect(coordinator.state).toBe(point.freeze === 'black-hold' ? 'black-hold' : 'revealing');
+      }
+      if (point.hidden && point.elapsed > 0) {
+        setHidden(true);
+        document.dispatchEvent(new Event('visibilitychange'));
+        await vi.advanceTimersByTimeAsync(50);
+      }
+      if (outcome === 'failure') {
+        coordinator.fail('retry this load');
+        expect(coordinator.state).toBe('error');
+        expect(lobby.state).toBe('error');
+        expect(lobby.element.hidden).toBe(false);
+        expect(lobby.setError).toHaveBeenCalledExactlyOnceWith('retry this load', undefined);
+      } else {
+        coordinator.dispose();
+      }
+      const snapshot = () => ({
+        state: coordinator.state,
+        timestamps: coordinator.transitionTimestamps,
+        frames: coordinator.frameCountBehindBlack,
+        veil: coordinator.veil.outerHTML,
+        lobby: lobby.element.outerHTML,
+        calls: Object.values(lobby).filter(vi.isMockFunction).map((fn) => fn.mock.calls.length),
+        revealing: onRevealing.mock.calls.length,
+      });
+      const terminal = snapshot();
+      const writes: MutationRecord[] = [];
+      const observer = new MutationObserver((records) => writes.push(...records));
+      observer.observe(coordinator.veil, { attributes: true, childList: true, subtree: true });
+      await driveUntil(run, queue, () => false);
+      await vi.advanceTimersByTimeAsync(
+        READY_HIDDEN_HOLD_MS + COVER_TO_BLACK_MS + BLACK_HOLD_MIN_MS + REVEAL_MS,
+      );
+      expect(snapshot()).toEqual(terminal);
+      expect(writes).toEqual([]);
+      expect(onRevealed).not.toHaveBeenCalled();
+      observer.disconnect();
+      coordinator.dispose();
+    });
+  });
+
   it('pins the four transition durations, with the reveal matching the CSS fade', () => {
     expect(READY_HIDDEN_HOLD_MS).toBe(250);
     expect(COVER_TO_BLACK_MS).toBe(250);
