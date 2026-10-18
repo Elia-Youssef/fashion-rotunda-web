@@ -315,7 +315,7 @@ function buildDefaultRig(): Rig {
   const lights: RigLight[] = [
     {
       id: 'key',
-      label: 'KeyLight',
+      label: 'Key light',
       kind: 'rect',
       on: UNREAL.key.visible,
       intensity: UNREAL.key.intensity,
@@ -327,7 +327,7 @@ function buildDefaultRig(): Rig {
     },
     {
       id: 'fill',
-      label: 'FillLight',
+      label: 'Fill light',
       kind: 'rect',
       on: UNREAL.fill.visible,
       intensity: UNREAL.fill.intensity,
@@ -339,7 +339,7 @@ function buildDefaultRig(): Rig {
     },
     {
       id: 'back',
-      label: 'BackLight',
+      label: 'Back light',
       kind: 'rect',
       on: UNREAL.back.visible,
       intensity: UNREAL.back.intensity,

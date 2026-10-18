@@ -82,6 +82,46 @@ describe('loading state and truthful progress', () => {
 });
 
 describe.each([false, true])('one fact per visit (hydration=%s)', (withPreExistingDOM) => {
+  it.each([
+    {
+      index: 0,
+      heading: 'GRAPHICS',
+      text: "Runs on WebGPU, the newest browser graphics standard, and switches to WebGL 2 where it isn't available.",
+    },
+    {
+      index: 1,
+      heading: 'THE ROTUNDA',
+      text: 'The rotunda, its dome and every interior surface come from the original Unreal Engine scene.',
+    },
+    {
+      index: 2,
+      heading: 'FAST LOADING',
+      text: 'Models and textures are compressed for the web, so the room loads quickly and stays sharp.',
+    },
+    {
+      index: 3,
+      heading: 'FITS YOUR DEVICE',
+      text: 'The showroom checks your device and sets shadows, resolution and effects to keep it smooth.',
+    },
+    {
+      index: 4,
+      heading: 'KEYBOARD READY',
+      text: 'Every control is a real page element, so the whole showroom works from the keyboard.',
+    },
+    {
+      index: 5,
+      heading: 'GALLERY LIGHTING',
+      text: 'Three studio lights and the daylight dome light the looks, and you can adjust both.',
+    },
+  ])('renders the exact $heading fact', ({ index, heading, text }) => {
+    const { element } = mountLobby({
+      withPreExistingDOM,
+      random: () => index / APPROVED_FACTS.length,
+    });
+    expect(element.querySelector('.entry-lobby__fact-heading')?.textContent).toBe(heading);
+    expect(element.querySelector('.entry-lobby__fact-text')?.textContent).toBe(`"${text}"`);
+  });
+
   function expectFact(element: HTMLElement, index: number): void {
     expect(element.querySelector('.entry-lobby__fact-heading')?.textContent)
       .toBe(APPROVED_FACTS[index].heading);

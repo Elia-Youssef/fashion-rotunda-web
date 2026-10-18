@@ -180,8 +180,8 @@ const BUILT_LOBBY_MARKUP = `<div id="entry-lobby" class="entry-lobby" role="dial
             <p class="entry-lobby__progress-readout">0.0 MB of 0.0 MB</p>
             <div class="entry-lobby__fact-container">
               <div class="entry-lobby__fact-diamond" aria-hidden="true"></div>
-              <span class="entry-lobby__fact-heading">ARCHITECTURAL &amp; GRAPHICS PROVENANCE</span>
-              <p class="entry-lobby__fact-text">"Built on WebGPU for next-generation hardware rasterization, with seamless automatic fallback to WebGL 2."</p>
+              <span class="entry-lobby__fact-heading">GRAPHICS</span>
+              <p class="entry-lobby__fact-text">"Runs on WebGPU, the newest browser graphics standard, and switches to WebGL 2 where it isn't available."</p>
             </div>
           </div>
 
@@ -287,8 +287,8 @@ const MOUNTED_LOBBY_MARKUP = `<div id="entry-lobby" class="entry-lobby" role="di
             <p class="entry-lobby__progress-readout">0.0 MB of 0.0 MB</p>
             <div class="entry-lobby__fact-container">
               <div class="entry-lobby__fact-diamond" aria-hidden="true"></div>
-              <span class="entry-lobby__fact-heading">ARCHITECTURAL &amp; GRAPHICS PROVENANCE</span>
-              <p class="entry-lobby__fact-text">"Built on WebGPU for next-generation hardware rasterization, with seamless automatic fallback to WebGL 2."</p>
+              <span class="entry-lobby__fact-heading">GRAPHICS</span>
+              <p class="entry-lobby__fact-text">"Runs on WebGPU, the newest browser graphics standard, and switches to WebGL 2 where it isn't available."</p>
             </div>
           </div>
 

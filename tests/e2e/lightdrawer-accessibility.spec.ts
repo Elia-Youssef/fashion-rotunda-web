@@ -74,7 +74,7 @@ test.describe('simplified Light Control drawer and rig', () => {
   });
 
   // Opening the bar moves focus to its first control. Keyboard opening shows that control's
-  // tooltip; a mouse click must not, or the tooltip covers the KeyLight title every time.
+  // tooltip; a mouse click must not, or the tooltip covers the Key light title every time.
   test('desktop bar shows the focus tooltip after keyboard opening only', async ({
     page,
     request,
@@ -104,7 +104,7 @@ test.describe('simplified Light Control drawer and rig', () => {
     await expect(panel).toBeVisible();
     await expect(keySwitch).toBeFocused();
     await expect(tooltip, 'keyboard opening shows the focus tooltip').toBeVisible();
-    await expect(tooltip).toHaveText('Toggle KeyLight on or off');
+    await expect(tooltip).toHaveText('Toggle Key light on or off');
     expect(await keySwitch.getAttribute('aria-describedby')).toBe('a11y-tooltip');
     await page.keyboard.press('Escape');
     await expect(tooltip).toBeHidden();

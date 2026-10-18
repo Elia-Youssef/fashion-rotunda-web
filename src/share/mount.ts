@@ -261,7 +261,7 @@ export function mountShare(options: ShareMountOptions): ShareMount {
           fallback.focus();
           fallback.select();
         }
-        uiHandle.notify('Press Ctrl+C to copy');
+        uiHandle.notify('Link selected. Copy it to share.');
       }
     },
 

@@ -715,7 +715,7 @@ describe('copy link', () => {
     expect(fallback.classList.contains('share__fallback--hidden')).toBe(false);
     expect(fallback.value).toContain(window.location.origin);
     expect(focus).toHaveBeenCalled();
-    expect(status.textContent).toBe('Press Ctrl+C to copy');
+    expect(status.textContent).toBe('Link selected. Copy it to share.');
   });
 
   it('shows the manual fallback when the browser has no clipboard', async () => {
@@ -728,7 +728,7 @@ describe('copy link', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(fallback.classList.contains('share__fallback--hidden')).toBe(false);
     expect(fallback.value).toContain(window.location.origin);
-    expect(status.textContent).toBe('Press Ctrl+C to copy');
+    expect(status.textContent).toBe('Link selected. Copy it to share.');
   });
 
   it('publishes before reading the href and holds the window after a copy', async () => {

@@ -64,9 +64,9 @@ describe('mountLightPanel', () => {
     expect(rows()).toHaveLength(4);
     expect(rows().map((r) => r.dataset.light)).toEqual(['key', 'fill', 'back', 'daylight']);
     expect(rows().map((r) => r.querySelector('legend')?.textContent)).toEqual([
-      'KeyLight',
-      'FillLight',
-      'BackLight',
+      'Key light',
+      'Fill light',
+      'Back light',
       'Daylight',
     ]);
   });
@@ -236,9 +236,9 @@ describe('mountLightPanel', () => {
     const labelText = (input: HTMLInputElement): string =>
       [...(input.labels ?? [])].map((label) => label.textContent ?? '').join(' ');
     for (const [id, name] of [
-      ['key', 'KeyLight'],
-      ['fill', 'FillLight'],
-      ['back', 'BackLight'],
+      ['key', 'Key light'],
+      ['fill', 'Fill light'],
+      ['back', 'Back light'],
     ] as const) {
       const on = studioControl(id, 'on');
       expect(on.labels).toHaveLength(1);
@@ -325,6 +325,21 @@ describe('mountLightPanel', () => {
     ];
     expect(options.map((option) => option.value)).toEqual(['0', '0.5', '1.0']);
     expect(options.map((option) => option.label)).toEqual(['Dawn', 'Day', 'Noon']);
+  });
+
+  it.each([
+    ['key', 'on', 'Toggle Key light on or off'],
+    ['key', 'intensity', 'Adjust Key light intensity in candela'],
+    ['key', 'color', 'Choose Key light color'],
+    ['fill', 'on', 'Toggle Fill light on or off'],
+    ['fill', 'intensity', 'Adjust Fill light intensity in candela'],
+    ['fill', 'color', 'Choose Fill light color'],
+    ['back', 'on', 'Toggle Back light on or off'],
+    ['back', 'intensity', 'Adjust Back light intensity in candela'],
+    ['back', 'color', 'Choose Back light color'],
+  ] as const)('describes the %s %s control in plain language', (id, control, tooltip) => {
+    mount();
+    expect(studioControl(id, control).dataset['tooltip']).toBe(tooltip);
   });
 
   it('carries a tooltip on every control', () => {

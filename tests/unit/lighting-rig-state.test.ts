@@ -18,7 +18,7 @@ import { studioLight } from '../support/lighting-rig';
 describe('DEFAULT_RIG', () => {
   it('carries exactly three studio lights: Key, Fill, Back', () => {
     expect(DEFAULT_RIG.lights.map((entry) => entry.id)).toEqual(['key', 'fill', 'back']);
-    expect(DEFAULT_RIG.lights.map((entry) => entry.label)).toEqual(['KeyLight', 'FillLight', 'BackLight']);
+    expect(DEFAULT_RIG.lights.map((entry) => entry.label)).toEqual(['Key light', 'Fill light', 'Back light']);
   });
 
   it('contains zero Top or Indirect lights in the active rig', () => {

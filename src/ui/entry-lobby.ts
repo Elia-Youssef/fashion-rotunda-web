@@ -80,28 +80,28 @@ export interface EntryLobby {
 
 export const APPROVED_FACTS: Array<{ heading: string; text: string }> = [
   {
-    heading: 'ARCHITECTURAL & GRAPHICS PROVENANCE',
-    text: 'Built on WebGPU for next-generation hardware rasterization, with seamless automatic fallback to WebGL 2.',
+    heading: 'GRAPHICS',
+    text: "Runs on WebGPU, the newest browser graphics standard, and switches to WebGL 2 where it isn't available.",
   },
   {
-    heading: 'SPATIAL GEOMETRY RECONSTRUCTION',
-    text: 'Architectural rotunda, dome framing, and interior surfaces reconstructed from original Unreal Engine assets.',
+    heading: 'THE ROTUNDA',
+    text: 'The rotunda, its dome and every interior surface come from the original Unreal Engine scene.',
   },
   {
-    heading: 'ASSET & TEXTURE OPTIMIZATION',
-    text: 'High-efficiency asset streaming utilizing glTF 2.0 binary geometry and KTX2 supercompressed GPU textures.',
+    heading: 'FAST LOADING',
+    text: 'Models and textures are compressed for the web, so the room loads quickly and stays sharp.',
   },
   {
-    heading: 'ADAPTIVE QUALITY TIERING',
-    text: 'Automated hardware capability profiling allocating dynamic quality tiers for shadows, resolution, and post-processing.',
+    heading: 'FITS YOUR DEVICE',
+    text: 'The showroom checks your device and sets shadows, resolution and effects to keep it smooth.',
   },
   {
-    heading: 'ACCESSIBLE DOM OVERLAY',
-    text: 'Semantic, accessible HTML/CSS interface layer decoupled from the 3D canvas, guaranteeing full keyboard navigation.',
+    heading: 'KEYBOARD READY',
+    text: 'Every control is a real page element, so the whole showroom works from the keyboard.',
   },
   {
-    heading: 'CURATORIAL LIGHTING RIG',
-    text: 'Tri-point studio lighting rig combined with architectural daylight dome illumination.',
+    heading: 'GALLERY LIGHTING',
+    text: 'Three studio lights and the daylight dome light the looks, and you can adjust both.',
   },
 ];
 
