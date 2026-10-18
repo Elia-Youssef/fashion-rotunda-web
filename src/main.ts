@@ -877,7 +877,7 @@ async function main(): Promise<void> {
     stopProgress();
 
     if (!showLobby) {
-      mountA11y({ root: document.body, aside: shell.roots.card, canvas, search, announcer });
+      mountA11y({ root: document.body, aside: shell.roots.card, canvas, search, announcer, camera: cameraHandle });
       if (musicPreference === 'on') {
         void music.startDeferred();
       }
@@ -937,7 +937,9 @@ async function main(): Promise<void> {
             void music.startDeferred();
           }
 
-          const a11y = mountA11y({ root: document.body, aside: shell.roots.card, canvas, search, announcer });
+          const a11y = mountA11y({
+            root: document.body, aside: shell.roots.card, canvas, search, announcer, camera: cameraHandle,
+          });
           a11y.announcer.say(LOBBY_READY_MESSAGE);
         },
         onError: (err) => {

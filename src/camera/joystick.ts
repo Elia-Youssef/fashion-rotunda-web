@@ -21,7 +21,7 @@ export function mountJoystick(
   container.className = 'archviz-joystick';
   // Hidden from assistive technology, not named for it: the control is pointer-only (a touch
   // screen reader intercepts the drag it needs), while the movement it drives stays keyboard
-  // operable through WASD and arrow keys on the canvas, whose name presents the keyboard path.
+  // operable through WASD and arrow keys, which the canvas name presents in Walk mode.
   // A name would promise a drag that assistive technology cannot deliver, so it stays out of
   // the accessibility tree, like the pointer-only sheet chrome.
   container.setAttribute('aria-hidden', 'true');

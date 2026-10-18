@@ -9,6 +9,9 @@ import type { Announcer } from '../../src/ui/announce';
 import { mountMusicSwitch } from '../../src/ui/music-switch';
 import type { MusicSwitchHandle } from '../../src/ui/music-switch';
 import { ONBOARDING_STORAGE_KEY } from '../../src/ui/onboarding';
+import type { CameraMode } from '../../src/camera/contracts';
+import { createOrbit } from '../../src/camera/orbit';
+import { PerspectiveCamera } from 'three/webgpu';
 
 let root: HTMLElement;
 let announcer: Announcer;
@@ -20,6 +23,30 @@ let musicSwitch: MusicSwitchHandle | null = null;
 
 // Match the announcer's coalescing window to test completion before and after it closes.
 const ANNOUNCEMENT_WINDOW_MS = 500;
+
+function cameraModes(initial: CameraMode = 'orbit') {
+  let mode = initial;
+  const listeners = new Set<(mode: CameraMode) => void>();
+  return {
+    get mode() { return mode; },
+    onModeChange(listener: (mode: CameraMode) => void) {
+      listeners.add(listener);
+      return () => { listeners.delete(listener); };
+    },
+    change(next: CameraMode) {
+      mode = next;
+      for (const listener of listeners) listener(mode);
+    },
+    listeners,
+  };
+}
+
+const ORBIT_LABEL =
+  'Showroom. Drag to orbit, arrow keys to turn, plus and minus to zoom, ' +
+  'Page Up and Page Down to move up and down, Home to reset';
+const WALK_LABEL =
+  'Showroom, walk mode. Click to look around, W A S D or arrow keys to move, ' +
+  'Shift to walk faster, Esc to release the mouse, O to return to orbit.';
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -137,6 +164,87 @@ describe('mountA11y', () => {
     );
     expect(canvas.hasAttribute('role')).toBe(false);
     expect(canvas.tabIndex).toBe(0);
+  });
+
+  it.each(['orbit', 'walk'] as const)('names the initial %s mode and follows mode changes', (initial) => {
+    const camera = cameraModes(initial);
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1', camera });
+    expect(canvas.getAttribute('aria-label')).toBe(initial === 'walk' ? WALK_LABEL : ORBIT_LABEL);
+    for (const mode of ['walk', 'orbit', 'walk', 'orbit'] as const) {
+      camera.change(mode);
+      expect(canvas.getAttribute('aria-label')).toBe(mode === 'walk' ? WALK_LABEL : ORBIT_LABEL);
+    }
+  });
+
+  it('unsubscribes the canvas name on disposal', () => {
+    const camera = cameraModes();
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '?e2e=1', camera });
+    expect(camera.listeners.size).toBe(1);
+    a11y.dispose();
+    expect(camera.listeners.size).toBe(0);
+    camera.change('walk');
+    expect(canvas.getAttribute('aria-label')).toBe(ORBIT_LABEL);
+  });
+
+  it.each(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'])(
+    'completes the orbit step when %s rotates the focused canvas', (key) => {
+      const camera = new PerspectiveCamera();
+      camera.position.set(0, 2, 5);
+      const orbit = createOrbit({
+        camera, element: canvas, target: [0, 1, 0], damping: 0,
+        limits: { minDistance: 1, maxDistance: 10, minPolar: 0.15, maxPolar: Math.PI / 2 },
+        onChange: () => {},
+      });
+      try {
+        a11y = mountA11y({ root, aside, canvas, announcer, search: '', camera: cameraModes() });
+        canvas.focus();
+        const before = camera.position.clone();
+        expect(root.querySelector('.onboarding-card__title')?.textContent).toBe('Explore the room');
+        canvas.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+        expect(camera.position.equals(before)).toBe(false);
+        expect(root.querySelector('.onboarding-card__title')?.textContent).toBe('Select a look');
+      } finally {
+        orbit.dispose();
+      }
+    },
+  );
+
+  it.each(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'])(
+    'keeps the orbit step for %s outside canvas focus or in Walk mode', (key) => {
+      const camera = cameraModes();
+      a11y = mountA11y({ root, aside, canvas, announcer, search: '', camera });
+      const button = header.querySelector('button')!;
+      button.focus();
+      button.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      canvas.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      expect(root.querySelector('.onboarding-card__title')?.textContent).toBe('Explore the room');
+      canvas.focus();
+      camera.change('walk');
+      canvas.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      expect(root.querySelector('.onboarding-card__title')?.textContent).toBe('Explore the room');
+      camera.change('orbit');
+      canvas.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      expect(root.querySelector('.onboarding-card__title')?.textContent).toBe('Select a look');
+    },
+  );
+
+  it.each(['w', 'Shift', 'PageUp', 'PageDown', '+', '-', 'Home'])(
+    'keeps the orbit step for the non-rotation key %s', (key) => {
+      a11y = mountA11y({ root, aside, canvas, announcer, search: '' });
+      canvas.focus();
+      canvas.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
+      expect(root.querySelector('.onboarding-card__title')?.textContent).toBe('Explore the room');
+    },
+  );
+
+  it('removes the orbit completion key listener on disposal', () => {
+    a11y = mountA11y({ root, aside, canvas, announcer, search: '' });
+    const complete = vi.spyOn(a11y.onboarding, 'complete');
+    a11y.dispose();
+    canvas.focus();
+    canvas.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    expect(complete).not.toHaveBeenCalled();
   });
 
   it('resets onboarding storage key when ?onboarding=reset is present', () => {

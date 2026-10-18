@@ -13,8 +13,10 @@ describe('mountModeSwitch', () => {
     const hint = document.body.querySelector<HTMLElement>('.archviz-walk-hint');
 
     expect(hint?.hidden).toBe(false);
-    expect(hint?.textContent).toContain('Press Esc to release the mouse');
-    expect(hint?.textContent).toContain('Press O to return to Orbit');
+    expect(hint?.textContent).toBe(
+      'Walk: click the scene to look. Move with W A S D or the arrow keys; hold Shift to walk faster. ' +
+      'Press Esc to release the mouse, then select Orbit. Press O to return to Orbit.',
+    );
 
     void mount.setMode('orbit');
     expect(hint?.hidden).toBe(true);

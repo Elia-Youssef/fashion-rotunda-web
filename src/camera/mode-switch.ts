@@ -50,7 +50,8 @@ export function mountModeSwitch(
   walkHint.id = 'archviz-walk-hint';
   walkHint.hidden = true;
   walkHint.textContent =
-    'Walk: click the scene to look. Press Esc to release the mouse, then select Orbit. Press O to return to Orbit.';
+    'Walk: click the scene to look. Move with W A S D or the arrow keys; hold Shift to walk faster. ' +
+    'Press Esc to release the mouse, then select Orbit. Press O to return to Orbit.';
 
   const escapeText = walkHint.textContent;
   const announcer = options.announcer;

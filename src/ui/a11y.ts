@@ -3,6 +3,7 @@
 // MutationObserver for page state announcements, and drives the onboarding sequence.
 
 import type { Announcer } from './announce';
+import type { CameraMount, CameraMode } from '../camera/mount';
 import { ONBOARDING_STORAGE_KEY, mountOnboarding } from './onboarding';
 import type { OnboardingHandle } from './onboarding';
 import { variantDisplayName } from './product-card';
@@ -14,6 +15,7 @@ export interface A11yMountOptions {
   canvas: HTMLCanvasElement;
   search: string;
   announcer: Pick<Announcer, 'say'>;
+  camera?: Pick<CameraMount, 'mode' | 'onModeChange'>;
 }
 
 export interface A11yMount {
@@ -26,13 +28,26 @@ const CANVAS_LABEL =
   'Showroom. Drag to orbit, arrow keys to turn, plus and minus to zoom, ' +
   'Page Up and Page Down to move up and down, Home to reset';
 
+const WALK_CANVAS_LABEL =
+  'Showroom, walk mode. Click to look around, W A S D or arrow keys to move, ' +
+  'Shift to walk faster, Esc to release the mouse, O to return to orbit.';
+
+const ORBIT_ARROW_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
+
 export function mountA11y(options: A11yMountOptions): A11yMount {
   const { root, aside, canvas, search, announcer } = options;
 
   // The canvas: role="img" is wrong for an interactive surface; keep tabindex="0".
   canvas.removeAttribute('role');
-  canvas.setAttribute('aria-label', CANVAS_LABEL);
   canvas.tabIndex = 0;
+
+  let cameraMode = options.camera?.mode ?? 'orbit';
+  function updateCameraMode(mode: CameraMode): void {
+    cameraMode = mode;
+    canvas.setAttribute('aria-label', mode === 'walk' ? WALK_CANVAS_LABEL : CANVAS_LABEL);
+  }
+  updateCameraMode(cameraMode);
+  const unlistenMode = options.camera?.onModeChange(updateCameraMode);
 
   const tooltips = installTooltips(root);
 
@@ -69,6 +84,13 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
   }
   canvas.addEventListener('pointerdown', onPointerDown);
   window.addEventListener('pointerup', onPointerUp);
+
+  function onCanvasKeyDown(event: KeyboardEvent): void {
+    if (cameraMode === 'orbit' && document.activeElement === canvas && ORBIT_ARROW_KEYS.has(event.key)) {
+      onboarding.complete('orbit');
+    }
+  }
+  canvas.addEventListener('keydown', onCanvasKeyDown);
 
   // Input inside the light panel completes the lights step. The listener sits on the root, not
   // on the card root: the panel lives in its own shell region and the input event bubbles.
@@ -160,6 +182,8 @@ export function mountA11y(options: A11yMountOptions): A11yMount {
     dispose(): void {
       if (disposed) return;
       disposed = true;
+      unlistenMode?.();
+      canvas.removeEventListener('keydown', onCanvasKeyDown);
       canvas.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointerup', onPointerUp);
       root.removeEventListener('input', onPanelInput);

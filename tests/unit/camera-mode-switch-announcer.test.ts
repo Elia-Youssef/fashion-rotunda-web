@@ -97,7 +97,9 @@ describe('mountModeSwitch', () => {
       mode.triggerState(null, 'ready');
       mode.triggerState(null, 'ready');
       const hint = document.body.querySelector<HTMLElement>('.archviz-walk-hint')!;
-      const guidance = hint.textContent;
+      const guidance =
+        'Walk: click the scene to look. Move with W A S D or the arrow keys; hold Shift to walk faster. ' +
+        'Press Esc to release the mouse, then select Orbit. Press O to return to Orbit.';
       expect(hint.hidden).toBe(false);
       expect(hint.hasAttribute('aria-live')).toBe(false);
       expect(say.mock.calls.filter(([text]) => text === guidance)).toHaveLength(1);
