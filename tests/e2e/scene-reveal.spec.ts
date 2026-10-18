@@ -4,6 +4,7 @@ import type { Locator, Page } from '@playwright/test';
 import { holdFirstRequest } from './support/held-request';
 import { assertDisruptionReset, assertFreshStableFrames } from './support/reveal-disruption';
 import { backendPath, projectBackend } from './support/backend';
+import { SCENE_READY_TIMEOUT } from './support/ready';
 
 // E2E transition verification suite for two-stage stable-frame black reveal.
 // Tests run on WebGL2 and WebGPU projects where available.
@@ -73,11 +74,11 @@ async function openTransition(
 
 async function enterExperience(lobby: Locator, canvas: Locator, backend: Backend): Promise<void> {
   await lobby.locator('#lobby-load-btn').click();
-  await expect(canvas).toHaveAttribute('data-backend', backend, { timeout: 60_000 });
+  await expect(canvas).toHaveAttribute('data-backend', backend, { timeout: SCENE_READY_TIMEOUT });
 }
 
 async function expectRevealComplete(page: Page): Promise<void> {
-  await expect.poll(() => page.evaluate(() => window.archvizReveal?.state), { timeout: 60_000 }).toBe('revealed');
+  await expect.poll(() => page.evaluate(() => window.archvizReveal?.state), { timeout: SCENE_READY_TIMEOUT }).toBe('revealed');
   await expect(page.locator('#scene-veil')).toHaveCount(0);
   expect(await page.evaluate(() => window.archvizTransitionSeam === undefined)).toBe(true);
 }
@@ -98,6 +99,8 @@ const LOADING_HOLD_TIMEOUT_MS = 30_000;
 const MIN_REVEALED_DRAG_M = 0.1;
 // Input wakes the render loop immediately; 5 s allows slow frames without reaching the idle tour.
 const REVEALED_DRAG_TIMEOUT_MS = 5_000;
+// Bounds the wait for the armed music player to reach playing once the reveal completes.
+const MUSIC_PLAYING_TIMEOUT_MS = 15_000;
 
 // Waits until the handshake is parked at the `?freeze=black-hold` seam with its two stable frames.
 // `stableFrames` only grows from 0 to 2 while the veil reads black-hold, and the seam then holds it
@@ -138,7 +141,7 @@ test.describe('Scene Reveal Transition', () => {
     await rotunda.waitUntilContinued();
 
     // Wait for full transition to revealed
-    await expect(lobby).toHaveCount(0, { timeout: 60_000 });
+    await expect(lobby).toHaveCount(0, { timeout: SCENE_READY_TIMEOUT });
     await expectRevealComplete(page);
     await expect(lobby).toBeHidden();
     await expect(canvas).toHaveAttribute('data-scene', 'ready');
@@ -183,7 +186,7 @@ test.describe('Scene Reveal Transition', () => {
     await enterExperience(lobby, canvas, backend);
 
     // Wait until transition freezes at black-hold
-    await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
+    await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: SCENE_READY_TIMEOUT });
 
     // Assert computed style: solid black, 100% opaque
     const veilStyle = await veil.evaluate((el) => {
@@ -226,7 +229,7 @@ test.describe('Scene Reveal Transition', () => {
   test('freezes deterministic mid-reveal capture at a genuinely partial veil opacity', async ({ page }) => {
     const { backend, lobby, veil, canvas } = await openTransition(page, { freeze: 'revealing' });
     await enterExperience(lobby, canvas, backend);
-    await expect(veil).toHaveAttribute('data-state', 'revealing', { timeout: 60_000 });
+    await expect(veil).toHaveAttribute('data-state', 'revealing', { timeout: SCENE_READY_TIMEOUT });
 
     // The revealing seam holds a paused CSS animation at its negative-delay partial sample.
     // The sample stays fixed until unfreeze(), so observing the held state needs no delay.
@@ -245,7 +248,7 @@ test.describe('Scene Reveal Transition', () => {
   test('keeps the branded ready-hidden lobby visible until cover-to-black begins', async ({ page }) => {
     const { backend, lobby, veil, canvas } = await openTransition(page, { freeze: 'ready-hidden' });
     await enterExperience(lobby, canvas, backend);
-    await expect(lobby).toHaveAttribute('data-state', 'ready-hidden', { timeout: 60_000 });
+    await expect(lobby).toHaveAttribute('data-state', 'ready-hidden', { timeout: SCENE_READY_TIMEOUT });
     await expect(veil).toHaveAttribute('data-state', 'ready-hidden');
 
     const composition = await page.evaluate(() => {
@@ -272,7 +275,7 @@ test.describe('Scene Reveal Transition', () => {
   test('restarts the black-frame handshake after viewport disruption before revealing', async ({ page }) => {
     const { backend, lobby, veil, canvas } = await openTransition(page, { freeze: 'black-hold' });
     await enterExperience(lobby, canvas, backend);
-    await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
+    await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: SCENE_READY_TIMEOUT });
     await expectParkedBehindBlack(page);
 
     const target = VIEWPORTS.find((viewport) => viewport.name === 'tablet')!;
@@ -328,7 +331,7 @@ test.describe('Scene Reveal Transition', () => {
   test('waits for a hidden-tab restore, then reruns the black-frame handshake before reveal', async ({ page }) => {
     const { backend, lobby, veil, canvas } = await openTransition(page, { freeze: 'black-hold' });
     await enterExperience(lobby, canvas, backend);
-    await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
+    await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: SCENE_READY_TIMEOUT });
     await expectParkedBehindBlack(page);
 
     // An explicit visibility event gives both headless projects a deterministic hidden-tab restore.
@@ -354,7 +357,7 @@ test.describe('Scene Reveal Transition', () => {
   test('restarts the black-frame handshake after an orientation disruption before revealing', async ({ page }) => {
     const { backend, lobby, veil, canvas } = await openTransition(page, { freeze: 'black-hold' });
     await enterExperience(lobby, canvas, backend);
-    await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
+    await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: SCENE_READY_TIMEOUT });
     await expectParkedBehindBlack(page);
 
     await page.evaluate(() => window.dispatchEvent(new Event('orientationchange')));
@@ -373,7 +376,7 @@ test.describe('Scene Reveal Transition', () => {
       onboarding: true,
     });
     await enterExperience(lobby, canvas, backend);
-    await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
+    await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: SCENE_READY_TIMEOUT });
 
     const underBlack = await page.evaluate(() => ({
       music: window.archvizMusic?.state(),
@@ -387,7 +390,7 @@ test.describe('Scene Reveal Transition', () => {
     await page.evaluate(() => window.archvizTransitionSeam?.unfreeze());
     await expectRevealComplete(page);
     await expect(page.locator('#shell-header button.music-switch')).toHaveAttribute('data-music', 'playing', {
-      timeout: 15_000,
+      timeout: MUSIC_PLAYING_TIMEOUT_MS,
     });
     await expect(page.locator('.onboarding-card')).toBeVisible();
     expect(await page.evaluate(() => window.archvizMusic?.state())).toBe('playing');
@@ -396,7 +399,7 @@ test.describe('Scene Reveal Transition', () => {
   test('fails closed into a visible, pointer-operable retry surface', async ({ page }) => {
     const { backend, lobby, veil, canvas } = await openTransition(page, { freeze: 'ready-hidden' });
     await enterExperience(lobby, canvas, backend);
-    await expect(veil).toHaveAttribute('data-state', 'ready-hidden', { timeout: 60_000 });
+    await expect(veil).toHaveAttribute('data-state', 'ready-hidden', { timeout: SCENE_READY_TIMEOUT });
 
     expectConsoleError(page, /^\[archviz\] transition error Injected transition failure$/,
       'the test deliberately fails the reveal to verify its retry surface');
@@ -417,7 +420,7 @@ test.describe('Scene Reveal Transition', () => {
   test('keeps the showroom keyboard-inert throughout black-hold', async ({ page }) => {
     const { backend, lobby, veil, canvas } = await openTransition(page, { freeze: 'black-hold' });
     await enterExperience(lobby, canvas, backend);
-    await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
+    await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: SCENE_READY_TIMEOUT });
 
     await expect(page.locator('#shell-header')).toHaveAttribute('inert', '');
     await expect(page.locator('main')).toHaveAttribute('inert', '');
@@ -434,7 +437,7 @@ test.describe('Scene Reveal Transition', () => {
     // Freeze at black-hold
     const { backend, lobby, veil, canvas } = await openTransition(page, { freeze: 'black-hold' });
     await enterExperience(lobby, canvas, backend);
-    await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: 60_000 });
+    await expect(veil).toHaveAttribute('data-state', 'black-hold', { timeout: SCENE_READY_TIMEOUT });
 
     // Canvas cannot be hit while veil is active
     const canvasBox = await canvas.boundingBox();
