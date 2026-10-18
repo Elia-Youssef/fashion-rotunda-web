@@ -14,7 +14,6 @@ import { STARTUP_FAILURE_MESSAGE } from '../../src/ui/startup-failure';
 import { DEVICE_LOST_MESSAGE } from '../../src/renderer/notices';
 import { assertDisruptionReset, assertFreshStableFrames } from '../e2e/support/reveal-disruption';
 
-
 function createMockLobby(): EntryLobby {
   let state: LobbyState = 'ready-hidden';
   const element = document.createElement('div');
