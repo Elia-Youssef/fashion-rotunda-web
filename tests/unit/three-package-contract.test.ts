@@ -3,6 +3,8 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('three package compatibility contracts', () => {
+  // Importing about twenty three.js and addon modules cold exceeded the default 5 s under load.
+  const ADDON_IMPORT_TIMEOUT_MS = 30_000;
   it('resolves the runtime addon deep and entry point exports used by the showroom', async () => {
     const surfaces: Record<string, string[]> = {
       'three/webgpu': [
@@ -36,7 +38,7 @@ describe('three package compatibility contracts', () => {
       const module = await import(path) as Record<string, unknown>;
       for (const name of names) expect(module[name], `${path}:${name}`).toBeDefined();
     }
-  });
+  }, ADDON_IMPORT_TIMEOUT_MS);
 
   it('pairs both served Basis transcoder files with the installed loader package', () => {
     for (const file of ['basis_transcoder.js', 'basis_transcoder.wasm']) {
