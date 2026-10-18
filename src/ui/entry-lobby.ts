@@ -78,32 +78,53 @@ export interface EntryLobby {
   dispose(): void;
 }
 
-export const APPROVED_FACTS: Array<{ heading: string; text: string }> = [
+export const APPROVED_FACTS = ([
   {
     heading: 'GRAPHICS',
-    text: "Runs on WebGPU, the newest browser graphics standard, and switches to WebGL 2 where it isn't available.",
+    phrases: [
+      'Runs on WebGPU, the newest browser graphics standard,',
+      "and switches to WebGL 2 where it isn't available.",
+    ],
   },
   {
     heading: 'THE ROTUNDA',
-    text: 'The rotunda, its dome and every interior surface come from the original Unreal Engine scene.',
+    phrases: [
+      'The rotunda, its dome and every interior surface',
+      'come from the original Unreal Engine scene.',
+    ],
   },
   {
     heading: 'FAST LOADING',
-    text: 'Models and textures are compressed for the web, so the room loads quickly and stays sharp.',
+    phrases: [
+      'Models and textures are compressed for the web,',
+      'so the room loads quickly and stays sharp.',
+    ],
   },
   {
     heading: 'FITS YOUR DEVICE',
-    text: 'The showroom checks your device and sets shadows, resolution and effects to keep it smooth.',
+    phrases: [
+      'The showroom checks your device and sets shadows,',
+      'resolution and effects to keep it smooth.',
+    ],
   },
   {
     heading: 'KEYBOARD READY',
-    text: 'Every control is a real page element, so the whole showroom works from the keyboard.',
+    phrases: [
+      'Every control is a real page element,',
+      'so the whole showroom works from the keyboard.',
+    ],
   },
   {
     heading: 'GALLERY LIGHTING',
-    text: 'Three studio lights and the daylight dome light the looks, and you can adjust both.',
+    phrases: [
+      'Three studio lights and the daylight dome light the looks,',
+      'and you can adjust both.',
+    ],
   },
-];
+] satisfies Array<{ heading: string; phrases: readonly [string, string] }>).map((fact) => ({
+  ...fact,
+  get text(): string { return this.phrases.join(' '); },
+}));
 
 /**
  * The loading line, in the showroom's voice. Each arrival step stands for one more tracked file
@@ -273,7 +294,13 @@ export function mountEntryLobby(options: EntryLobbyOptions): EntryLobby {
       factHeading.textContent = fact.heading;
     }
     if (factText !== null) {
-      factText.textContent = `"${fact.text}"`;
+      const phrases = fact.phrases.map((phrase, index) => {
+        const span = factText.ownerDocument.createElement('span');
+        span.className = 'entry-lobby__fact-phrase';
+        span.textContent = index === 0 ? `"${phrase}` : `${phrase}"`;
+        return span;
+      });
+      factText.replaceChildren(phrases[0], ' ', phrases[1]);
     }
   }
 

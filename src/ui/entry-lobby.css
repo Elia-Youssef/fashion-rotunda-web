@@ -412,10 +412,24 @@
 }
 
 .entry-lobby__fact-text {
+  /* 36em = 468px at 13px, below the 550px desktop / 486px tablet card content.
+     The longest quoted phrase is 57 characters; this leaves room for proportional glyphs.
+     Query the text's available width so card padding and font size set the switch together. */
+  max-width: var(--lobby-fact-measure);
+  container: lobby-fact / inline-size;
   font-size: var(--type-btn-action);
   line-height: 1.5;
   color: var(--brand-text-primary);
-  margin: 0 0 var(--space-1) 0;
+  margin: 0 auto var(--space-1);
+  text-wrap: balance;
+}
+
+/* Keep this threshold equal to --lobby-fact-measure: both phrases must fit before splitting. */
+@container lobby-fact (min-width: 36em) {
+  .entry-lobby__fact-phrase {
+    display: block;
+    white-space: nowrap;
+  }
 }
 
 /* Error State Card */

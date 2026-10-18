@@ -85,41 +85,61 @@ describe.each([false, true])('one fact per visit (hydration=%s)', (withPreExisti
   it.each([
     {
       index: 0,
+      first: 'Runs on WebGPU, the newest browser graphics standard,',
       heading: 'GRAPHICS',
       text: "Runs on WebGPU, the newest browser graphics standard, and switches to WebGL 2 where it isn't available.",
     },
     {
       index: 1,
+      first: 'The rotunda, its dome and every interior surface',
       heading: 'THE ROTUNDA',
       text: 'The rotunda, its dome and every interior surface come from the original Unreal Engine scene.',
     },
     {
       index: 2,
+      first: 'Models and textures are compressed for the web,',
       heading: 'FAST LOADING',
       text: 'Models and textures are compressed for the web, so the room loads quickly and stays sharp.',
     },
     {
       index: 3,
+      first: 'The showroom checks your device and sets shadows,',
       heading: 'FITS YOUR DEVICE',
       text: 'The showroom checks your device and sets shadows, resolution and effects to keep it smooth.',
     },
     {
       index: 4,
+      first: 'Every control is a real page element,',
       heading: 'KEYBOARD READY',
       text: 'Every control is a real page element, so the whole showroom works from the keyboard.',
     },
     {
       index: 5,
+      first: 'Three studio lights and the daylight dome light the looks,',
       heading: 'GALLERY LIGHTING',
       text: 'Three studio lights and the daylight dome light the looks, and you can adjust both.',
     },
-  ])('renders the exact $heading fact', ({ index, heading, text }) => {
+  ])('renders the exact $heading fact', ({ index, heading, text, first }) => {
     const { element } = mountLobby({
       withPreExistingDOM,
       random: () => index / APPROVED_FACTS.length,
     });
     expect(element.querySelector('.entry-lobby__fact-heading')?.textContent).toBe(heading);
     expect(element.querySelector('.entry-lobby__fact-text')?.textContent).toBe(`"${text}"`);
+    const fact = APPROVED_FACTS[index];
+    expect(fact.phrases).toEqual([first, text.slice(first.length + 1)]);
+    expect(fact.phrases.join(' ')).toBe(text);
+    expect(fact.text).toBe(text);
+    const paragraph = element.querySelector('.entry-lobby__fact-text')!;
+    expect(Array.from(paragraph.children, (span) => [span.tagName, span.className, span.textContent]))
+      .toEqual([
+        ['SPAN', 'entry-lobby__fact-phrase', `"${first}`],
+        ['SPAN', 'entry-lobby__fact-phrase', `${fact.phrases[1]}"`],
+      ]);
+    expect(paragraph.childNodes).toHaveLength(3);
+    expect(paragraph.childNodes[1].nodeType).toBe(Node.TEXT_NODE);
+    expect(paragraph.childNodes[1].textContent).toBe(' ');
+    expect(paragraph.querySelector('[aria-hidden], [aria-label]')).toBeNull();
   });
 
   function expectFact(element: HTMLElement, index: number): void {

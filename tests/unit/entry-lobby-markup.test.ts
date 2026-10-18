@@ -46,6 +46,25 @@ describe('entry lobby markup build contract', () => {
   });
 });
 
+describe('entry lobby default fact', () => {
+  it('keeps both static defaults equal to the first rendered fact', () => {
+    const built = buildLobbyMarkup(document).querySelector('.entry-lobby__fact-text')!;
+    const shipped = new DOMParser().parseFromString(readFileSync('index.html', 'utf8'), 'text/html')
+      .querySelector('.entry-lobby__fact-text')!;
+    const root = document.createElement('div');
+    const lobby = entryLobby.mountEntryLobby({ root, search: '', store: null, random: () => 0 });
+    try {
+      const rendered = lobby.element.querySelector('.entry-lobby__fact-text')!;
+      expect(built.outerHTML).toBe(rendered.outerHTML);
+      expect(shipped.outerHTML).toBe(rendered.outerHTML);
+      expect(built.children).toHaveLength(2);
+      expect(built.textContent).toBe(`"${entryLobby.APPROVED_FACTS[0].text}"`);
+    } finally {
+      lobby.dispose();
+    }
+  });
+});
+
 describe('entry lobby poster selection', () => {
   function posterMarkup(kind: 'built' | 'shipped'): Element {
     const root = kind === 'built' ? buildLobbyMarkup(document) :
@@ -181,7 +200,7 @@ const BUILT_LOBBY_MARKUP = `<div id="entry-lobby" class="entry-lobby" role="dial
             <div class="entry-lobby__fact-container">
               <div class="entry-lobby__fact-diamond" aria-hidden="true"></div>
               <span class="entry-lobby__fact-heading">GRAPHICS</span>
-              <p class="entry-lobby__fact-text">"Runs on WebGPU, the newest browser graphics standard, and switches to WebGL 2 where it isn't available."</p>
+              <p class="entry-lobby__fact-text"><span class="entry-lobby__fact-phrase">"Runs on WebGPU, the newest browser graphics standard,</span> <span class="entry-lobby__fact-phrase">and switches to WebGL 2 where it isn't available."</span></p>
             </div>
           </div>
 
@@ -288,7 +307,7 @@ const MOUNTED_LOBBY_MARKUP = `<div id="entry-lobby" class="entry-lobby" role="di
             <div class="entry-lobby__fact-container">
               <div class="entry-lobby__fact-diamond" aria-hidden="true"></div>
               <span class="entry-lobby__fact-heading">GRAPHICS</span>
-              <p class="entry-lobby__fact-text">"Runs on WebGPU, the newest browser graphics standard, and switches to WebGL 2 where it isn't available."</p>
+              <p class="entry-lobby__fact-text"><span class="entry-lobby__fact-phrase">"Runs on WebGPU, the newest browser graphics standard,</span> <span class="entry-lobby__fact-phrase">and switches to WebGL 2 where it isn't available."</span></p>
             </div>
           </div>
 

@@ -63,6 +63,8 @@
   --lobby-card-max-width: 600px;
   --lobby-card-max-width-tablet: 520px;
   --lobby-card-max-width-landscape: 620px;
+  /* Bounds the loading fact text to a readable phrase measure. */
+  --lobby-fact-measure: 36em;
   --lobby-progress-max-width: 320px;
   --lobby-progress-max-width-phone: 260px;
   --lobby-progress-height: 6px;
