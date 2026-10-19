@@ -26,6 +26,9 @@ const envOverrides = [
   'FR_PROVENANCE_DIR',
 ];
 
+// config.mjs passes the Unreal paths and FR_PROVENANCE_DIR through node:path resolve, so they are
+// expected in that resolved form: unchanged on Windows, while on a POSIX runner a drive-letter path
+// is relative and gains the working directory.
 const editorCandidates = {
   programFiles: 'C:\\Program Files\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor-Cmd.exe',
   desktop: 'F:\\Epic Games\\UE_5.8\\Engine\\Binaries\\Win64\\UnrealEditor-Cmd.exe',
@@ -113,15 +116,15 @@ describe('pipeline tool environment', () => {
     vi.stubEnv('FR_UNREAL_PROJECT', 'X:\\ue\\FashionRotunda.uproject');
     vi.resetModules();
     const config = await import('../../pipeline/config.mjs');
-    expect(config.unrealEditorCmd).toBe('X:\\ue\\UnrealEditor-Cmd.exe');
-    expect(config.unrealProject).toBe('X:\\ue\\FashionRotunda.uproject');
+    expect(config.unrealEditorCmd).toBe(resolve('X:\\ue\\UnrealEditor-Cmd.exe'));
+    expect(config.unrealProject).toBe(resolve('X:\\ue\\FashionRotunda.uproject'));
   });
 
   it('lets FR_PROVENANCE_DIR move the provenance output', async () => {
     vi.stubEnv('FR_PROVENANCE_DIR', 'X:\\provenance');
     vi.resetModules();
     const config = await import('../../pipeline/config.mjs');
-    expect(config.provenanceDir).toBe('X:\\provenance');
+    expect(config.provenanceDir).toBe(resolve('X:\\provenance'));
   });
 
   it('resolves the module layout from the repository root by default', async () => {
@@ -140,28 +143,28 @@ describe('pipeline tool environment', () => {
     const both = await importWithoutOverrides(() =>
       letOnlyExist(editorCandidates.programFiles, editorCandidates.desktop),
     );
-    expect(both.unrealEditorCmd).toBe(editorCandidates.programFiles);
+    expect(both.unrealEditorCmd).toBe(resolve(editorCandidates.programFiles));
     const none = await importWithoutOverrides(() => letOnlyExist());
-    expect(none.unrealEditorCmd).toBe(editorCandidates.programFiles);
+    expect(none.unrealEditorCmd).toBe(resolve(editorCandidates.programFiles));
   });
 
   it('uses the second Unreal editor candidate when the first is absent', async () => {
     const config = await importWithoutOverrides(() => letOnlyExist(editorCandidates.desktop));
-    expect(config.unrealEditorCmd).toBe(editorCandidates.desktop);
+    expect(config.unrealEditorCmd).toBe(resolve(editorCandidates.desktop));
   });
 
   it('prefers the first existing Unreal project candidate and falls back to naming it', async () => {
     const both = await importWithoutOverrides(() =>
       letOnlyExist(projectCandidates.documents, projectCandidates.desktop),
     );
-    expect(both.unrealProject).toBe(projectCandidates.documents);
+    expect(both.unrealProject).toBe(resolve(projectCandidates.documents));
     const none = await importWithoutOverrides(() => letOnlyExist());
-    expect(none.unrealProject).toBe(projectCandidates.documents);
+    expect(none.unrealProject).toBe(resolve(projectCandidates.documents));
   });
 
   it('uses the second Unreal project candidate when the first is absent', async () => {
     const config = await importWithoutOverrides(() => letOnlyExist(projectCandidates.desktop));
-    expect(config.unrealProject).toBe(projectCandidates.desktop);
+    expect(config.unrealProject).toBe(resolve(projectCandidates.desktop));
   });
 
   it('finds the newest matching winget ffmpeg build and names both tools', async () => {
